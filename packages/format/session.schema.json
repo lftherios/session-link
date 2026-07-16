@@ -1,0 +1,384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://session.link/schemas/session.v0.json",
+  "title": "Session v0",
+  "description": "Canonical, framework-neutral representation of an LLM session: a flat list of typed spans forming a tree, plus session-level metadata, scores, and an attachment manifest. The wire format is open-world: unknown span types, content-part types, roles, and additional fields validate and must be preserved end-to-end — the schema pins down required shape only for the vocabulary it knows. Closed enums are reserved for controlled vocabulary the viewer's semantics depend on (status, fidelity).",
+  "type": "object",
+  "required": ["schema", "created_at", "spans"],
+  "properties": {
+    "schema": {
+      "description": "Format id. session/v0 is canonical; run/v0 (the pre-rebrand name) is still accepted so existing immutable sessions and older CLIs keep validating.",
+      "enum": ["session/v0", "run/v0"]
+    },
+    "id": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "Client-supplied idempotency key. The server assigns the public short id."
+    },
+    "name": { "type": "string", "maxLength": 256 },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the run happened, not when it was uploaded."
+    },
+    "source": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "Transport that produced the run. Known kinds: sdk, otlp, proxy, import, api. Unknown kinds are allowed."
+        },
+        "label": {
+          "type": "string",
+          "description": "e.g. 'inspect', 'lm-eval-harness', 'local-proxy@0.1.0', 'opentraces-import@0.9'"
+        },
+        "fidelity": {
+          "$ref": "#/$defs/fidelity",
+          "description": "Default capture fidelity for the whole run; individual spans may override."
+        }
+      }
+    },
+    "group": {
+      "type": "object",
+      "required": ["id"],
+      "description": "Ties runs into a collection, e.g. one eval. Compare views operate over a group.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "item": { "type": "string", "description": "Identifies the sample/case within the group." }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 64 },
+      "maxItems": 32
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Free-form scalars about the run. Viewer conventions: git_sha, branch, framework."
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Named, independently versioned envelopes preserved verbatim — analyses and enrichments layered on a session without touching session/v0 itself. Key convention: '<namespace>.<name>.v<N>', e.g. 'opentraces.run_intel.v1'. Each envelope's contents are a frozen contract owned by its namespace."
+    },
+    "scores": { "type": "array", "items": { "$ref": "#/$defs/score" } },
+    "metrics": { "$ref": "#/$defs/metrics" },
+    "spans": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/span" }
+    },
+    "attachments": {
+      "type": "object",
+      "description": "Manifest of content-addressed payloads referenced from content parts, *_ref fields, or raw_ref: binaries, offloaded raw bodies, message layers, large tool results. Bytes upload separately.",
+      "patternProperties": {
+        "^sha256:[a-f0-9]{64}$": { "$ref": "#/$defs/attachmentMeta" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "blobHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "description": "Content address of a payload in the attachments manifest. Deduplicates repeated context (identical bytes hash identically) and keeps the run envelope small; bytes upload separately."
+    },
+    "fidelity": {
+      "enum": ["exact", "reconstructed", "partial"],
+      "description": "How faithfully the capture reflects what actually crossed the provider boundary. exact = captured at the boundary (wire bytes or in-process SDK hook); reconstructed = assembled after the fact from transcripts or logs; partial = known gaps or truncation. Record the original capture method (e.g. OpenTraces 'transcript_reconstruction') in metadata or extensions."
+    },
+    "score": {
+      "type": "object",
+      "required": ["name", "value"],
+      "properties": {
+        "name": { "type": "string" },
+        "value": { "type": ["number", "string", "boolean"] },
+        "scorer": {
+          "type": "string",
+          "description": "Known scorers: human, code, model. Unknown scorers are allowed."
+        },
+        "comment": { "type": "string" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "cost_usd": { "type": "number", "minimum": 0 },
+        "latency_ms": { "type": "number", "minimum": 0 }
+      }
+    },
+    "span": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,64}$",
+          "description": "Unique within the run. Deep links and comments anchor to #span=<id>, so the grammar is deliberately URL-fragment-safe and must stay stable."
+        },
+        "parent_id": { "type": ["string", "null"] },
+        "type": {
+          "type": "string",
+          "description": "Known types: llm_call, tool_call, retrieval, agent, custom. Unknown types are allowed and must be preserved; viewers render a JSON fallback."
+        },
+        "name": { "type": "string", "maxLength": 256 },
+        "started_at": { "type": "string", "format": "date-time" },
+        "ended_at": { "type": "string", "format": "date-time" },
+        "status": { "enum": ["ok", "error"] },
+        "fidelity": {
+          "$ref": "#/$defs/fidelity",
+          "description": "Overrides source.fidelity for this span."
+        },
+        "error": {
+          "type": "object",
+          "required": ["message"],
+          "properties": {
+            "message": { "type": "string" },
+            "type": { "type": "string" }
+          }
+        },
+        "model": { "$ref": "#/$defs/model" },
+        "params": {
+          "type": "object",
+          "description": "Sampling params as sent: temperature, max_tokens, top_p, ..."
+        },
+        "input": {},
+        "output": {},
+        "usage": { "$ref": "#/$defs/usage" },
+        "metadata": { "type": "object" },
+        "raw": {
+          "type": "object",
+          "description": "Verbatim provider/framework payloads. Never mutated, always preserved."
+        },
+        "raw_ref": {
+          "$ref": "#/$defs/blobHash",
+          "description": "The raw envelope stored as a content-addressed attachment instead of (or in addition to) inline — for payloads that exceed the inline budget. Raw stays sacred; it just lives in the manifest."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "llm_call" } }, "required": ["type"] },
+          "then": {
+            "required": ["model", "input", "output"],
+            "properties": {
+              "input": {
+                "type": "object",
+                "properties": {
+                  "system": { "type": "string" },
+                  "system_ref": { "$ref": "#/$defs/blobHash" },
+                  "messages": { "type": "array", "items": { "$ref": "#/$defs/message" } },
+                  "messages_ref": {
+                    "$ref": "#/$defs/blobHash",
+                    "description": "Full message array stored as a content-addressed attachment (a JSON array of message objects). Turns quadratic conversation growth into per-layer references, mirroring OpenTraces context-tree layers."
+                  },
+                  "tools": { "type": "array", "items": { "$ref": "#/$defs/toolDef" } },
+                  "tools_ref": { "$ref": "#/$defs/blobHash" }
+                },
+                "anyOf": [{ "required": ["messages"] }, { "required": ["messages_ref"] }]
+              },
+              "output": {
+                "type": "object",
+                "required": ["messages"],
+                "description": "Outputs stay inline — they are what people share and discuss, and they grow linearly. Oversized individual parts can use a 'blob' content part.",
+                "properties": {
+                  "messages": { "type": "array", "items": { "$ref": "#/$defs/message" } }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "tool_call" } }, "required": ["type"] },
+          "then": {
+            "required": ["input"],
+            "properties": {
+              "input": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "arguments": {},
+                  "tool_call_id": {
+                    "type": "string",
+                    "description": "Links to the assistant tool_call content part that requested this."
+                  }
+                }
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "result": {},
+                  "result_ref": {
+                    "$ref": "#/$defs/blobHash",
+                    "description": "Large tool results (file dumps, page snapshots) stored as content-addressed attachments."
+                  },
+                  "is_error": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "retrieval" } }, "required": ["type"] },
+          "then": {
+            "required": ["input"],
+            "properties": {
+              "input": {
+                "type": "object",
+                "required": ["query"],
+                "properties": { "query": { "type": "string" } }
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "documents": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "text": { "type": "string" },
+                        "score": { "type": "number" },
+                        "ref": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "model": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "provider": { "type": "string" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "description": "Provider-reported usage. Unknown counters (reasoning_tokens, cache_write_tokens, ...) are allowed and preserved.",
+      "properties": {
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "cache_read_tokens": { "type": "integer", "minimum": 0 },
+        "cost_usd": { "type": "number", "minimum": 0 }
+      }
+    },
+    "message": {
+      "type": "object",
+      "required": ["role", "content"],
+      "properties": {
+        "role": {
+          "type": "string",
+          "description": "Known roles: system, user, assistant, tool. Unknown roles (e.g. OpenAI 'developer') are allowed; viewers render them generically."
+        },
+        "content": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/contentPart" },
+          "description": "Always an array; normalizers wrap bare strings in a single text part."
+        },
+        "name": { "type": "string" }
+      }
+    },
+    "contentPart": {
+      "type": "object",
+      "required": ["type"],
+      "description": "Open-world: parts with unknown types validate against the base shape and must be preserved; viewers render a JSON fallback. Known types get their required fields enforced below.",
+      "properties": {
+        "type": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "text" } }, "required": ["type"] },
+          "then": {
+            "required": ["text"],
+            "properties": { "text": { "type": "string" } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "thinking" } }, "required": ["type"] },
+          "then": {
+            "required": ["text"],
+            "properties": { "text": { "type": "string" } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "image" } }, "required": ["type"] },
+          "then": {
+            "anyOf": [{ "required": ["attachment"] }, { "required": ["url"] }],
+            "properties": {
+              "attachment": { "$ref": "#/$defs/blobHash" },
+              "url": { "type": "string" },
+              "mime": { "type": "string" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "tool_call" } }, "required": ["type"] },
+          "then": {
+            "required": ["id", "name"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "arguments": {}
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "tool_result" } }, "required": ["type"] },
+          "then": {
+            "required": ["tool_call_id", "content"],
+            "properties": {
+              "tool_call_id": { "type": "string" },
+              "content": { "type": "array", "items": { "$ref": "#/$defs/contentPart" } },
+              "is_error": { "type": "boolean" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "data" } }, "required": ["type"] },
+          "then": {
+            "required": ["data"],
+            "properties": { "data": {} }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "blob" } }, "required": ["type"] },
+          "then": {
+            "required": ["attachment"],
+            "description": "An oversized payload of any kind (long text, file content, JSON) stored in the attachments manifest instead of inline.",
+            "properties": {
+              "attachment": { "$ref": "#/$defs/blobHash" },
+              "mime": { "type": "string" },
+              "name": { "type": "string" }
+            }
+          }
+        }
+      ]
+    },
+    "toolDef": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "input_schema": {}
+      }
+    },
+    "attachmentMeta": {
+      "type": "object",
+      "required": ["mime"],
+      "properties": {
+        "mime": { "type": "string" },
+        "name": { "type": "string" },
+        "size": { "type": "integer", "minimum": 0, "description": "bytes" }
+      }
+    }
+  }
+}

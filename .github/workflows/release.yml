@@ -1,0 +1,43 @@
+name: release
+
+# Tag a version (e.g. `git tag v0.1.0 && git push --tags`) to publish the CLI
+# to npm and attach standalone binaries to a GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      # prepack (in packages/cli) bundles the CLI via the root toolchain.
+      - run: npm publish
+        working-directory: packages/cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  binaries:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # upload release assets
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+      - run: npm ci
+      # bun cross-compiles every target from this one runner.
+      - run: node scripts/build-binary.mjs
+      - name: checksums
+        working-directory: packages/cli/binaries
+        run: sha256sum * > SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: packages/cli/binaries/*

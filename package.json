@@ -1,0 +1,26 @@
+{
+  "name": "slink-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The open client and format for session.link — the slink CLI, @session-link/format, @session-link/viewer.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "engines": {
+    "node": "^18.20.0 || >=20.10.0"
+  },
+  "scripts": {
+    "test": "node --test",
+    "validate": "node packages/format/validate.mjs",
+    "build:viewer": "node scripts/build-viewer.mjs",
+    "build:cli": "node scripts/build-cli.mjs",
+    "build:binary": "node scripts/build-binary.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "lucide-react": "^1.23.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
+}

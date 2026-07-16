@@ -1,0 +1,6 @@
+node_modules
+cli/viewer.mjs
+packages/cli/dist/
+packages/cli/binaries/
+*.tgz
+.DS_Store

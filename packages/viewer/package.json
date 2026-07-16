@@ -1,0 +1,27 @@
+{
+  "name": "@session-link/viewer",
+  "version": "0.1.0",
+  "description": "The session.link viewer — renders a session/v0 document as an interactive trace tree. React component; consume with a bundler that transpiles the package (e.g. Next transpilePackages).",
+  "homepage": "https://session.link",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./entry": "./viewer-entry.tsx"
+  },
+  "files": [
+    "index.ts",
+    "RunViewer.tsx",
+    "viewer-entry.tsx"
+  ],
+  "dependencies": {
+    "@session-link/format": "0.1.0"
+  },
+  "peerDependencies": {
+    "lucide-react": "^1.23.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
