@@ -1,7 +1,9 @@
 name: release
 
-# Tag a version (e.g. `git tag v0.1.0 && git push --tags`) to publish the CLI
-# to npm and attach standalone binaries to a GitHub Release.
+# Tag a version (e.g. `git tag v0.1.0 && git push --tags`) to publish any
+# packages whose version isn't on npm yet, and attach standalone binaries to a
+# GitHub Release. Each package.json version is the source of truth: bump the
+# ones you changed, then tag — unchanged packages are skipped, not re-published.
 on:
   push:
     tags: ["v*"]
@@ -16,11 +18,27 @@ jobs:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
-      # prepack (in packages/cli) bundles the CLI via the root toolchain.
-      - run: npm publish
-        working-directory: packages/cli
+      # format before viewer (viewer depends on it); cli last. Publish each
+      # only if its version isn't already on the registry, so bumping one
+      # package doesn't force re-publishing the others. cli's prepack bundles
+      # the CLI via the root toolchain; format/viewer ship source, no build.
+      - name: publish changed packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          published=0
+          for dir in packages/format packages/viewer packages/cli; do
+            name=$(node -p "require('./$dir/package.json').name")
+            ver=$(node -p "require('./$dir/package.json').version")
+            if [ -n "$(npm view "$name@$ver" version 2>/dev/null)" ]; then
+              echo "skip $name@$ver (already on npm)"
+            else
+              echo "publishing $name@$ver"
+              npm publish --workspace "$name" --access public
+              published=$((published + 1))
+            fi
+          done
+          echo "published $published package(s)"
 
   binaries:
     runs-on: ubuntu-latest
