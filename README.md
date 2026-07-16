@@ -1,40 +1,87 @@
-# slink — the open client & format for [session.link](https://session.link)
+<div align="center">
 
-Capture LLM sessions locally, publish the ones worth sharing. This repo is the
-**open** half of session.link: the `slink` CLI, the `session/v0` format, and the
-viewer. The hosted service is separate.
+# session.link
+
+**Turn any LLM session — an eval item, an agent trace, a one-off completion — into a permanent, shareable URL you can inspect.**
+
+[![npm](https://img.shields.io/npm/v/session.link?color=0e6f5c&label=session.link)](https://www.npmjs.com/package/session.link)
+[![downloads](https://img.shields.io/npm/dm/session.link?color=0e6f5c)](https://www.npmjs.com/package/session.link)
+[![CI](https://img.shields.io/github/actions/workflow/status/lftherios/session-link/ci.yml?branch=main&label=ci)](https://github.com/lftherios/session-link/actions)
+[![format](https://img.shields.io/badge/format-session%2Fv0-0e6f5c)](packages/format)
+[![license](https://img.shields.io/npm/l/session.link?color=0e6f5c)](LICENSE)
+
+![slink capturing an agent run and publishing it to a shareable URL](assets/demo.gif)
+
+**[▶ Open a real captured session →](https://session.link/r/agent-eval)**
+
+</div>
+
+## Why
+
+Agent runs are ephemeral. When something interesting happens — a clever tool call, a wrong turn, a great eval result — your options are a screenshot that loses the tree, timing, and cost, or a wall of pasted JSON nobody will read. `slink` gives you a third option: **a link.** Capture is ambient and local; publishing is deliberate; the result is a permanent page a teammate can actually open, and that unfurls in Slack as `openai/gpt-4.1 · 4 spans · $0.0092 · Jul 8, 2026`.
+
+## Quickstart
 
 ```bash
-npx session.link dev -- python agent.py   # record its LLM calls (local only)
-npx session.link open                     # browse captures, publish from the page
-npx session.link push                     # validate → secret-scan → shareable URL
-npx session.link login                    # sign in (GitHub)
+# 1. Record — wrap your agent. Nothing leaves your machine.
+npx session.link dev -- python agent.py
+
+# 2. Publish — validate, secret-scan, one confirmation, a permanent link.
+npx session.link push
+# → https://session.link/r/9f3kx2mvq7wt   (copied to your clipboard)
 ```
 
-## Packages
+That's it — no code changes, no SDK, no account required to capture. `dev` points `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` at a local recording proxy, runs your command, and writes each call to `~/.slink` as it happens. Streaming is passed through untouched and reassembled. Optionally `npx session.link login` (GitHub) first, so published sessions are attributed to you.
 
-| Package | What |
+Node agent instead? `slink dev -- node agent.js`. Already ran it? `slink import` reconstructs the session from your coding-agent transcript. Want to review before sharing? `slink open` browses your captures locally in the exact viewer the hosted site renders, with a Publish button on the page.
+
+> Install today is npm (`npx session.link`, or `npm i -g session.link` for a global `slink`). Standalone `brew` / `curl | sh` binaries are coming soon.
+
+## What a shared link gives you
+
+A published session isn't a screenshot — it's the real thing, rendered:
+
+- 🌳 **An interactive trace tree** with a timing micro-waterfall — spans colored by kind (llm_call, tool_call, retrieval, agent), collapsible, navigable.
+- 💬 **Formatted messages** — system / user / assistant / thinking / tool calls, with a **Raw JSON** toggle one click away (normalization is never lossy; the raw payload is preserved).
+- 📊 **Token, cost, latency, and score chips** rolled up per run and per span.
+- 🔗 **`#span=` deep links** — point a teammate at step 14, not "scroll down a bit."
+- 💌 **Slack / OG unfurls** — the link describes itself in chat, no click required.
+
+## Private by design
+
+`slink` runs in the path of your prompts and API keys, so it's built to be safe to run on real work:
+
+- **Capture is 100% local.** A recording proxy tees the calls to disk; nothing is uploaded until you run `push`.
+- **Secrets are scanned twice** — client-side before a single byte leaves your machine, and again server-side before anything touches disk (`sk-…`, `ghp_…`, `AKIA…`, Stripe keys, PEM blocks). A hit blocks the publish.
+- **Sessions are immutable and content-addressed** — the exact bytes are served back, so anyone can verify the hash. Deletion is a clean tombstone, never a silent edit.
+- **Unlisted by default** — ~66 bits of unguessable URL, no public index, crawlers excluded. You decide what gets shared, one link at a time.
+
+## What's in the box
+
+An open client and an open format, not a thin wrapper around a hosted API:
+
+| Package | What it is |
 | --- | --- |
-| [`session.link`](packages/cli) | the `slink` CLI — a recording proxy, importer, local viewer, and publish flow. Zero-dependency bundle + standalone binaries. |
-| [`@session-link/format`](packages/format) | the open `session/v0` format: TypeScript types, JSON Schema, and `validateRun`. |
-| [`@session-link/viewer`](packages/viewer) | the React component that renders a `session/v0` document as an interactive trace tree. |
+| [`session.link`](packages/cli) | the `slink` CLI — recording proxy, importer, local viewer, publish flow. Zero-dependency bundle. |
+| [`@session-link/format`](packages/format) | the open `session/v0` format — TypeScript types, JSON Schema, and `validateRun`. |
+| [`@session-link/viewer`](packages/viewer) | the React trace-tree component that renders a session — the same one the hosted site uses. Embed it. |
 
-## The `session/v0` format
+The `session/v0` wire format is open-world: unknown span types, content parts, roles, and extra fields all validate and round-trip, so it degrades gracefully as providers and frameworks evolve. It's pre-1.0 and will change before it's frozen.
 
-An open, framework-neutral representation of an LLM session: a flat list of
-typed spans forming a tree, plus metadata, scores, and an attachment manifest.
-Open-world by design — unknown span types, content parts, and roles validate and
-round-trip. Schema: [`packages/format/session.schema.json`](packages/format/session.schema.json).
+## Roadmap
 
-## Develop
+Today, one link lets you **inspect**. Next, anchored to the same URLs:
 
-```bash
-npm install
-npm test              # CLI + format + viewer tests
-npm run build:cli     # bundle the CLI to one file
-npm run build:binary  # standalone per-platform binaries (needs bun)
-```
+- **Remix** — fork any call into a playground, change the prompt or model, re-run on your own key. *(soon)*
+- **Compare** — diff two runs sharing a `group` id; scores line up on their own. *(soon)*
+- **Discuss** — comments that anchor to spans, not screenshots. *(soon)*
 
-Distribution is documented in [`packaging/README.md`](packaging/README.md).
+## Contributing
 
-MIT licensed.
+Issues and PRs welcome. `npm install`, then `npm test` (CLI + format + viewer) and `npm run build:cli`. The demo GIF regenerates from a checked-in [VHS](https://github.com/charmbracelet/vhs) tape: `vhs assets/demo.tape`.
+
+The hosted service lives at **[session.link](https://session.link)**; this repo is the open client and format.
+
+## License
+
+MIT © [lftherios](https://github.com/lftherios) — see [LICENSE](LICENSE).
