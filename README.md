@@ -85,3 +85,13 @@ The hosted service lives at **[session.link](https://session.link)**; this repo 
 ## License
 
 MIT © [lftherios](https://github.com/lftherios) — see [LICENSE](LICENSE).
+
+---
+
+Also on [Radicle](https://radicle.xyz), the peer-to-peer code network:
+
+```
+rad:z24FnLsshNV8kq5fWCTi2dbKueomr
+```
+
+Clone it with `rad clone rad:z24FnLsshNV8kq5fWCTi2dbKueomr`.
