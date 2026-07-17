@@ -33,9 +33,30 @@ npx session.link push
 
 That's it — no code changes, no SDK, no account required to capture. `dev` points `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` at a local recording proxy, runs your command, and writes each call to `~/.slink` as it happens. Streaming is passed through untouched and reassembled. Optionally `npx session.link login` (GitHub) first, so published sessions are attributed to you.
 
-Node agent instead? `slink dev -- node agent.js`. Already ran it? `slink import` reconstructs the session from your coding-agent transcript. Want to review before sharing? `slink open` browses your captures locally in the exact viewer the hosted site renders, with a Publish button on the page.
+Node agent instead? `slink dev -- node agent.js`. Already ran it — in Claude Code, Codex, opencode, pi, or Hermes? `slink import` reconstructs the session from your agent's own history ([see below](#works-with-the-agent-you-already-use)). Want to review before sharing? `slink open` browses your captures locally in the exact viewer the hosted site renders, with a Publish button on the page.
 
 > Install today is npm (`npx session.link`, or `npm i -g session.link` for a global `slink`). Standalone `brew` / `curl | sh` binaries are coming soon.
+
+## Works with the agent you already use
+
+Didn't wrap it in `slink dev`? Import it after the fact. `slink import` reconstructs a `session/v0` capture straight from your coding agent's own on-disk history — no proxy, no re-run. With no arguments it grabs the newest session for the current project, whichever agent produced it; `--from` pins one:
+
+| Agent | Where its sessions live | Import |
+| --- | --- | --- |
+| [Claude Code](https://claude.com/claude-code) | `~/.claude/projects/…` (JSONL) | `slink import --from claude-code` |
+| [Codex](https://github.com/openai/codex) | `~/.codex/sessions/**/rollout-*.jsonl` | `slink import --from codex` |
+| [opencode](https://opencode.ai) | `~/.local/share/opencode/opencode.db` (SQLite) | `slink import --from opencode` |
+| [pi](https://github.com/badlogic/pi-mono) | `~/.pi/agent/sessions/…` (JSONL) | `slink import --from pi` |
+| [Hermes](https://github.com/NousResearch/hermes-agent) | `~/.hermes/state.db` (SQLite) | `slink import --from hermes` |
+
+```bash
+# newest session in this repo, whichever agent produced it → a link
+slink import && slink push
+```
+
+Imports are marked **`fidelity: reconstructed`** — the transcript carries the messages, tool calls, models, and token usage, but not the raw wire request bodies (a capture from `slink dev` is `exact`). The SQLite-backed stores (opencode, Hermes) need Node ≥ 22.
+
+**pi, live.** The [`@session-link/pi-extension`](packages/pi-extension) adds a `/slink` command to pi — publish the session you're in without leaving the TUI, at **`exact`** fidelity: it records each turn from pi's in-process SDK hooks, assembled system prompt and verbatim provider request included.
 
 ## What a shared link gives you
 
