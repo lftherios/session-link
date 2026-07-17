@@ -3,46 +3,33 @@ import os from "node:os";
 import path from "node:path";
 import { newCapturePath, writeRun } from "./store.mjs";
 import { anthropicContent, anthropicUsage } from "./normalize.mjs";
+import { piProjectDir, piSessionToRun, looksLikePi } from "./import-pi.mjs";
+import { latestOpencode, loadOpencode } from "./import-opencode.mjs";
+import { latestHermes, loadHermes } from "./import-hermes.mjs";
+import { codexRolloutToRun, looksLikeCodex, latestCodex } from "./import-codex.mjs";
 
 /**
- * Retroactive importer: turn a coding-agent session transcript
- * (~/.claude/projects/<encoded-cwd>/<session>.jsonl) into a session/v0 capture
- * — works with zero prior setup, for the session you already had.
+ * Retroactive importers: turn a coding-agent session transcript into a
+ * session/v0 capture — works with zero prior setup, for the session you
+ * already had. One adapter per harness (Claude Code, pi, …); `slink import`
+ * auto-detects which store to read, or `--from <harness>` forces one.
  *
- * Reconstructed, not wire capture: the transcript has messages, tool
+ * Reconstructed, not wire capture: a transcript has messages, tool
  * calls/results, models, and usage, but not the assembled system prompt or
- * per-call request bodies — so the run is marked fidelity: "reconstructed"
- * and each llm_call's input holds only the messages new since the previous
- * call. Message content is Anthropic-shaped and reuses the proxy's
- * normalizers; sidechain (subagent) entries are skipped and counted.
+ * per-call request bodies — so runs are marked fidelity: "reconstructed".
  */
 
 const IMPORT_LABEL = "session-import@0.1.0";
 
-function projectDir(cwd) {
+/* ------------------------------------------------------ Claude Code adapter */
+
+function claudeProjectDir(cwd) {
   return path.join(
     os.homedir(),
     ".claude",
     "projects",
     cwd.replaceAll("/", "-").replaceAll(".", "-"),
   );
-}
-
-async function latestSession(dir) {
-  let files;
-  try {
-    files = await readdir(dir);
-  } catch {
-    return null;
-  }
-  let best = null;
-  for (const f of files) {
-    if (!f.endsWith(".jsonl")) continue;
-    const full = path.join(dir, f);
-    const s = await stat(full);
-    if (!best || s.mtimeMs > best.mtimeMs) best = { full, mtimeMs: s.mtimeMs };
-  }
-  return best?.full ?? null;
 }
 
 export function transcriptToRun(lines, sessionName) {
@@ -165,7 +152,7 @@ export function transcriptToRun(lines, sessionName) {
     schema: "session/v0",
     name,
     created_at: first.timestamp,
-    source: { kind: "import", label: IMPORT_LABEL, fidelity: "reconstructed" },
+    source: { kind: "import", harness: "claude-code", label: IMPORT_LABEL, fidelity: "reconstructed" },
     metadata: {
       session_id: first.sessionId,
       cwd: first.cwd,
@@ -176,37 +163,181 @@ export function transcriptToRun(lines, sessionName) {
   };
 }
 
-export async function importSession(flags) {
-  let session = flags.session;
-  if (!session) {
-    const dir = projectDir(process.cwd());
-    session = await latestSession(dir);
-    if (!session) {
-      console.error(`error: no sessions found in ${dir}`);
-      console.error("  pass one explicitly: slink import --session <file.jsonl>");
-      process.exit(1);
-    }
-  }
-  let text;
+/* ----------------------------------------------------------- the registry */
+
+/** Newest *.jsonl in dir, by mtime — or null if the dir is missing/empty. */
+async function newestSession(dir) {
+  let files;
   try {
-    text = await readFile(session, "utf8");
-  } catch (e) {
-    console.error(`error: cannot read ${session}${e?.code ? ` (${e.code})` : ""}`);
-    process.exit(1);
+    files = await readdir(dir);
+  } catch {
+    return null;
   }
-  const run = transcriptToRun(
-    text.split("\n").filter(Boolean),
-    path.basename(session, ".jsonl"),
-  );
-  if (!run) {
-    console.error(`error: no importable messages in ${session}`);
-    process.exit(1);
+  let best = null;
+  for (const f of files) {
+    if (!f.endsWith(".jsonl")) continue;
+    const full = path.join(dir, f);
+    const s = await stat(full);
+    if (!best || s.mtimeMs > best.mtimeMs) best = { file: full, mtimeMs: s.mtimeMs };
   }
+  return best;
+}
+
+async function parseFile(file, parse) {
+  const text = await readFile(file, "utf8");
+  return parse(text.split("\n").filter(Boolean), path.basename(file, ".jsonl"));
+}
+
+/**
+ * A harness that stores sessions as per-cwd JSONL files. Exposes a uniform
+ * interface (latest/fromFile) alongside the DB-backed importers below.
+ */
+function fileImporter({ name, projectDir, parse, detect }) {
+  return {
+    name,
+    detect,
+    parse,
+    latest: async (cwd) => {
+      const found = await newestSession(projectDir(cwd));
+      return found ? { recencyMs: found.mtimeMs, load: () => parseFile(found.file, parse) } : null;
+    },
+    fromFile: (file) => parseFile(file, parse),
+  };
+}
+
+const IMPORTERS = [
+  fileImporter({
+    name: "claude-code",
+    projectDir: claudeProjectDir,
+    parse: transcriptToRun,
+    // CC entries are top-level type user/assistant/summary; pi never is.
+    detect: (entries) => entries.some((e) => e?.type === "user" || e?.type === "assistant"),
+  }),
+  fileImporter({
+    name: "pi",
+    projectDir: piProjectDir,
+    parse: piSessionToRun,
+    detect: looksLikePi,
+  }),
+  {
+    // opencode stores sessions in one SQLite DB, not per-cwd files; --session
+    // takes a session id, and latest/fromExplicit read the DB directly.
+    name: "opencode",
+    db: true,
+    latest: latestOpencode,
+    fromExplicit: loadOpencode,
+  },
+  {
+    // hermes: same shape as opencode — one SQLite state.db, id-addressed.
+    name: "hermes",
+    db: true,
+    latest: latestHermes,
+    fromExplicit: loadHermes,
+  },
+  {
+    // codex writes JSONL rollouts in a date tree; parse handles a rollout
+    // file, latest scans the tree matching session_meta.cwd.
+    name: "codex",
+    parse: codexRolloutToRun,
+    detect: looksLikeCodex,
+    latest: latestCodex,
+  },
+];
+
+/** Parse the first few non-empty lines, for format sniffing. */
+function peek(text, n = 20) {
+  const out = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      out.push(JSON.parse(line));
+    } catch {
+      /* skip */
+    }
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
+function die(msg, ...more) {
+  console.error(`error: ${msg}`);
+  for (const m of more) console.error(m);
+  process.exit(1);
+}
+
+export async function importSession(flags) {
+  let importer = null;
+  if (flags.from) {
+    importer = IMPORTERS.find((i) => i.name === flags.from);
+    if (!importer)
+      die(
+        `unknown --from "${flags.from}"`,
+        `  known harnesses: ${IMPORTERS.map((i) => i.name).join(", ")}`,
+      );
+  }
+
+  let run;
+
+  if (flags.session) {
+    if (importer?.db) {
+      // opencode: --session is a session id, resolved against the DB.
+      try {
+        run = await importer.fromExplicit(flags.session);
+      } catch (e) {
+        die(e?.message ?? String(e));
+      }
+    } else {
+      // A transcript file: read it, then use the chosen or sniffed importer.
+      let text;
+      try {
+        text = await readFile(flags.session, "utf8");
+      } catch (e) {
+        die(`cannot read ${flags.session}${e?.code ? ` (${e.code})` : ""}`);
+      }
+      let fileImp = importer;
+      if (!fileImp) {
+        fileImp = IMPORTERS.find((i) => i.detect && i.detect(peek(text)));
+        if (!fileImp)
+          die(
+            `could not recognize the transcript format of ${flags.session}`,
+            `  force it: slink import --from ${IMPORTERS.map((i) => i.name).join("|")} <file>`,
+          );
+      }
+      if (!fileImp.parse)
+        die(`--from ${fileImp.name} reads no file — drop --session and it auto-locates the latest ${fileImp.name} session`);
+      run = fileImp.parse(text.split("\n").filter(Boolean), path.basename(flags.session, ".jsonl"));
+    }
+  } else {
+    // Auto-locate the most recent session for this cwd, across the chosen
+    // harness or all of them. Each importer's latest() is best-effort — a
+    // missing store (or no node:sqlite) just means that harness has nothing.
+    const cwd = process.cwd();
+    const candidates = importer ? [importer] : IMPORTERS;
+    let best = null;
+    for (const imp of candidates) {
+      let found = null;
+      try {
+        found = await imp.latest(cwd);
+      } catch {
+        found = null;
+      }
+      if (found && (!best || found.recencyMs > best.recencyMs)) best = found;
+    }
+    if (!best)
+      die(
+        `no ${importer ? `${importer.name} ` : ""}sessions found for ${cwd}`,
+        "  pass one explicitly: slink import --session <file.jsonl|id>, or --from <harness>",
+      );
+    run = await best.load();
+  }
+
+  if (!run) die("no importable messages");
   const file = newCapturePath(new Date(run.created_at));
   await writeRun(file, run);
   const calls = run.spans.filter((s) => s.type === "llm_call").length;
   console.error(
-    `imported "${run.name}" — ${calls} llm calls, ${run.spans.length} spans (reconstructed) → ${file}`,
+    `imported "${run.name}" from ${run.source.harness} — ${calls} llm calls, ${run.spans.length} spans (reconstructed) → ${file}`,
   );
   console.error("  preview: slink open   publish: slink push");
+  console.log(file); // stdout: the one pipeable line — the capture path
 }

@@ -47,9 +47,13 @@ usage
       Browse captures at 127.0.0.1 in the exact viewer the hosted site
       uses, and publish from the page you're looking at.
 
-  slink import [<file.jsonl>]
-      Convert a coding-agent session transcript (default: this project's
-      latest) into a local capture, marked fidelity: reconstructed.
+  slink import [<file.jsonl>] [--from claude-code|pi|opencode|hermes|codex] [--session <id>]
+      Convert a coding-agent session into a local capture, marked fidelity:
+      reconstructed. Default: this project's latest session, from whichever
+      supported harness (Claude Code, pi, opencode, hermes, Codex) wrote it
+      most recently. --from forces one harness; a bare <file.jsonl> (Claude
+      Code / pi / Codex rollout) is auto-detected; opencode/hermes read their
+      SQLite store (--session takes a session id).
 
   env: SLINK_UPSTREAM_ANTHROPIC / SLINK_UPSTREAM_OPENAI repoint the proxy
       at compatible upstreams (Ollama, OpenRouter, a mock in tests, ...).
@@ -72,7 +76,7 @@ const VALUE_FLAGS = {
   push: ["server", "key"],
   list: ["limit"],
   open: ["port"],
-  import: ["session"],
+  import: ["session", "from"],
   login: ["key", "server"],
 };
 
