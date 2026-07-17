@@ -69,7 +69,7 @@ usage
       supported harness (Claude Code, pi, opencode, hermes, Codex) wrote it
       most recently. --from forces one harness; a bare <file.jsonl> (Claude
       Code / pi / Codex rollout) is auto-detected; opencode/hermes read their
-      SQLite store (--session takes a session id).
+      SQLite store (--session takes a session id). Hermes is experimental.
 
   slink share [--from <harness>] [--session <id>] [--yes] [--server <url>]
       Import this project's latest coding-agent session and publish it in one

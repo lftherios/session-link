@@ -244,6 +244,11 @@ const IMPORTERS = [
   },
 ];
 
+// Harnesses whose importer ships but isn't yet guaranteed — format or mapping
+// still under-verified (hermes: tool_calls shape inferred, never dogfooded
+// against a live session). Using one prints a best-effort note.
+const EXPERIMENTAL = new Set(["hermes"]);
+
 /** Parse the first few non-empty lines, for format sniffing. */
 function peek(text, n = 20) {
   const out = [];
@@ -338,5 +343,7 @@ export async function importSession(flags) {
   console.error(
     `imported "${run.name}" from ${run.source.harness} — ${calls} llm calls, ${run.spans.length} spans (reconstructed) → ${file}`,
   );
+  if (EXPERIMENTAL.has(run.source?.harness))
+    console.error(`  note: ${run.source.harness} import is experimental — treat its output as best-effort`);
   return file;
 }
