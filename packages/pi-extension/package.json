@@ -1,0 +1,38 @@
+{
+  "name": "@session-link/pi-extension",
+  "version": "0.1.0",
+  "description": "Publish the pi session you're in to a permanent session.link URL, without leaving the TUI.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "session.link",
+    "llm",
+    "trace",
+    "agent",
+    "share"
+  ],
+  "homepage": "https://session.link",
+  "license": "MIT",
+  "files": [
+    "index.ts",
+    "capture.mjs",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "build": "echo 'nothing to build — pi loads index.ts directly'",
+    "check": "echo 'nothing to check'"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  }
+}
