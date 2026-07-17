@@ -8,6 +8,7 @@
  *   list   show recent captures
  */
 import { spawn } from "node:child_process";
+import { mkdirSync, openSync } from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { CAPTURE_DIR, listCaptures, readConfig, writeConfig } from "./store.mjs";
@@ -41,9 +42,10 @@ usage
       --install registers it as a login service (launchd/systemd) so capture
       survives reboots; --uninstall removes it.
 
-  slink on [--port <n>]   /   slink off
+  slink on [--port <n>] [--no-start]   /   slink off
       Route this shell's agents through the tap: \`eval "\$(slink on)"\` sets
-      ANTHROPIC_BASE_URL / OPENAI_BASE_URL; \`off\` prints the unset lines.
+      ANTHROPIC_BASE_URL / OPENAI_BASE_URL, starting the tap in the background
+      if it isn't already up (--no-start to skip). \`off\` prints the unsets.
 
   slink push [file] [--pick] [--yes] [--server <url>]
       Publish a captured session (default: the most recent). Validates, scans
@@ -353,12 +355,44 @@ async function tapReachable(port) {
   }
 }
 
-// `eval "$(slink on)"` — route this shell's agents through the tap. Only the
-// export lines go to stdout so eval stays clean; hints go to stderr.
+async function waitReachable(port, ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (await tapReachable(port)) return true;
+    await sleep(50);
+  }
+  return false;
+}
+
+const tapLogPath = () => path.join(path.dirname(CAPTURE_DIR), "tap.log");
+
+// Start the tap detached so it outlives this `slink on` invocation (and the
+// shell that ran it), logging to ~/.slink/tap.log.
+function startTapDaemon(port) {
+  const logPath = tapLogPath();
+  mkdirSync(path.dirname(logPath), { recursive: true });
+  const out = openSync(logPath, "a");
+  const child = spawn(process.execPath, [process.argv[1], "tap", "--port", String(port)], {
+    detached: true,
+    stdio: ["ignore", out, out],
+  });
+  child.unref();
+}
+
+// `eval "$(slink on)"` — route this shell's agents through the tap, starting
+// it in the background if it isn't already up. Only the export lines go to
+// stdout so eval stays clean; hints go to stderr.
 async function tapOn(args) {
   const port = Number(args.flags.port ?? 4141);
-  if (!(await tapReachable(port)))
-    console.error(dim(`# tap not running on :${port} — start it first with: slink tap`));
+  if (!(await tapReachable(port))) {
+    if (args.flags["no-start"]) {
+      console.error(dim(`# tap not running on :${port} — start it with: slink tap`));
+    } else {
+      startTapDaemon(port);
+      if (await waitReachable(port, 2500)) console.error(dim(`# started the tap on :${port}`));
+      else console.error(dim(`# tap didn't come up on :${port} — check ${tapLogPath()}`));
+    }
+  }
   console.log(`export ANTHROPIC_BASE_URL=http://127.0.0.1:${port}/anthropic`);
   console.log(`export OPENAI_BASE_URL=http://127.0.0.1:${port}/openai/v1`);
   console.error(dim("# capture is on for this shell — publish a session later with: slink share"));
