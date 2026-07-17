@@ -12,6 +12,7 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { CAPTURE_DIR, listCaptures, readConfig, writeConfig } from "./store.mjs";
 import { dev, serve } from "./proxy.mjs";
+import { installService, uninstallService } from "./service.mjs";
 import { inspectRunFile, resolveTarget, uploadRun } from "./publish.mjs";
 // Static (not dynamic import): the CLI bundles to one file for npm/binary
 // distribution, and a single output can't carry lazy import() chunks.
@@ -32,11 +33,13 @@ usage
       exits; without one, runs until Ctrl-C and prints the env to export.
       Captures land in ${CAPTURE_DIR} — nothing leaves the machine.
 
-  slink tap [--port <n>] [--idle <minutes>]
+  slink tap [--port <n>] [--idle <minutes>] [--install | --uninstall]
       Run the always-on recorder: a persistent proxy that segments every
       session flowing through it — by idle gap, or exactly by the
       x-slink-session header a client sends — into its own local capture.
       Leave it running; publish any session later with \`slink share\`.
+      --install registers it as a login service (launchd/systemd) so capture
+      survives reboots; --uninstall removes it.
 
   slink on [--port <n>]   /   slink off
       Route this shell's agents through the tap: \`eval "\$(slink on)"\` sets
@@ -381,6 +384,18 @@ switch (command) {
     });
     break;
   case "tap":
+    if (args.flags.install || args.flags.uninstall) {
+      const r = args.flags.uninstall
+        ? await uninstallService()
+        : await installService({ port: args.flags.port ? Number(args.flags.port) : undefined });
+      if (!r.ok) die(r.error ?? "service change failed");
+      console.error(
+        args.flags.uninstall
+          ? `${green("✓")} tap login service removed${r.path ? `  ${dim(r.path)}` : ""}`
+          : `${green("✓")} tap installed as a login service — it captures on every login\n  ${dim(r.path)}`,
+      );
+      break;
+    }
     await serve({
       port: args.flags.port ? Number(args.flags.port) : undefined,
       idleMs: args.flags.idle ? Number(args.flags.idle) * 60_000 : undefined,
