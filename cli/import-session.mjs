@@ -338,6 +338,5 @@ export async function importSession(flags) {
   console.error(
     `imported "${run.name}" from ${run.source.harness} — ${calls} llm calls, ${run.spans.length} spans (reconstructed) → ${file}`,
   );
-  console.error("  preview: slink open   publish: slink push");
-  console.log(file); // stdout: the one pipeable line — the capture path
+  return file;
 }

@@ -37,6 +37,9 @@ to your clipboard).
   publish. Links are unlisted by default.
 - **Attribution.** Run `slink login` (GitHub) once so published sessions are
   attributed to you; otherwise they're anonymous.
+- **Auto-publish (opt-in).** Set `SLINK_AUTOPUBLISH=1` and each session
+  publishes itself when it ends — the trace link appears without your typing
+  `/slink`. Off by default; capture is always local until then.
 - **Self-hosting / config.** `SLINK_SERVER` targets a different server;
   `SLINK_BIN` overrides how the CLI is invoked (e.g. `SLINK_BIN="npx --yes session.link"`).
 - **Fidelity.** Sessions captured live run at **`exact`** fidelity: the

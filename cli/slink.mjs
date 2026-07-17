@@ -55,6 +55,11 @@ usage
       Code / pi / Codex rollout) is auto-detected; opencode/hermes read their
       SQLite store (--session takes a session id).
 
+  slink share [--from <harness>] [--session <id>] [--yes] [--server <url>]
+      Import this project's latest coding-agent session and publish it in one
+      step — the shortcut for \`slink import && slink push\`. Same secret scan
+      and confirmation as push; prints the shareable URL.
+
   env: SLINK_UPSTREAM_ANTHROPIC / SLINK_UPSTREAM_OPENAI repoint the proxy
       at compatible upstreams (Ollama, OpenRouter, a mock in tests, ...).
 
@@ -74,6 +79,7 @@ function die(msg) {
 const VALUE_FLAGS = {
   dev: ["port", "name"],
   push: ["server", "key"],
+  share: ["server", "key", "session", "from"],
   list: ["limit"],
   open: ["port"],
   import: ["session", "from"],
@@ -348,14 +354,23 @@ switch (command) {
   case "open":
     await open(args.flags);
     break;
-  case "import":
-    await importSession({ ...args.flags, session: args.flags.session ?? args._[0] });
+  case "import": {
+    const file = await importSession({ ...args.flags, session: args.flags.session ?? args._[0] });
+    console.error("  preview: slink open   publish: slink push");
+    console.log(file); // stdout: the one pipeable line — the capture path
     break;
+  }
+  case "share": {
+    // Import the latest coding-agent session, then publish it — one step.
+    const file = await importSession({ ...args.flags, session: args.flags.session ?? args._[0] });
+    await push({ flags: args.flags, _: [file] });
+    break;
+  }
   case undefined:
   case "help":
   case "--help":
     console.error(HELP);
     break;
   default:
-    die(`unknown command "${command}" — try: dev, push, list, open, import, login`);
+    die(`unknown command "${command}" — try: dev, push, share, list, open, import, login`);
 }

@@ -51,7 +51,7 @@ Didn't wrap it in `slink dev`? Import it after the fact. `slink import` reconstr
 
 ```bash
 # newest session in this repo, whichever agent produced it → a link
-slink import && slink push
+slink share
 ```
 
 Imports are marked **`fidelity: reconstructed`** — the transcript carries the messages, tool calls, models, and token usage, but not the raw wire request bodies (a capture from `slink dev` is `exact`). The SQLite-backed stores (opencode, Hermes) need Node ≥ 22.

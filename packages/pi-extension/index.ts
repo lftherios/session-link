@@ -167,12 +167,20 @@ export default function (pi: ExtensionAPI): void {
     }),
   );
 
-  pi.on("session_shutdown", (_e: SessionShutdownEvent) =>
-    guard(() => {
+  pi.on("session_shutdown", async (e: SessionShutdownEvent, ctx: ExtensionContext): Promise<void> => {
+    try {
       capture?.finalize(nowIso());
       flush();
-    }),
-  );
+      // Opt-in (SLINK_AUTOPUBLISH): when the session actually ends, hand back
+      // a link — the semi-auto "the agent published its own trace" flow. Only
+      // on a real quit, and only if something was captured.
+      if (process.env.SLINK_AUTOPUBLISH && e.reason === "quit" && capture && capture.llmCalls > 0 && captureFile) {
+        report(ctx, await slink(["push", "--yes", captureFile]));
+      }
+    } catch {
+      /* capture + auto-publish are both best-effort */
+    }
+  });
 
   pi.registerCommand("slink", {
     description: "Publish the current pi session to a session.link URL",
@@ -185,29 +193,15 @@ export default function (pi: ExtensionAPI): void {
         return;
       }
 
-      // Fallback: no live turns yet (e.g. resumed session) — import from disk.
+      // Fallback: no live turns yet (e.g. a resumed session) — import from
+      // disk and publish in one step via `slink share`.
       const sessionFile = ctx.sessionManager.getSessionFile();
       if (!sessionFile) {
         ctx.ui.notify("session.link: no session to publish yet", "error");
         return;
       }
       ctx.ui.notify("session.link: capturing this session…", "info");
-      const imported = await slink(["import", "--from", "pi", "--session", sessionFile]);
-      if (imported.missing) {
-        ctx.ui.notify("session.link: `slink` not found — install it with `npm i -g session.link`", "error");
-        return;
-      }
-      if (imported.code !== 0) {
-        ctx.ui.notify(`session.link: capture failed — ${lastLine(imported.stderr)}`, "error");
-        return;
-      }
-      const capturePath = lastLine(imported.stdout);
-      if (!capturePath) {
-        ctx.ui.notify("session.link: capture produced no file", "error");
-        return;
-      }
-      ctx.ui.notify("session.link: publishing…", "info");
-      report(ctx, await slink(["push", "--yes", capturePath]));
+      report(ctx, await slink(["share", "--from", "pi", "--session", sessionFile, "--yes"]));
     },
   });
 }
