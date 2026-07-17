@@ -14,6 +14,7 @@ import readline from "node:readline/promises";
 import { CAPTURE_DIR, listCaptures, readConfig, writeConfig } from "./store.mjs";
 import { dev, serve } from "./proxy.mjs";
 import { installService, uninstallService } from "./service.mjs";
+import { pruneCommand } from "./prune.mjs";
 import { inspectRunFile, resolveTarget, uploadRun } from "./publish.mjs";
 // Static (not dynamic import): the CLI bundles to one file for npm/binary
 // distribution, and a single output can't carry lazy import() chunks.
@@ -75,6 +76,12 @@ usage
       step — the shortcut for \`slink import && slink push\`. Same secret scan
       and confirmation as push; prints the shareable URL.
 
+  slink prune [--older-than <days>] [--keep <n>] [--empty] [--dry-run] [--yes]
+      Trim the local capture buffer (${CAPTURE_DIR}) — the tap records
+      ambiently, so this keeps it from growing without bound. Defaults to
+      dropping captures older than 30 days; published copies are safe on the
+      server. The tap also sweeps on startup (SLINK_RETAIN_DAYS, default 30).
+
   env: SLINK_UPSTREAM_ANTHROPIC / SLINK_UPSTREAM_OPENAI repoint the proxy
       at compatible upstreams (Ollama, OpenRouter, a mock in tests, ...).
 
@@ -97,6 +104,7 @@ const VALUE_FLAGS = {
   on: ["port"],
   push: ["server", "key"],
   share: ["server", "key", "session", "from"],
+  prune: ["older-than", "keep"],
   list: ["limit"],
   open: ["port"],
   import: ["session", "from"],
@@ -465,11 +473,14 @@ switch (command) {
     await push({ flags: args.flags, _: [file] });
     break;
   }
+  case "prune":
+    await pruneCommand(args.flags);
+    break;
   case undefined:
   case "help":
   case "--help":
     console.error(HELP);
     break;
   default:
-    die(`unknown command "${command}" — try: dev, tap, on, push, share, list, open, import, login`);
+    die(`unknown command "${command}" — try: dev, tap, on, push, share, prune, list, open, import, login`);
 }

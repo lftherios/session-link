@@ -9,6 +9,7 @@ import {
   parseSseText,
 } from "./normalize.mjs";
 import { SessionRouter, sessionKeyFrom, labelFrom } from "./tap.mjs";
+import { autoPrune } from "./prune.mjs";
 
 /**
  * The recording proxy behind `slink dev`. Forwards /anthropic/* and
@@ -435,6 +436,11 @@ export async function serve({ port = 4141, idleMs } = {}) {
     OPENAI_BASE_URL: `http://127.0.0.1:${p}/openai/v1`,
   };
   log(`session.link tap · http://127.0.0.1:${p} · capturing to ${dim(CAPTURE_DIR)}`);
+
+  // Rolling buffer: sweep old/empty captures on start so ambient recording
+  // doesn't grow ~/.slink without bound (SLINK_RETAIN_DAYS, default 30).
+  const pruned = await autoPrune();
+  if (pruned) log(dim(`pruned ${pruned} old capture${pruned === 1 ? "" : "s"}`));
 
   // Finalize quiet sessions without waiting for the next call to arrive.
   const timer = setInterval(() => router.sweep(), Math.min(router.idleMs, 60_000));
