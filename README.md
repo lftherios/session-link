@@ -43,11 +43,11 @@ Didn't wrap it in `slink dev`? Import it after the fact. `slink import` reconstr
 
 | Agent | Where its sessions live | Import |
 | --- | --- | --- |
-| [Claude Code](https://claude.com/claude-code) | `~/.claude/projects/…` (JSONL) | `slink import --from claude-code` |
-| [Codex](https://github.com/openai/codex) | `~/.codex/sessions/**/rollout-*.jsonl` | `slink import --from codex` |
-| [opencode](https://opencode.ai) | `~/.local/share/opencode/opencode.db` (SQLite) | `slink import --from opencode` |
-| [pi](https://github.com/badlogic/pi-mono) | `~/.pi/agent/sessions/…` (JSONL) | `slink import --from pi` |
-| [Hermes](https://github.com/NousResearch/hermes-agent) | `~/.hermes/state.db` (SQLite) | `slink import --from hermes` |
+| <img src="assets/logos/claude-code.png" height="16" align="center"> &nbsp;[Claude Code](https://claude.com/claude-code) | `~/.claude/projects/…` (JSONL) | `slink import --from claude-code` |
+| <img src="assets/logos/codex.png" height="16" align="center"> &nbsp;[Codex](https://github.com/openai/codex) | `~/.codex/sessions/**/rollout-*.jsonl` | `slink import --from codex` |
+| <img src="assets/logos/opencode.svg" height="16" align="center"> &nbsp;[opencode](https://opencode.ai) | `~/.local/share/opencode/opencode.db` (SQLite) | `slink import --from opencode` |
+| <img src="assets/logos/pi.svg" height="16" align="center"> &nbsp;[pi](https://github.com/badlogic/pi-mono) | `~/.pi/agent/sessions/…` (JSONL) | `slink import --from pi` |
+| <img src="assets/logos/hermes.png" height="16" align="center"> &nbsp;[Hermes](https://github.com/NousResearch/hermes-agent) | `~/.hermes/state.db` (SQLite) | `slink import --from hermes` |
 
 ```bash
 # newest session in this repo, whichever agent produced it → a link
