@@ -11,7 +11,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { CAPTURE_DIR, listCaptures, readConfig, writeConfig } from "./store.mjs";
-import { dev } from "./proxy.mjs";
+import { dev, serve } from "./proxy.mjs";
 import { inspectRunFile, resolveTarget, uploadRun } from "./publish.mjs";
 // Static (not dynamic import): the CLI bundles to one file for npm/binary
 // distribution, and a single output can't carry lazy import() chunks.
@@ -31,6 +31,16 @@ usage
       ANTHROPIC_BASE_URL / OPENAI_BASE_URL) and finishes the session when it
       exits; without one, runs until Ctrl-C and prints the env to export.
       Captures land in ${CAPTURE_DIR} — nothing leaves the machine.
+
+  slink tap [--port <n>] [--idle <minutes>]
+      Run the always-on recorder: a persistent proxy that segments every
+      session flowing through it — by idle gap, or exactly by the
+      x-slink-session header a client sends — into its own local capture.
+      Leave it running; publish any session later with \`slink share\`.
+
+  slink on [--port <n>]   /   slink off
+      Route this shell's agents through the tap: \`eval "\$(slink on)"\` sets
+      ANTHROPIC_BASE_URL / OPENAI_BASE_URL; \`off\` prints the unset lines.
 
   slink push [file] [--pick] [--yes] [--server <url>]
       Publish a captured session (default: the most recent). Validates, scans
@@ -78,6 +88,8 @@ function die(msg) {
 // push's file argument).
 const VALUE_FLAGS = {
   dev: ["port", "name"],
+  tap: ["port", "idle"],
+  on: ["port"],
   push: ["server", "key"],
   share: ["server", "key", "session", "from"],
   list: ["limit"],
@@ -329,6 +341,32 @@ async function login(args) {
   );
 }
 
+async function tapReachable(port) {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(800) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// `eval "$(slink on)"` — route this shell's agents through the tap. Only the
+// export lines go to stdout so eval stays clean; hints go to stderr.
+async function tapOn(args) {
+  const port = Number(args.flags.port ?? 4141);
+  if (!(await tapReachable(port)))
+    console.error(dim(`# tap not running on :${port} — start it first with: slink tap`));
+  console.log(`export ANTHROPIC_BASE_URL=http://127.0.0.1:${port}/anthropic`);
+  console.log(`export OPENAI_BASE_URL=http://127.0.0.1:${port}/openai/v1`);
+  console.error(dim("# capture is on for this shell — publish a session later with: slink share"));
+}
+
+function tapOff() {
+  console.log("unset ANTHROPIC_BASE_URL");
+  console.log("unset OPENAI_BASE_URL");
+  console.error(dim("# capture off for this shell"));
+}
+
 /* ------------------------------------------------------------------ main */
 
 const args = parseArgs(process.argv.slice(2));
@@ -341,6 +379,18 @@ switch (command) {
       name: args.flags.name,
       cmd: args.cmd,
     });
+    break;
+  case "tap":
+    await serve({
+      port: args.flags.port ? Number(args.flags.port) : undefined,
+      idleMs: args.flags.idle ? Number(args.flags.idle) * 60_000 : undefined,
+    });
+    break;
+  case "on":
+    await tapOn(args);
+    break;
+  case "off":
+    tapOff();
     break;
   case "push":
     await push(args);
@@ -372,5 +422,5 @@ switch (command) {
     console.error(HELP);
     break;
   default:
-    die(`unknown command "${command}" — try: dev, push, share, list, open, import, login`);
+    die(`unknown command "${command}" — try: dev, tap, on, push, share, list, open, import, login`);
 }

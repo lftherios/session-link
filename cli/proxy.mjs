@@ -1,6 +1,6 @@
 import http from "node:http";
 import { spawn } from "node:child_process";
-import { newCapturePath, writeRun } from "./store.mjs";
+import { CAPTURE_DIR, newCapturePath, writeRun } from "./store.mjs";
 import {
   assembleAnthropicSse,
   assembleOpenaiChatSse,
@@ -8,6 +8,7 @@ import {
   buildLlmSpan,
   parseSseText,
 } from "./normalize.mjs";
+import { SessionRouter, sessionKeyFrom, labelFrom } from "./tap.mjs";
 
 /**
  * The recording proxy behind `slink dev`. Forwards /anthropic/* and
@@ -37,6 +38,9 @@ const REQ_DROP = new Set([
   "te",
   "trailer",
   "proxy-authorization",
+  // slink-internal routing hints — used to key sessions, never sent upstream.
+  "x-slink-session",
+  "x-slink-label",
 ]);
 const RES_DROP = new Set([
   "content-encoding",
@@ -173,12 +177,38 @@ async function recordCall(session, kind, reqBuf, resText, isSse, started, ended,
   logSpan(span, ended - started);
 }
 
-async function handle(session, req, res) {
+function safeJson(buf) {
+  try {
+    return JSON.parse(buf.toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/** Name a fresh session from its first call: the user's opening text, else the model. */
+function deriveName(request) {
+  if (!request) return undefined;
+  const messages = Array.isArray(request.messages) ? request.messages : [];
+  const firstUser = messages.find((m) => m?.role === "user");
+  let text = "";
+  const content = firstUser?.content;
+  if (typeof content === "string") text = content;
+  else if (Array.isArray(content))
+    text = content.map((p) => (typeof p?.text === "string" ? p.text : "")).join(" ");
+  text = text.trim();
+  if (text) return text.length > 60 ? `${text.slice(0, 57)}…` : text;
+  return request.model ? String(request.model) : undefined;
+}
+
+/**
+ * The shared request handler. `sink` decides which session a recordable call
+ * belongs to: one fixed session under `dev`, or header/idle-routed under the
+ * always-on tap (`serve`).
+ */
+async function handle(sink, req, res) {
   if (req.url === "/" && req.method === "GET") {
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(
-      JSON.stringify({ service: "session.link proxy", recording: session.file, calls: session.seq }),
-    );
+    res.end(JSON.stringify({ service: "session.link", ...sink.status() }));
     return;
   }
   const m = (req.url ?? "").match(/^\/(anthropic|openai)(\/.*)$/);
@@ -198,6 +228,14 @@ async function handle(session, req, res) {
   for await (const c of req) reqChunks.push(c);
   const reqBuf = Buffer.concat(reqChunks);
 
+  // Resolve the session for a recordable call up front — the tap keys it by
+  // the x-slink-session header (or idle-segmented ambient), dev ignores it.
+  let session = null;
+  if (kind) {
+    const request = safeJson(reqBuf);
+    session = sink.resolve(sessionKeyFrom(req.headers), labelFrom(req.headers) ?? deriveName(request));
+  }
+
   const headers = {};
   for (const [k, v] of Object.entries(req.headers)) {
     if (!REQ_DROP.has(k.toLowerCase()) && v !== undefined) headers[k] = v;
@@ -215,7 +253,7 @@ async function handle(session, req, res) {
     const message = `upstream unreachable: ${e?.message ?? e}`;
     res.writeHead(502, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: { code: "upstream_unreachable", message } }));
-    if (kind) await recordCall(session, kind, reqBuf, null, false, started, new Date(), 502, message);
+    if (session) await recordCall(session, kind, reqBuf, null, false, started, new Date(), 502, message);
     return;
   }
 
@@ -242,7 +280,7 @@ async function handle(session, req, res) {
   }
   res.end();
 
-  if (!kind) return;
+  if (!session) return;
   const resText = Buffer.concat(resChunks).toString("utf8");
   await recordCall(session, kind, reqBuf, resText, isSse, started, new Date(), upstream.status, null, overflow);
 }
@@ -250,13 +288,18 @@ async function handle(session, req, res) {
 export async function dev({ port, name, cmd }) {
   const runName = name ?? (cmd?.length ? cmd.join(" ") : "proxy session");
   const session = newSession(runName, cmd?.length ? cmd.join(" ") : undefined);
+  // dev is one session for the whole invocation — the sink ignores the key.
+  const sink = {
+    resolve: () => session,
+    status: () => ({ recording: session.file, calls: session.seq }),
+  };
 
   // finish() must wait these out: the client gets its response before the
   // capture is flushed, so a wrapped command can exit while recording of
   // its last call is still in flight.
   const inflight = new Set();
   const server = http.createServer((req, res) => {
-    const p = handle(session, req, res).catch((e) => {
+    const p = handle(sink, req, res).catch((e) => {
       // Only answer if the response is still answerable — a failure AFTER
       // the response ended is a capture problem, already warned by flush().
       if (res.writableEnded) return;
@@ -331,4 +374,83 @@ export async function dev({ port, name, cmd }) {
     log("");
     await finish();
   }
+}
+
+/** Close out a session the tap has segmented: stamp the root, drop the in-progress flag, flush. */
+async function finalizeSession(session) {
+  if (session.seq === 0) return; // never recorded anything — nothing to save
+  const root = session.run.spans[0];
+  root.ended_at = new Date().toISOString();
+  root.status = "ok";
+  delete session.run.metadata.in_progress;
+  try {
+    await flush(session);
+  } catch (e) {
+    log(red(`failed to save capture: ${e?.message ?? e}`));
+    return;
+  }
+  log(`${green("●")} session ended · ${session.seq} call${session.seq === 1 ? "" : "s"} → ${dim(session.file)}`);
+}
+
+/**
+ * The always-on tap: a long-running recorder on a stable port. Every provider
+ * call flowing through it is grouped into a session (by the x-slink-session
+ * header, or idle-segmented ambient) and written to a local capture — nothing
+ * is published. Point your agents' ANTHROPIC_BASE_URL / OPENAI_BASE_URL here
+ * and capture becomes a background fact.
+ */
+export async function serve({ port = 4141, idleMs } = {}) {
+  const inflight = new Set();
+  const track = (p) => {
+    inflight.add(p);
+    p.finally(() => inflight.delete(p));
+    return p;
+  };
+  const router = new SessionRouter({
+    ...(idleMs ? { idleMs } : {}),
+    newSession: (name) => newSession(name ?? "ambient session"),
+    onFinalize: (session) => track(finalizeSession(session)),
+  });
+  const sink = {
+    resolve: (key, name) => router.route(key, name),
+    status: () => ({ sessions: router.size }),
+  };
+
+  const server = http.createServer((req, res) => {
+    track(
+      handle(sink, req, res).catch((e) => {
+        if (res.writableEnded) return;
+        if (!res.headersSent) res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: { code: "proxy_error", message: String(e?.message ?? e) } }));
+      }),
+    );
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  });
+  const p = server.address().port;
+  const env = {
+    ANTHROPIC_BASE_URL: `http://127.0.0.1:${p}/anthropic`,
+    OPENAI_BASE_URL: `http://127.0.0.1:${p}/openai/v1`,
+  };
+  log(`session.link tap · http://127.0.0.1:${p} · capturing to ${dim(CAPTURE_DIR)}`);
+
+  // Finalize quiet sessions without waiting for the next call to arrive.
+  const timer = setInterval(() => router.sweep(), Math.min(router.idleMs, 60_000));
+  timer.unref?.();
+
+  for (const [k, v] of Object.entries(env)) log(`export ${k}=${v}`);
+  log(dim("Ctrl-C to stop"));
+
+  await new Promise((resolve) => process.once("SIGINT", resolve));
+  log("");
+  clearInterval(timer);
+  server.close();
+  server.closeAllConnections?.();
+  router.finalizeAll(); // rolls every open session through onFinalize
+  await Promise.race([
+    Promise.allSettled([...inflight]).then(() => true),
+    new Promise((r) => setTimeout(r, 5000, false).unref?.()),
+  ]);
 }

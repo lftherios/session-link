@@ -35,6 +35,8 @@ That's it — no code changes, no SDK, no account required to capture. `dev` poi
 
 Node agent instead? `slink dev -- node agent.js`. Already ran it — in Claude Code, Codex, opencode, pi, or Hermes? `slink import` reconstructs the session from your agent's own history ([see below](#works-with-the-agent-you-already-use)). Want to review before sharing? `slink open` browses your captures locally in the exact viewer the hosted site renders, with a Publish button on the page.
 
+**Always on?** Instead of wrapping each run, leave `slink tap` running — a persistent recorder that segments every session flowing through it into its own capture. `eval "$(slink on)"` routes this shell's agents at it, so capture becomes a background fact; publish any session later with `slink share`.
+
 > Install today is npm (`npx session.link`, or `npm i -g session.link` for a global `slink`). Standalone `brew` / `curl | sh` binaries are coming soon.
 
 ## Works with the agent you already use
