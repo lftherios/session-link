@@ -1,6 +1,6 @@
 {
   "name": "session.link",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Capture LLM sessions locally, publish the ones worth sharing. The slink CLI for session.link.",
   "keywords": [
     "llm",
