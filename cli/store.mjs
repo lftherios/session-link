@@ -89,6 +89,18 @@ const BOOT_TOLERANCE_MS = 15_000;
 // even when the boot token is wrong (wall-clock steps in VMs, NTP jumps).
 const SIDECAR_FRESH_MS = 3 * 60 * 1000;
 
+/** Thrown (finalize mode only) when a commit ABORTS to protect data — the
+ *  spool grew under us, or the lock was lost. Distinct from returning null
+ *  ("nothing there / nothing salvageable"): recovery callers must retry
+ *  later, never rename the spool aside as corrupt — that misreading once
+ *  destroyed the very spans the abort existed to preserve. */
+export class CaptureCommitRetry extends Error {
+  constructor(why) {
+    super(`capture commit aborted: ${why} — will retry on a later pass`);
+    this.name = "CaptureCommitRetry";
+  }
+}
+
 /** Atomic — a torn sidecar read once judged a live owner dead. Exported so
  *  recorders can heartbeat it on a timer. */
 export async function touchOwnerSidecar(file) {
@@ -199,10 +211,16 @@ async function withCommitLock(file, fn, { waitMs = 2500, onTimeout = "null" } = 
  * into one droppable line instead of merging with the next span. A pid
  * sidecar marks the spool as owned by a live recorder.
  */
-export async function appendSpool(file, spans, skeleton) {
+export async function appendSpool(file, spans, skeleton, isClosed) {
   await mkdir(path.dirname(file), { recursive: true });
   const spool = spoolPath(file);
   const size = await stat(spool).then((s) => s.size, () => 0);
+  // The last gate before bytes land: a write wedged in the fs calls above
+  // can resume AFTER the session finalized — checked here, µs from the
+  // append, instead of only at chain-execution time. (If appendFile itself
+  // races the finalize, the recreated spool has no skeleton and assembly's
+  // schema gate refuses it — the capture survives; only this span is lost.)
+  if (isClosed?.()) return;
   // Every append doubles as a heartbeat — freshness is the primary
   // liveness signal (see spoolOwnerAlive).
   await touchOwnerSidecar(file);
@@ -312,7 +330,10 @@ export async function assembleSpool(file, { finalize = false, endedAt } = {}) {
   }
   // The commit — serialized across processes: a finalizer and a snapshot
   // must never interleave their [re-check → rename → cleanup] sections.
-  if (streamErr) throw streamErr;
+  if (streamErr) {
+    await rm(tmp, { force: true }); // a late stream error must not strand the tmp
+    throw streamErr;
+  }
   return withCommitLock(
     file,
     async (stillHeld) => {
@@ -338,11 +359,16 @@ export async function assembleSpool(file, { finalize = false, endedAt } = {}) {
       }
       // Finalize: if the spool GREW since our read pass — a recorder we
       // misjudged as dead, or appends racing a shutdown — destroying it
-      // would delete the newer spans. Leave everything for the next pass.
+      // would delete the newer spans. Abort loudly (CaptureCommitRetry, not
+      // null): everything stays on disk for the next pass.
       const nowSize = await stat(spool).then((s) => s.size, () => null);
-      if (nowSize !== spoolSizeAtStart || !(await stillHeld())) {
+      if (nowSize !== spoolSizeAtStart) {
         await rm(tmp, { force: true });
-        return null;
+        throw new CaptureCommitRetry("spool changed during assembly");
+      }
+      if (!(await stillHeld())) {
+        await rm(tmp, { force: true });
+        throw new CaptureCommitRetry("commit lock was broken");
       }
       await rename(tmp, file);
       await rm(spool, { force: true });
@@ -429,17 +455,24 @@ export async function listCaptures() {
     }
   }
 
-  // Orphan sidecars and locks: a crash between sidecar-write and first
-  // append leaves a .pid with no spool; a crash holding a commit lock on a
-  // path no future commit touches leaves a .lock. Old ones are noise.
+  // Orphan sidecars, locks, and lock graves: crashes at various points
+  // leave each behind. Locks are removed via the same atomic rename-first
+  // break as withCommitLock — a bare stat-then-rm could delete a
+  // successor's fresh lock acquired in the gap.
   for (const f of files) {
     const orphanPid = f.endsWith(".json.spool.pid") && !files.includes(f.slice(0, -".pid".length));
     const orphanLock = f.endsWith(".json.lock");
-    if (!orphanPid && !orphanLock) continue;
-    const horizon = orphanLock ? 10 * 60_000 : 3_600_000;
+    const orphanGrave = f.endsWith(".stale");
+    if (!orphanPid && !orphanLock && !orphanGrave) continue;
+    const horizon = orphanPid ? 3_600_000 : 10 * 60_000;
     const full = path.join(CAPTURE_DIR, f);
     stat(full)
-      .then((s) => (Date.now() - s.mtimeMs > horizon ? rm(full, { force: true }) : null))
+      .then((s) => {
+        if (Date.now() - s.mtimeMs <= horizon) return null;
+        if (!orphanLock) return rm(full, { force: true });
+        const grave = `${full}.${process.pid}.sweep.stale`;
+        return rename(full, grave).then(() => rm(grave, { force: true }), () => {});
+      })
       .catch(() => {});
   }
 

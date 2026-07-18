@@ -119,3 +119,37 @@ test("snapshot stamps the json with the spool's mtime so the freshness gate stay
 test.after(async () => {
   await rm(home, { recursive: true, force: true });
 });
+
+test("appendSpool's last-instant closed gate drops the write, not the capture", async () => {
+  const f = cap("20260718-100007-hhhhhh");
+  const { appendSpool: ap, assembleSpool: asm } = await import("../cli/store.mjs");
+  await ap(f, [span(1)], skeleton(), () => false);
+  await ap(f, [span(2)], skeleton(), () => true); // closed mid-flight — skipped
+  assert.equal(await asm(f, { finalize: true, endedAt: "2026-07-18T11:00:00.000Z" }), 1);
+  const got = JSON.parse(await readFile(f, "utf8"));
+  assert.deepEqual(got.spans.map((s) => s.id), ["root", "s1"]);
+});
+
+test("finalize aborts with CaptureCommitRetry when the spool grows mid-assembly — nothing renamed aside", async () => {
+  const f = cap("20260718-100008-jjjjjj");
+  const { appendSpool: ap, assembleSpool: asm, spoolPath: sp } = await import("../cli/store.mjs");
+  // A big first span so the streaming read pass has time; grow the spool
+  // while assembly runs.
+  const fat = span(1);
+  fat.input.messages = [{ role: "user", content: [{ type: "text", text: "x".repeat(2_000_000) }] }];
+  await ap(f, [fat], skeleton());
+  const race = asm(f, { finalize: true, endedAt: "2026-07-18T11:00:00.000Z" });
+  await ap(f, [span(2)], skeleton());
+  const outcome = await race.then(
+    (n) => ({ n }),
+    (e) => ({ err: e.name }),
+  );
+  if (outcome.err) {
+    assert.equal(outcome.err, "CaptureCommitRetry");
+    await readFile(sp(f)); // spool untouched — retry material, not corrupt
+  } else {
+    // Timing let assembly commit before the growth landed — then the second
+    // append recreated the spool, which must itself remain assemblable.
+    assert.equal(outcome.n, 1);
+  }
+});

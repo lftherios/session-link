@@ -116,7 +116,7 @@ function flush(session, spans) {
       // finalize consumed the spool — recreating it with only tail spans,
       // which recovery would then rename over the completed capture.
       if (session.closed) return;
-      return appendSpool(session.file, spans, session.skeleton);
+      return appendSpool(session.file, spans, session.skeleton, () => session.closed);
     })
     .catch((e) => {
       // A failing capture disk must not be silent: warn once, keep proxying.
@@ -312,13 +312,16 @@ async function handle(sink, req, res) {
   let captured = 0;
   let overflow = false;
   let aborted = false;
+  // One listener for the response's lifetime — a once() per backpressured
+  // chunk accumulated losing "close" listeners on long slow streams.
+  const resClosed = once(res, "close").catch(() => {});
   try {
     if (upstream.body) {
       for await (const chunk of upstream.body) {
         if (!res.destroyed && !res.write(chunk)) {
           // Backpressure: a slow client must not buffer the whole response
           // in the ServerResponse; a closed one resolves via "close".
-          await Promise.race([once(res, "drain"), once(res, "close")]).catch(() => {});
+          await Promise.race([once(res, "drain").catch(() => {}), resClosed]);
         }
         if (captured < CAPTURE_CAP) {
           resChunks.push(Buffer.from(chunk));
@@ -428,6 +431,10 @@ export async function dev({ port, name, cmd }) {
         endedAt: session.lastEndedAt ?? new Date().toISOString(),
       });
     } catch (e) {
+      if (e?.name === "CaptureCommitRetry") {
+        log(dim(`${e.message}`));
+        return;
+      }
       // One clean line, and never clobber the child's own exit code.
       log(red(`failed to save capture: ${e?.message ?? e}`));
       process.exitCode ||= 1;
@@ -487,6 +494,10 @@ async function finalizeSession(session) {
       endedAt: session.lastEndedAt ?? new Date().toISOString(),
     });
   } catch (e) {
+    if (e?.name === "CaptureCommitRetry") {
+      log(dim(`${e.message}`));
+      return;
+    }
     log(red(`failed to save capture: ${e?.message ?? e}`));
     return;
   }
