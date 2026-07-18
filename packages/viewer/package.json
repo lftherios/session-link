@@ -1,6 +1,6 @@
 {
   "name": "@session-link/viewer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "The session.link viewer — renders a session/v0 document as an interactive trace tree. React component; consume with a bundler that transpiles the package (e.g. Next transpilePackages).",
   "homepage": "https://session.link",
   "license": "MIT",

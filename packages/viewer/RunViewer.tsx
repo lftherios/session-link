@@ -711,7 +711,9 @@ function TreeRow({
     <div
       id={`rv-row-${span.id}`}
       role="button"
-      tabIndex={0}
+      // Not a tab stop: the scroll container is the single keyboard surface,
+      // so focus can never strand on a row that scrolls out of the window.
+      tabIndex={-1}
       title={
         span.started_at
           ? `${spanLabel(span)} · ${new Date(span.started_at).toLocaleTimeString()}${Number.isFinite(dur) ? ` · ${fmtDur(dur)}` : ""}`
@@ -846,6 +848,9 @@ export function RunViewer({ run, src }: { run?: Run; src?: string }) {
 
   useEffect(() => {
     if (run || !src) return;
+    // A changed src must never show the previous run or a stale error.
+    setFetched(null);
+    setLoadError(null);
     let alive = true;
     fetch(src)
       .then(async (r) => {
@@ -904,14 +909,28 @@ export function RunViewer({ run, src }: { run?: Run; src?: string }) {
  *  windowing math depends on, enforced by an explicit height on the row. */
 const ROW_H = 30;
 const OVERSCAN = 12;
+/** The list's cosmetic top padding — rows sit at PAD_TOP + i*ROW_H in
+ *  content coordinates, so every scroll computation must include it. */
+const PAD_TOP = 6;
 
-function LoadedViewer({ run }: { run: Run }) {
-  const idx = useMemo(() => indexRun(run), [run]);
-  const [sel, setSel] = useState<string | null>(idx.roots[0]?.id ?? null);
-  const [closed, setClosed] = useState<Set<string>>(new Set());
-  const [raw, setRaw] = useState(false);
-  const [copied, setCopied] = useState(false);
-
+/**
+ * The left column: header, counts, and the windowed span list. Scroll state
+ * lives HERE on purpose — a scroll frame re-renders these ~40 rows and
+ * never the span-detail panel next door.
+ */
+function TreeColumn({
+  idx,
+  sel,
+  closed,
+  onSelect,
+  onSetClosed,
+}: {
+  idx: RunIndex;
+  sel: string | null;
+  closed: Set<string>;
+  onSelect: (id: string) => void;
+  onSetClosed: React.Dispatch<React.SetStateAction<Set<string>>>;
+}) {
   /* The visible tree, flattened. Thousands of rows are normal for real
      agent traces, so only the window around the scroll position mounts —
      this array is cheap (plain objects), the DOM is what's rationed. */
@@ -945,24 +964,167 @@ function LoadedViewer({ run }: { run: Run }) {
   const ensureVisible = (i: number) => {
     const el = treeRef.current;
     if (!el || i < 0) return;
-    const top = i * ROW_H;
+    const top = PAD_TOP + i * ROW_H;
     if (top < el.scrollTop) el.scrollTop = top;
     else if (top + ROW_H > el.scrollTop + el.clientHeight)
       el.scrollTop = top + ROW_H - el.clientHeight;
   };
 
-  /* deep link: read #span=<id> on mount, write it on select */
+  /* Keep the selection in view however it arrives — deep link, keyboard,
+     collapse shifting indices. A no-op when it's already visible or when
+     the selected span is hidden under a collapsed parent (findIndex -1). */
+  useEffect(() => {
+    ensureVisible(rows.findIndex((r) => r.span.id === sel));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel, rows]);
+
+  const { typeCounts, errorCount } = useMemo(() => {
+    const counts: Array<[string, number]> = [];
+    let errors = 0;
+    for (const s of idx.byId.values()) {
+      if (s.status === "error") errors++;
+      const entry = counts.find(([t]) => t === s.type);
+      if (entry) entry[1]++;
+      else counts.push([s.type, 1]);
+    }
+    return { typeCounts: counts, errorCount: errors };
+  }, [idx]);
+
+  /* keyboard: ↑/↓ move through visible rows, ←/→ collapse/expand. The
+     handler lives on the scroll container (which is focusable — a focused
+     row can unmount when it scrolls out of the window). */
+  const onTreeKey = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const at = rows.findIndex((r) => r.span.id === sel);
+      // Selection hidden under a collapsed ancestor: don't teleport to row 0.
+      if (at === -1) return;
+      const ni = Math.min(rows.length - 1, Math.max(0, at + (e.key === "ArrowDown" ? 1 : -1)));
+      const next = rows[ni];
+      if (next) {
+        onSelect(next.span.id);
+        ensureVisible(ni);
+        treeRef.current?.focus();
+      }
+    } else if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && sel) {
+      e.preventDefault();
+      onSetClosed((prev) => {
+        const next = new Set(prev);
+        if (e.key === "ArrowRight") next.delete(sel);
+        else next.add(sel);
+        return next;
+      });
+    }
+  };
+
+  /* the window: which slice of rows is actually in the DOM. scrollTop is
+     clamped so rows shrinking under a deep scroll (collapse-all) can't
+     produce an empty slice while the browser catches up. */
+  const top = Math.min(scrollTop, Math.max(0, rows.length * ROW_H - viewH));
+  const first = Math.max(0, Math.floor((top - PAD_TOP) / ROW_H) - OVERSCAN);
+  const last = Math.min(rows.length, Math.ceil((top - PAD_TOP + viewH) / ROW_H) + OVERSCAN);
+
+  return (
+    <div className="rv-tree">
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          padding: "12px 12px 8px",
+          borderBottom: `1px solid ${T.line}`,
+        }}
+      >
+        <Eyebrow>trace</Eyebrow>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 10,
+            fontFamily: T.mono,
+            fontSize: 11,
+            color: T.faint,
+          }}
+        >
+          {typeCounts.map(([type, n]) => (
+            <span
+              key={type}
+              title={`${n} ${type} span${n === 1 ? "" : "s"}`}
+              style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+            >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: 2,
+                  background: HUES[type] ?? HUES.custom,
+                }}
+              />
+              {n}
+            </span>
+          ))}
+          {errorCount > 0 && (
+            <span style={{ color: T.error, fontWeight: 600 }} title={`${errorCount} error span${errorCount === 1 ? "" : "s"}`}>
+              {errorCount} err
+            </span>
+          )}
+        </span>
+      </div>
+      {/* Windowed: rows are fixed-height, so visibility is arithmetic.
+          A spacer keeps the scrollbar honest; only [first, last) mount. */}
+      <div
+        ref={treeRef}
+        tabIndex={0}
+        aria-label="Trace spans"
+        onKeyDown={onTreeKey}
+        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+        style={{ padding: `${PAD_TOP}px 0`, overflowY: "auto", maxHeight: "min(72vh, 760px)" }}
+      >
+        <div style={{ height: rows.length * ROW_H, position: "relative" }}>
+          <div style={{ position: "absolute", top: first * ROW_H, left: 0, right: 0 }}>
+            {rows.slice(first, last).map(({ span, depth }) => (
+              <TreeRow
+                key={span.id}
+                span={span}
+                depth={depth}
+                idx={idx}
+                selected={sel === span.id}
+                hasKids={(idx.children.get(span.id) ?? []).length > 0}
+                open={!closed.has(span.id)}
+                onToggle={() =>
+                  onSetClosed((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(span.id)) next.delete(span.id);
+                    else next.add(span.id);
+                    return next;
+                  })
+                }
+                onSelect={() => onSelect(span.id)}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LoadedViewer({ run }: { run: Run }) {
+  const idx = useMemo(() => indexRun(run), [run]);
+  const [sel, setSel] = useState<string | null>(idx.roots[0]?.id ?? null);
+  const [closed, setClosed] = useState<Set<string>>(new Set());
+  const [raw, setRaw] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  /* deep link: read #span=<id> on mount, write it on select. TreeColumn's
+     selection effect scrolls it into the window once it renders. */
   useEffect(() => {
     try {
       const m = window.location.hash.match(/span=([\w.-]+)/);
-      if (m && idx.byId.has(m[1])) {
-        setSel(m[1]);
-        ensureVisible(rows.findIndex((r) => r.span.id === m[1]));
-      }
+      if (m && idx.byId.has(m[1])) setSel(m[1]);
     } catch {
       /* sandboxed embeds may not expose location — fine */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx]);
 
   const select = (id: string) => {
@@ -992,47 +1154,6 @@ function LoadedViewer({ run }: { run: Run }) {
 
   const selected = sel ? idx.byId.get(sel) : undefined;
   const created = new Date(run.created_at);
-
-  const { typeCounts, errorCount } = useMemo(() => {
-    const counts: Array<[string, number]> = [];
-    let errors = 0;
-    for (const s of run.spans) {
-      if (s.status === "error") errors++;
-      const entry = counts.find(([t]) => t === s.type);
-      if (entry) entry[1]++;
-      else counts.push([s.type, 1]);
-    }
-    return { typeCounts: counts, errorCount: errors };
-  }, [run]);
-
-  /* keyboard: ↑/↓ move through visible rows, ←/→ collapse/expand. The
-     handler lives on the scroll container (which is focusable — a focused
-     row can unmount when it scrolls out of the window). */
-  const onTreeKey = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      const at = rows.findIndex((r) => r.span.id === sel);
-      const ni = Math.min(rows.length - 1, Math.max(0, at + (e.key === "ArrowDown" ? 1 : -1)));
-      const next = rows[ni];
-      if (next) {
-        select(next.span.id);
-        ensureVisible(ni);
-        treeRef.current?.focus();
-      }
-    } else if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && sel) {
-      e.preventDefault();
-      setClosed((prev) => {
-        const next = new Set(prev);
-        if (e.key === "ArrowRight") next.delete(sel);
-        else next.add(sel);
-        return next;
-      });
-    }
-  };
-
-  /* the window: which slice of rows is actually in the DOM */
-  const first = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
-  const last = Math.min(rows.length, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN);
 
   return (
     <div className="rv" style={{ fontFamily: T.sans, color: T.ink }}>
@@ -1140,87 +1261,13 @@ function LoadedViewer({ run }: { run: Run }) {
 
       {/* ---------------------------------------------------- two panels */}
       <div className="rv-cols">
-        <div className="rv-tree">
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "baseline",
-              padding: "12px 12px 8px",
-              borderBottom: `1px solid ${T.line}`,
-            }}
-          >
-            <Eyebrow>trace</Eyebrow>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 10,
-                fontFamily: T.mono,
-                fontSize: 11,
-                color: T.faint,
-              }}
-            >
-              {typeCounts.map(([type, n]) => (
-                <span
-                  key={type}
-                  title={`${n} ${type} span${n === 1 ? "" : "s"}`}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-                >
-                  <span
-                    style={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: 2,
-                      background: HUES[type] ?? HUES.custom,
-                    }}
-                  />
-                  {n}
-                </span>
-              ))}
-              {errorCount > 0 && (
-                <span style={{ color: T.error, fontWeight: 600 }} title={`${errorCount} error span${errorCount === 1 ? "" : "s"}`}>
-                  {errorCount} err
-                </span>
-              )}
-            </span>
-          </div>
-          {/* Windowed: rows are fixed-height, so visibility is arithmetic.
-              A spacer keeps the scrollbar honest; only [first, last) mount. */}
-          <div
-            ref={treeRef}
-            tabIndex={0}
-            aria-label="Trace spans"
-            onKeyDown={onTreeKey}
-            onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-            style={{ padding: "6px 0", overflowY: "auto", maxHeight: "min(72vh, 760px)" }}
-          >
-            <div style={{ height: rows.length * ROW_H, position: "relative" }}>
-              <div style={{ position: "absolute", top: first * ROW_H, left: 0, right: 0 }}>
-                {rows.slice(first, last).map(({ span, depth }) => (
-                  <TreeRow
-                    key={span.id}
-                    span={span}
-                    depth={depth}
-                    idx={idx}
-                    selected={sel === span.id}
-                    hasKids={(idx.children.get(span.id) ?? []).length > 0}
-                    open={!closed.has(span.id)}
-                    onToggle={() =>
-                      setClosed((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(span.id)) next.delete(span.id);
-                        else next.add(span.id);
-                        return next;
-                      })
-                    }
-                    onSelect={() => select(span.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+        <TreeColumn
+          idx={idx}
+          sel={sel}
+          closed={closed}
+          onSelect={select}
+          onSetClosed={setClosed}
+        />
 
         <div style={{ flex: 1, minWidth: 0, padding: "16px 20px 24px" }}>
           {selected ? (
