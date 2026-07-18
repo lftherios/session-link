@@ -246,8 +246,8 @@ async function push(args) {
   console.error(`${green("✓")} no credentials detected`);
   if (data.metadata?.in_progress)
     console.error(dim("  still recording — publishing a snapshot"));
-  if (bytes > 2 * 1024 * 1024)
-    console.error(red(`  exceeds the server's 2MB ingest cap — this will likely be rejected`));
+  if (bytes > 25 * 1024 * 1024)
+    console.error(red(`  exceeds the server's 25MB ingest cap — this will likely be rejected`));
 
   if (!args.flags.yes) {
     if (!process.stdin.isTTY)
