@@ -25,22 +25,47 @@ const span = (i) => ({
 });
 const cap = (n) => path.join(CAPTURE_DIR, `${n}.json`);
 
-test("owner liveness: own live pid is alive; stale boot token reads dead", async () => {
+test("owner liveness: heartbeat-fresh survives boot mismatch; stale + mismatch is dead", async () => {
   const f = cap("20260718-100000-aaaaaa");
   await appendSpool(f, [span(1)], skeleton());
   assert.equal(await spoolOwnerAlive(f), true); // we are the recorder
-  // Same pid, previous boot: a recycled pid must not pin the spool.
-  await writeFile(`${spoolPath(f)}.pid`, JSON.stringify({ pid: process.pid, boot: 12345 }));
+  const sidecar = `${spoolPath(f)}.pid`;
+  // Boot mismatch but sidecar FRESH: a live recorder whose VM clock was
+  // stepped — the heartbeat must carry it.
+  await writeFile(sidecar, JSON.stringify({ pid: process.pid, boot: 12345 }));
+  assert.equal(await spoolOwnerAlive(f), true);
+  // Boot mismatch AND stale sidecar: a recycled pid after reboot — dead.
+  const old = new Date(Date.now() - 10 * 60_000);
+  await utimes(sidecar, old, old);
   assert.equal(await spoolOwnerAlive(f), false);
   await rm(spoolPath(f), { force: true });
-  await rm(`${spoolPath(f)}.pid`, { force: true });
+  await rm(sidecar, { force: true });
+});
+
+test("owner liveness: pid 1 never rides the boot branch", async () => {
+  const f = cap("20260718-100006-gggggg");
+  await appendSpool(f, [span(1)], skeleton());
+  const sidecar = `${spoolPath(f)}.pid`;
+  // pid 1 with a matching boot but a stale sidecar: a dead containerized
+  // recorder — must NOT be pinned alive by init's eternal existence.
+  const { readFile: rf } = await import("node:fs/promises");
+  const mine = JSON.parse(await rf(sidecar, "utf8"));
+  await writeFile(sidecar, JSON.stringify({ pid: 1, boot: mine.boot }));
+  const old = new Date(Date.now() - 10 * 60_000);
+  await utimes(sidecar, old, old);
+  assert.equal(await spoolOwnerAlive(f), false);
+  // ...but fresh heartbeats from a live pid-1 recorder still count.
+  await writeFile(sidecar, JSON.stringify({ pid: 1, boot: mine.boot }));
+  assert.equal(await spoolOwnerAlive(f), true);
+  await rm(spoolPath(f), { force: true });
+  await rm(sidecar, { force: true });
 });
 
 test("owner liveness: EPERM (pid 1) counts as alive, dead pid does not", async () => {
   const f = cap("20260718-100001-bbbbbb");
   await appendSpool(f, [span(1)], skeleton());
   await writeFile(`${spoolPath(f)}.pid`, JSON.stringify({ pid: 1, boot: null }));
-  assert.equal(await spoolOwnerAlive(f), true); // exists, not ours — alive
+  assert.equal(await spoolOwnerAlive(f), true); // legacy sidecar: plain pid semantics
   await writeFile(`${spoolPath(f)}.pid`, JSON.stringify({ pid: 999999, boot: null }));
   assert.equal(await spoolOwnerAlive(f), false);
   await rm(spoolPath(f), { force: true });

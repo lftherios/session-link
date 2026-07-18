@@ -84,31 +84,63 @@ const lockPath = (file) => `${file}.lock`;
 const bootMs = () => Math.round(Date.now() - os.uptime() * 1000);
 const BOOT_TOLERANCE_MS = 15_000;
 
-const writeOwnerSidecar = (file) =>
-  writeFile(pidPath(file), JSON.stringify({ pid: process.pid, boot: bootMs() }));
+// Heartbeat horizon: recorders refresh their sidecar on every append and on
+// a timer, so a fresh sidecar is the strongest liveness signal — it holds
+// even when the boot token is wrong (wall-clock steps in VMs, NTP jumps).
+const SIDECAR_FRESH_MS = 3 * 60 * 1000;
 
-/** Is the recorder that owns this spool still running? (Exported for tests.) */
+/** Atomic — a torn sidecar read once judged a live owner dead. Exported so
+ *  recorders can heartbeat it on a timer. */
+export async function touchOwnerSidecar(file) {
+  const p = pidPath(file);
+  const tmp = `${p}.${randomBytes(4).toString("hex")}.tmp`;
+  await writeFile(tmp, JSON.stringify({ pid: process.pid, boot: bootMs() }));
+  await rename(tmp, p);
+}
+
+/**
+ * Is the recorder that owns this spool still running? (Exported for tests.)
+ *
+ * alive := pidAlive && (sidecarFresh || (bootMatches && pid !== 1))
+ *
+ * - sidecarFresh: heartbeats survive wall-clock STEPS (VM resume, NTP) that
+ *   break the boot token — round-3 verified bare-metal sleep is fine but
+ *   stepped clocks read live recorders as dead.
+ * - bootMatches (non-heartbeat path): covers a recorder suspended past the
+ *   heartbeat horizon (Ctrl-Z'd `slink dev`) on a same-boot machine.
+ * - pid 1 never rides the boot branch: kill(1,0) is EPERM-alive forever,
+ *   and a containerized recorder (default PID 1) killed with its container
+ *   would otherwise pin the spool until host reboot.
+ * - legacy bare-pid sidecars (pre-boot-token) keep plain pid semantics for
+ *   the transition; they age out with their spools.
+ */
 export async function spoolOwnerAlive(file) {
   let pid;
   let boot = null;
+  let sidecarMtime = 0;
   try {
-    const raw = (await readFile(pidPath(file), "utf8")).trim();
+    const p = pidPath(file);
+    const raw = (await readFile(p, "utf8")).trim();
+    sidecarMtime = (await stat(p)).mtimeMs;
     if (raw.startsWith("{")) ({ pid, boot = null } = JSON.parse(raw));
     else pid = Number(raw); // sidecar from before the boot token existed
   } catch {
     return false;
   }
   if (!Number.isInteger(pid) || pid <= 0) return false;
-  if (boot != null && Math.abs(boot - bootMs()) > BOOT_TOLERANCE_MS) return false;
+  let pidAlive;
   try {
     process.kill(pid, 0);
-    return true;
+    pidAlive = true;
   } catch (e) {
-    // EPERM means the process EXISTS but belongs to another user — that is
-    // alive; treating it as dead once falsely recovered live sessions in
-    // shared-SLINK_HOME setups and lost their pre-recovery spans.
-    return e?.code === "EPERM";
+    // EPERM means the process EXISTS but belongs to another user — alive.
+    pidAlive = e?.code === "EPERM";
   }
+  if (!pidAlive) return false;
+  if (boot == null) return true; // legacy sidecar: plain pid semantics
+  const fresh = Date.now() - sidecarMtime <= SIDECAR_FRESH_MS;
+  const bootMatches = Math.abs(boot - bootMs()) <= BOOT_TOLERANCE_MS;
+  return fresh || (bootMatches && pid !== 1);
 }
 
 /**
@@ -118,25 +150,44 @@ export async function spoolOwnerAlive(file) {
  * spool left to repair from. The lock is held for the few milliseconds of
  * [re-check → rename → cleanup]; a crashed holder's lock breaks by age.
  */
-async function withCommitLock(file, fn) {
+const LOCK_BREAK_MS = 30_000; // locked section is ms; 30s tolerates a Ctrl-Z'd holder
+
+async function withCommitLock(file, fn, { waitMs = 2500, onTimeout = "null" } = {}) {
   const lock = lockPath(file);
-  for (let i = 0; i < 40; i++) {
+  const token = `${process.pid}:${randomBytes(6).toString("hex")}`;
+  const deadline = Date.now() + waitMs;
+  for (;;) {
     try {
-      await writeFile(lock, String(process.pid), { flag: "wx" });
+      await writeFile(lock, token, { flag: "wx" });
     } catch (e) {
       if (e?.code !== "EEXIST") throw e;
       const age = await stat(lock).then((s) => Date.now() - s.mtimeMs, () => 0);
-      if (age > 5000) await rm(lock, { force: true }); // crashed holder
-      else await new Promise((r) => setTimeout(r, 50));
+      if (age > LOCK_BREAK_MS) {
+        // Break by RENAME: atomic, so exactly one waiter wins the right to
+        // clear a crashed holder's lock — a bare stat-then-rm let two
+        // waiters both "break" and both enter the commit section.
+        const grave = `${lock}.${process.pid}.${randomBytes(3).toString("hex")}.stale`;
+        await rename(lock, grave).then(() => rm(grave, { force: true }), () => {});
+      } else if (Date.now() > deadline) {
+        // A fresh-but-stuck lock: snapshots give up quietly (advisory), the
+        // finalizer's caller reports it (the spool survives for recovery).
+        if (onTimeout === "null") return null;
+        throw new Error("capture commit lock is stuck");
+      } else {
+        await new Promise((r) => setTimeout(r, 50));
+      }
       continue;
     }
+    // stillHeld: a holder suspended past LOCK_BREAK_MS can be broken; before
+    // the irreversible rename it must confirm the lock is still its own.
+    const stillHeld = () => readFile(lock, "utf8").then((c) => c === token, () => false);
     try {
-      return await fn();
+      return await fn(stillHeld);
     } finally {
-      await rm(lock, { force: true });
+      // Remove only our own lock — never a successor's after a break.
+      if (await stillHeld()) await rm(lock, { force: true });
     }
   }
-  throw new Error("capture commit lock is stuck");
 }
 
 /**
@@ -152,7 +203,9 @@ export async function appendSpool(file, spans, skeleton) {
   await mkdir(path.dirname(file), { recursive: true });
   const spool = spoolPath(file);
   const size = await stat(spool).then((s) => s.size, () => 0);
-  if (size === 0) await writeOwnerSidecar(file);
+  // Every append doubles as a heartbeat — freshness is the primary
+  // liveness signal (see spoolOwnerAlive).
+  await touchOwnerSidecar(file);
   const payload =
     (size > 0 ? "\n" : "") +
     (size === 0 ? jsonLine(skeleton) + "\n" : "") +
@@ -171,8 +224,11 @@ export async function appendSpool(file, spans, skeleton) {
 export async function assembleSpool(file, { finalize = false, endedAt } = {}) {
   const spool = spoolPath(file);
   let spoolMtimeMs;
+  let spoolSizeAtStart;
   try {
-    spoolMtimeMs = (await stat(spool)).mtimeMs;
+    const st = await stat(spool);
+    spoolMtimeMs = st.mtimeMs;
+    spoolSizeAtStart = st.size;
   } catch {
     return null;
   }
@@ -187,7 +243,15 @@ export async function assembleSpool(file, { finalize = false, endedAt } = {}) {
 
   const tmp = `${file}.${randomBytes(4).toString("hex")}.tmp`;
   const out = createWriteStream(tmp);
+  // Persistent listener: a disk error (ENOSPC — likely exactly when big
+  // spools assemble) surfacing while we await a readline chunk must fail
+  // this assembly, not crash the whole process as an uncaughtException.
+  let streamErr = null;
+  out.on("error", (e) => {
+    streamErr ??= e;
+  });
   const write = async (chunk) => {
+    if (streamErr) throw streamErr;
     if (!out.write(chunk)) await once(out, "drain");
   };
 
@@ -248,32 +312,47 @@ export async function assembleSpool(file, { finalize = false, endedAt } = {}) {
   }
   // The commit — serialized across processes: a finalizer and a snapshot
   // must never interleave their [re-check → rename → cleanup] sections.
-  return withCommitLock(file, async () => {
-    if (!finalize) {
-      // The finalizer may have won while we streamed: if the spool is gone
-      // or the .json changed under us, our snapshot is stale — discard it
-      // rather than revert a finalized capture to in_progress (unrepairable:
-      // the spool it would take to re-finalize no longer exists).
-      const [spoolStill, jsonNow] = await Promise.all([
-        stat(spool).then(() => true, () => false),
-        stat(file).then((s) => s.mtimeMs, () => null),
-      ]);
-      if (!spoolStill || jsonNow !== jsonBefore) {
+  if (streamErr) throw streamErr;
+  return withCommitLock(
+    file,
+    async (stillHeld) => {
+      if (!finalize) {
+        // The finalizer may have won while we streamed: if the spool is gone
+        // or the .json changed under us, our snapshot is stale — discard it
+        // rather than revert a finalized capture to in_progress
+        // (unrepairable: the spool it needs no longer exists).
+        const [spoolStill, jsonNow] = await Promise.all([
+          stat(spool).then(() => true, () => false),
+          stat(file).then((s) => s.mtimeMs, () => null),
+        ]);
+        if (!spoolStill || jsonNow !== jsonBefore || !(await stillHeld())) {
+          await rm(tmp, { force: true });
+          return null;
+        }
+        await rename(tmp, file);
+        // Stamp the snapshot with the spool's own mtime: the freshness gate
+        // (spool newer than json → re-assemble) must keep firing for appends
+        // that landed while we streamed, and go quiet only when caught up.
+        await utimes(file, new Date(), new Date(spoolMtimeMs)).catch(() => {});
+        return spans;
+      }
+      // Finalize: if the spool GREW since our read pass — a recorder we
+      // misjudged as dead, or appends racing a shutdown — destroying it
+      // would delete the newer spans. Leave everything for the next pass.
+      const nowSize = await stat(spool).then((s) => s.size, () => null);
+      if (nowSize !== spoolSizeAtStart || !(await stillHeld())) {
         await rm(tmp, { force: true });
         return null;
       }
       await rename(tmp, file);
-      // Stamp the snapshot with the spool's own mtime: the freshness gate
-      // (spool newer than json → re-assemble) must keep firing for appends
-      // that landed while we streamed, and go quiet only when caught up.
-      await utimes(file, new Date(), new Date(spoolMtimeMs)).catch(() => {});
+      await rm(spool, { force: true });
+      await rm(pidPath(file), { force: true });
       return spans;
-    }
-    await rename(tmp, file);
-    await rm(spool, { force: true });
-    await rm(pidPath(file), { force: true });
-    return spans;
-  });
+    },
+    // The finalizer must outwait a crashed holder's 30s break age; a
+    // snapshot is advisory and gives up quietly.
+    finalize ? { waitMs: 45_000, onTimeout: "throw" } : { waitMs: 2500, onTimeout: "null" },
+  );
 }
 
 /**
@@ -350,14 +429,17 @@ export async function listCaptures() {
     }
   }
 
-  // Orphan owner sidecars: a crash between sidecar-write and first append
-  // leaves a .pid with no spool. Old ones are noise — sweep them.
+  // Orphan sidecars and locks: a crash between sidecar-write and first
+  // append leaves a .pid with no spool; a crash holding a commit lock on a
+  // path no future commit touches leaves a .lock. Old ones are noise.
   for (const f of files) {
-    if (!f.endsWith(".json.spool.pid")) continue;
-    if (files.includes(f.slice(0, -".pid".length))) continue;
+    const orphanPid = f.endsWith(".json.spool.pid") && !files.includes(f.slice(0, -".pid".length));
+    const orphanLock = f.endsWith(".json.lock");
+    if (!orphanPid && !orphanLock) continue;
+    const horizon = orphanLock ? 10 * 60_000 : 3_600_000;
     const full = path.join(CAPTURE_DIR, f);
     stat(full)
-      .then((s) => (Date.now() - s.mtimeMs > 3_600_000 ? rm(full, { force: true }) : null))
+      .then((s) => (Date.now() - s.mtimeMs > horizon ? rm(full, { force: true }) : null))
       .catch(() => {});
   }
 
@@ -386,16 +468,25 @@ export async function listCaptures() {
           // Stranded mid-flight — no spool to finalize from, no live owner
           // (a pre-recovery crash, or the blast radius of a lost race).
           // Heal in place so it stops reading as "(recording)" forever and
-          // becomes prunable again.
-          delete run.metadata.in_progress;
-          const root = run.spans?.[0];
-          if (root && !root.ended_at) {
-            const last = run.spans[run.spans.length - 1];
-            root.ended_at = last?.ended_at ?? root.started_at;
-            root.status ??= "ok";
-          }
-          await writeRun(file, run).catch(() => {});
-          inProgress = false;
+          // becomes prunable again. Inside the commit lock, with the state
+          // RE-READ there: an unlocked heal based on this loop's stale read
+          // once overwrote a concurrent finalizer's full capture.
+          const healed = await withCommitLock(file, async (stillHeld) => {
+            const cur = JSON.parse(await readFile(file, "utf8"));
+            if (cur.metadata?.in_progress !== true) return true; // already fine
+            const spoolNow = await stat(spoolPath(file)).then(() => true, () => false);
+            if (spoolNow || !(await stillHeld())) return false;
+            delete cur.metadata.in_progress;
+            const root = cur.spans?.[0];
+            if (root && !root.ended_at) {
+              const last = cur.spans[cur.spans.length - 1];
+              root.ended_at = last?.ended_at ?? root.started_at;
+              root.status ??= "ok";
+            }
+            await writeRun(file, cur);
+            return true;
+          }).catch(() => false);
+          if (healed) inProgress = false;
         }
       }
       out.push({

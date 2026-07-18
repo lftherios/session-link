@@ -1,6 +1,14 @@
 import http from "node:http";
+import { once } from "node:events";
 import { spawn } from "node:child_process";
-import { CAPTURE_DIR, appendSpool, assembleSpool, newCapturePath, recoverSpools } from "./store.mjs";
+import {
+  CAPTURE_DIR,
+  appendSpool,
+  assembleSpool,
+  newCapturePath,
+  recoverSpools,
+  touchOwnerSidecar,
+} from "./store.mjs";
 import {
   assembleAnthropicSse,
   assembleOpenaiChatSse,
@@ -102,7 +110,14 @@ function newSession(name, command) {
 function flush(session, spans) {
   session.writes = session.writes
     .catch(() => {}) // an earlier failed write must not poison the chain
-    .then(() => appendSpool(session.file, spans, session.skeleton))
+    .then(() => {
+      // Re-checked at EXECUTION time: an entry enqueued before close whose
+      // predecessor wedged past the bounded drain would otherwise run after
+      // finalize consumed the spool — recreating it with only tail spans,
+      // which recovery would then rename over the completed capture.
+      if (session.closed) return;
+      return appendSpool(session.file, spans, session.skeleton);
+    })
     .catch((e) => {
       // A failing capture disk must not be silent: warn once, keep proxying.
       if (!session.writeFailed) {
@@ -260,6 +275,15 @@ async function handle(sink, req, res) {
     if (!REQ_DROP.has(k.toLowerCase()) && v !== undefined) headers[k] = v;
   }
 
+  // A vanished client must abort the upstream call: without this, a
+  // canceled generation streams (and bills) to completion, and a
+  // heartbeat-style SSE that never ends pins session.pending forever —
+  // making the session immortal and unfinalizable.
+  const ac = new AbortController();
+  res.on("close", () => {
+    if (!res.writableEnded) ac.abort();
+  });
+
   const started = new Date();
   let upstream;
   try {
@@ -267,6 +291,7 @@ async function handle(sink, req, res) {
       method: req.method,
       headers,
       body: reqBuf.length ? reqBuf : undefined,
+      signal: ac.signal,
     });
   } catch (e) {
     const message = `upstream unreachable: ${e?.message ?? e}`;
@@ -286,22 +311,43 @@ async function handle(sink, req, res) {
   const resChunks = [];
   let captured = 0;
   let overflow = false;
-  if (upstream.body) {
-    for await (const chunk of upstream.body) {
-      res.write(chunk);
-      if (captured < CAPTURE_CAP) {
-        resChunks.push(Buffer.from(chunk));
-        captured += chunk.length;
-      } else {
-        overflow = true;
+  let aborted = false;
+  try {
+    if (upstream.body) {
+      for await (const chunk of upstream.body) {
+        if (!res.destroyed && !res.write(chunk)) {
+          // Backpressure: a slow client must not buffer the whole response
+          // in the ServerResponse; a closed one resolves via "close".
+          await Promise.race([once(res, "drain"), once(res, "close")]).catch(() => {});
+        }
+        if (captured < CAPTURE_CAP) {
+          resChunks.push(Buffer.from(chunk));
+          captured += chunk.length;
+        } else {
+          overflow = true;
+        }
       }
     }
+  } catch (e) {
+    if (e?.name !== "AbortError") throw e;
+    aborted = true; // client hung up — record what we saw, partially
   }
   res.end();
 
   if (!session) return;
   const resText = Buffer.concat(resChunks).toString("utf8");
-  await recordCall(session, kind, reqBuf, resText, isSse, started, new Date(), upstream.status, null, overflow);
+  await recordCall(
+    session,
+    kind,
+    reqBuf,
+    resText,
+    isSse,
+    started,
+    new Date(),
+    upstream.status,
+    aborted ? "client disconnected mid-stream" : null,
+    overflow,
+  );
   } finally {
     if (session) session.pending -= 1;
   }
@@ -343,7 +389,15 @@ export async function dev({ port, name, cmd }) {
   };
   log(`session.link proxy · http://127.0.0.1:${p} · recording ${dim(session.file)}`);
 
+  // Same heartbeat contract as the tap (see spoolOwnerAlive): a paused-but-
+  // live dev session must read as owned even after wall-clock steps.
+  const heartbeat = setInterval(() => {
+    if (session.seq > 0 && !session.closed) touchOwnerSidecar(session.file).catch(() => {});
+  }, 60_000);
+  heartbeat.unref?.();
+
   const finish = async () => {
+    clearInterval(heartbeat);
     server.close();
     server.closeAllConnections?.();
     if (inflight.size > 0) log(dim(`waiting for ${inflight.size} in-flight call(s)…`));
@@ -382,7 +436,7 @@ export async function dev({ port, name, cmd }) {
     if (saved == null) {
       // assembleSpool returns null (not throws) when the spool vanished or
       // was refused — success must not be claimed for a capture not written.
-      log(red("failed to save capture: spool missing or unreadable"));
+      log(red("capture not finalized (spool missing, refused, or still receiving) — it will recover on a later slink run"));
       process.exitCode ||= 1;
       return;
     }
@@ -437,7 +491,7 @@ async function finalizeSession(session) {
     return;
   }
   if (saved == null) {
-    log(red("failed to save capture: spool missing or unreadable"));
+    log(red("capture not finalized (spool missing, refused, or still receiving) — it will recover on a later slink run"));
     return;
   }
   log(`${green("●")} session ended · ${session.seq} call${session.seq === 1 ? "" : "s"} → ${dim(session.file)}`);
@@ -504,12 +558,23 @@ export async function serve({ port = 4141, idleMs } = {}) {
   const timer = setInterval(() => router.sweep(), Math.min(router.idleMs, 60_000));
   timer.unref?.();
 
+  // Heartbeat: sidecar freshness is the primary liveness signal for
+  // checkers in other processes (see spoolOwnerAlive) — keep open sessions'
+  // sidecars fresh even when no calls are flowing.
+  const heartbeat = setInterval(() => {
+    for (const { session } of router.open.values()) {
+      if (session.seq > 0 && !session.closed) touchOwnerSidecar(session.file).catch(() => {});
+    }
+  }, 60_000);
+  heartbeat.unref?.();
+
   for (const [k, v] of Object.entries(env)) log(`export ${k}=${v}`);
   log(dim("Ctrl-C to stop"));
 
   await new Promise((resolve) => process.once("SIGINT", resolve));
   log("");
   clearInterval(timer);
+  clearInterval(heartbeat);
   server.close();
   server.closeAllConnections?.();
   // Drain in-flight calls BEFORE finalizing: finalize consumes the spool,
