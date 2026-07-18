@@ -742,6 +742,9 @@ function TreeRow({
       {hasKids ? (
         <button
           aria-label={open ? "Collapse" : "Expand"}
+          // Not a tab stop — a focused chevron unmounting with its windowed
+          // row would strand focus; the scroll container is the tab stop.
+          tabIndex={-1}
           onClick={(e) => {
             e.stopPropagation();
             onToggle();
@@ -970,10 +973,14 @@ function TreeColumn({
       el.scrollTop = top + ROW_H - el.clientHeight;
   };
 
-  /* Keep the selection in view however it arrives — deep link, keyboard,
-     collapse shifting indices. A no-op when it's already visible or when
-     the selected span is hidden under a collapsed parent (findIndex -1). */
+  /* Scroll to the selection only when the SELECTION changes (deep link,
+     keyboard, click) — never when rows change identity, or expanding a
+     chevron 800 rows away from the selection would yank the viewport back
+     to it. No-op when already visible or hidden under a collapsed parent. */
+  const lastSel = useRef<string | null>(null);
   useEffect(() => {
+    if (sel === lastSel.current) return;
+    lastSel.current = sel;
     ensureVisible(rows.findIndex((r) => r.span.id === sel));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, rows]);
@@ -1004,7 +1011,7 @@ function TreeColumn({
       if (next) {
         onSelect(next.span.id);
         ensureVisible(ni);
-        treeRef.current?.focus();
+        treeRef.current?.focus({ preventScroll: true });
       }
     } else if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && sel) {
       e.preventDefault();
@@ -1091,15 +1098,23 @@ function TreeColumn({
                 selected={sel === span.id}
                 hasKids={(idx.children.get(span.id) ?? []).length > 0}
                 open={!closed.has(span.id)}
-                onToggle={() =>
+                onToggle={() => {
                   onSetClosed((prev) => {
                     const next = new Set(prev);
                     if (next.has(span.id)) next.delete(span.id);
                     else next.add(span.id);
                     return next;
-                  })
-                }
-                onSelect={() => onSelect(span.id)}
+                  });
+                  // Keep focus on the keyboard surface: a click focuses the
+                  // row/chevron, which may unmount when it scrolls out of
+                  // the window — stranding focus on <body> and killing
+                  // arrow-key nav.
+                  treeRef.current?.focus({ preventScroll: true });
+                }}
+                onSelect={() => {
+                  onSelect(span.id);
+                  treeRef.current?.focus({ preventScroll: true });
+                }}
               />
             ))}
           </div>
