@@ -2,7 +2,7 @@ import http from "node:http";
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { CAPTURE_DIR, listCaptures } from "./store.mjs";
+import { CAPTURE_DIR, assembleSpool, listCaptures } from "./store.mjs";
 import { inspectRunFile, resolveTarget, uploadRun } from "./publish.mjs";
 
 /**
@@ -74,6 +74,7 @@ async function indexPage() {
 
 async function runPage(id, target) {
   const file = path.join(CAPTURE_DIR, `${id}.json`);
+  await assembleSpool(file).catch(() => null); // live session: fresh snapshot
   const run = JSON.parse(await readFile(file, "utf8"));
   // <-escaping keeps attacker-controlled trace text inert inside the tag
   const json = JSON.stringify(run).replace(/</g, "\\u003c");
@@ -115,6 +116,7 @@ async function runPage(id, target) {
 
 async function publish(id, target) {
   const file = path.join(CAPTURE_DIR, `${id}.json`);
+  await assembleSpool(file).catch(() => null); // publish the freshest snapshot
   const info = await inspectRunFile(file);
   if (info.failure) return { status: 400, body: { error: { message: info.failure } } };
   if (info.errors.length)

@@ -99,10 +99,10 @@ function newSession(name, command) {
  * the last call's still-in-flight flush. Appends are O(call), and the
  * span is unreferenced the moment its line is on disk.
  */
-function flush(session, objs) {
+function flush(session, spans) {
   session.writes = session.writes
     .catch(() => {}) // an earlier failed write must not poison the chain
-    .then(() => appendSpool(session.file, objs))
+    .then(() => appendSpool(session.file, spans, session.skeleton))
     .catch((e) => {
       // A failing capture disk must not be silent: warn once, keep proxying.
       if (!session.writeFailed) {
@@ -114,12 +114,20 @@ function flush(session, objs) {
   return session.writes;
 }
 
-/** Appended to the spool after every call — a crash never loses captured spans. */
+/** Appended to the spool after every call — a crash never loses captured spans.
+ *  appendSpool lays the header down whenever the spool is fresh (lazy: a
+ *  session that never captures anything leaves no file at all). */
 async function record(session, span) {
+  if (session.closed) {
+    // Only reachable when a finalize gave up waiting for this call (bounded
+    // 5s drain at shutdown). Dropping is the honest option — appending would
+    // recreate a spool at a path whose capture is already finalized.
+    log(red(`late span after session close — not recorded (${span.id})`));
+    return;
+  }
   session.seq += 1;
-  // The first record also lays down the spool header (lazy: a session that
-  // never captures anything leaves no file at all).
-  await flush(session, session.seq === 1 ? [session.skeleton, span] : [span]);
+  if (span.ended_at) session.lastEndedAt = span.ended_at;
+  await flush(session, [span]);
 }
 
 function logSpan(span, ms) {
@@ -240,7 +248,12 @@ async function handle(sink, req, res) {
   if (kind) {
     const request = safeJson(reqBuf);
     session = sink.resolve(sessionKeyFrom(req.headers), labelFrom(req.headers) ?? deriveName(request));
+    // A session with calls in flight must not be finalized under them — a
+    // stream can outlive the idle gap (long reasoning turns, machine sleep)
+    // and its record would land after the spool was consumed.
+    session.pending = (session.pending ?? 0) + 1;
   }
+  try {
 
   const headers = {};
   for (const [k, v] of Object.entries(req.headers)) {
@@ -289,6 +302,9 @@ async function handle(sink, req, res) {
   if (!session) return;
   const resText = Buffer.concat(resChunks).toString("utf8");
   await recordCall(session, kind, reqBuf, resText, isSse, started, new Date(), upstream.status, null, overflow);
+  } finally {
+    if (session) session.pending -= 1;
+  }
 }
 
 export async function dev({ port, name, cmd }) {
@@ -338,14 +354,20 @@ export async function dev({ port, name, cmd }) {
     ]);
     if (!drained) log(red(`gave up on ${inflight.size} in-flight call(s) after 5s — capture may be missing them`));
     if (session.seq === 0) {
+      session.closed = true;
       log("no LLM calls captured — nothing saved");
       return;
     }
     try {
-      // Let in-flight appends land, then assemble the spool into the final
-      // session/v0 capture in one streaming pass.
+      // Close first (a call we gave up draining must not respool a span at a
+      // finalized path), let in-flight appends land, then assemble the spool
+      // into the final session/v0 capture in one streaming pass.
+      session.closed = true;
       await session.writes.catch(() => {});
-      await assembleSpool(session.file, { finalize: true, endedAt: new Date().toISOString() });
+      await assembleSpool(session.file, {
+        finalize: true,
+        endedAt: session.lastEndedAt ?? new Date().toISOString(),
+      });
     } catch (e) {
       // One clean line, and never clobber the child's own exit code.
       log(red(`failed to save capture: ${e?.message ?? e}`));
@@ -383,10 +405,17 @@ export async function dev({ port, name, cmd }) {
 
 /** Close out a session the tap has segmented: assemble its spool into the final capture. */
 async function finalizeSession(session) {
+  session.closed = true;
   if (session.seq === 0) return; // never recorded anything — nothing to save
   try {
     await session.writes.catch(() => {});
-    await assembleSpool(session.file, { finalize: true, endedAt: new Date().toISOString() });
+    await assembleSpool(session.file, {
+      finalize: true,
+      // Stamp with the last recorded activity, not wall-clock now — after a
+      // machine-sleep the sweep fires at wake time, which isn't when the
+      // session actually ended.
+      endedAt: session.lastEndedAt ?? new Date().toISOString(),
+    });
   } catch (e) {
     log(red(`failed to save capture: ${e?.message ?? e}`));
     return;
@@ -412,6 +441,9 @@ export async function serve({ port = 4141, idleMs } = {}) {
     ...(idleMs ? { idleMs } : {}),
     newSession: (name) => newSession(name ?? "ambient session"),
     onFinalize: (session) => track(finalizeSession(session)),
+    // A session with a call mid-stream is alive no matter how long the
+    // stream runs — never finalize under an in-flight record.
+    isBusy: (session) => (session.pending ?? 0) > 0,
   });
   const sink = {
     resolve: (key, name) => router.route(key, name),
@@ -438,10 +470,9 @@ export async function serve({ port = 4141, idleMs } = {}) {
   };
   log(`session.link tap · http://127.0.0.1:${p} · capturing to ${dim(CAPTURE_DIR)}`);
 
-  // A previous recorder that died mid-session left its spool behind. Anything
-  // idle past the gap can't be live (a fresh spool may belong to a running
-  // `slink dev` — leave those), so finish what it started.
-  const recovered = await recoverSpools(router.idleMs);
+  // A previous recorder that died mid-session left its spool behind — judged
+  // by pid liveness (a live `slink dev`'s spool is its own, however idle).
+  const recovered = await recoverSpools();
   if (recovered) log(dim(`recovered ${recovered} interrupted capture${recovered === 1 ? "" : "s"}`));
 
   // Rolling buffer: sweep old/empty captures on start so ambient recording
@@ -461,6 +492,12 @@ export async function serve({ port = 4141, idleMs } = {}) {
   clearInterval(timer);
   server.close();
   server.closeAllConnections?.();
+  // Drain in-flight calls BEFORE finalizing: finalize consumes the spool,
+  // and a record landing after that has nowhere valid to go.
+  await Promise.race([
+    Promise.allSettled([...inflight]).then(() => true),
+    new Promise((r) => setTimeout(r, 5000, false).unref?.()),
+  ]);
   router.finalizeAll(); // rolls every open session through onFinalize
   await Promise.race([
     Promise.allSettled([...inflight]).then(() => true),

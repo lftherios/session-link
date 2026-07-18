@@ -66,10 +66,45 @@ export function spoolPath(file) {
   return `${file}.spool`;
 }
 
-/** Append pre-built objects (skeleton and/or spans) as JSONL, in order. */
-export async function appendSpool(file, objs) {
+const pidPath = (file) => `${spoolPath(file)}.pid`;
+
+/** JSON.stringify emits U+2028/U+2029 raw; line-based readers (readline
+ *  included — verified) treat them as line breaks, which would tear a span
+ *  across spool lines. Escaping them is still the same JSON value. */
+const jsonLine = (o) =>
+  JSON.stringify(o).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+
+/** Is the recorder that owns this spool still running? */
+async function spoolOwnerAlive(file) {
+  try {
+    const pid = Number((await readFile(pidPath(file), "utf8")).trim());
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Append spans as JSONL. Header-aware: whenever the spool doesn't exist or
+ * is empty — first call, but also a spool recreated after a finalize the
+ * recorder didn't see — the skeleton is laid down first, so a spool can
+ * NEVER start with a bare span (assembly refuses those; see below). Each
+ * append starts on a fresh line, so a torn earlier write self-terminates
+ * into one droppable line instead of merging with the next span. A pid
+ * sidecar marks the spool as owned by a live recorder.
+ */
+export async function appendSpool(file, spans, skeleton) {
   await mkdir(path.dirname(file), { recursive: true });
-  await appendFile(spoolPath(file), objs.map((o) => JSON.stringify(o) + "\n").join(""));
+  const spool = spoolPath(file);
+  const size = await stat(spool).then((s) => s.size, () => 0);
+  if (size === 0) await writeFile(pidPath(file), String(process.pid));
+  const payload =
+    (size > 0 ? "\n" : "") +
+    (size === 0 ? jsonLine(skeleton) + "\n" : "") +
+    spans.map((s) => jsonLine(s) + "\n").join("");
+  await appendFile(spool, payload);
 }
 
 /**
@@ -87,6 +122,10 @@ export async function assembleSpool(file, { finalize = false, endedAt } = {}) {
   } catch {
     return null;
   }
+  // Snapshot mode is advisory and must never beat the authoritative
+  // finalizer: remember what the .json looked like before assembling, and
+  // bail before the rename if either file changed hands (see below).
+  const jsonBefore = await stat(file).then((s) => s.mtimeMs, () => null);
   const rl = readline.createInterface({
     input: createReadStream(spool, { encoding: "utf8" }),
     crlfDelay: Infinity,
@@ -110,6 +149,15 @@ export async function assembleSpool(file, { finalize = false, endedAt } = {}) {
         continue; // partial trailing line from a crash — drop it
       }
       if (!skeleton) {
+        if (typeof obj?.schema !== "string") {
+          // Not a run skeleton — a torn or headerless spool. Refuse: never
+          // fabricate a document (early versions promoted a stray span to
+          // skeleton and overwrote good captures with schema-less garbage).
+          out.end();
+          await once(out, "close");
+          await rm(tmp, { force: true });
+          return null;
+        }
         skeleton = obj;
         const root = skeleton.spans?.[0] ?? { id: "root", parent_id: null, type: "agent" };
         if (finalize) {
@@ -144,19 +192,38 @@ export async function assembleSpool(file, { finalize = false, endedAt } = {}) {
     await rm(tmp, { force: true });
     throw e;
   }
+  if (!finalize) {
+    // The finalizer may have won while we streamed: if the spool is gone or
+    // the .json changed under us, our snapshot is stale — discard it rather
+    // than revert a finalized capture to in_progress (unrepairable: the
+    // spool it would take to re-finalize no longer exists).
+    const [spoolStill, jsonNow] = await Promise.all([
+      stat(spool).then(() => true, () => false),
+      stat(file).then((s) => s.mtimeMs, () => null),
+    ]);
+    if (!spoolStill || jsonNow !== jsonBefore) {
+      await rm(tmp, { force: true });
+      return null;
+    }
+  }
   await rename(tmp, file);
-  if (finalize) await rm(spool, { force: true });
+  if (finalize) {
+    await rm(spool, { force: true });
+    await rm(pidPath(file), { force: true });
+  }
   return spans;
 }
 
 /**
- * Finalize spools whose recorder died (tap crash, machine sleep past the
- * gap): anything idle longer than `olderThanMs` can't belong to a live
- * session, so it becomes a finished capture stamped with its last append
- * time. Fresh spools are left alone — they may belong to a concurrently
- * running `slink dev`.
+ * Finalize spools whose recorder is DEAD — judged by pid liveness, not
+ * mtime: an idle spool may belong to a live `slink dev` whose user is just
+ * thinking (an early mtime-based version finalized those, and the live
+ * recorder's next append then fought its own finalized capture). A dead
+ * spool becomes a finished capture stamped with its last append time.
+ * Called at tap startup and opportunistically from listCaptures, so
+ * crashed `slink dev` sessions heal on the next list/push/open too.
  */
-export async function recoverSpools(olderThanMs) {
+export async function recoverSpools() {
   let files = [];
   try {
     files = await readdir(CAPTURE_DIR);
@@ -167,15 +234,19 @@ export async function recoverSpools(olderThanMs) {
   for (const f of files) {
     if (!f.endsWith(".json.spool")) continue;
     const spool = path.join(CAPTURE_DIR, f);
+    const file = spool.slice(0, -".spool".length);
     try {
+      if (await spoolOwnerAlive(file)) continue; // a live recorder owns it
       const s = await stat(spool);
-      if (Date.now() - s.mtimeMs <= olderThanMs) continue;
-      const file = spool.slice(0, -".spool".length);
       if ((await assembleSpool(file, { finalize: true, endedAt: new Date(s.mtimeMs).toISOString() })) != null)
         recovered += 1;
-      else await rm(spool, { force: true }); // empty/corrupt spool — nothing to save
+      else {
+        // empty/corrupt spool — nothing salvageable
+        await rm(spool, { force: true });
+        await rm(`${spool}.pid`, { force: true });
+      }
     } catch {
-      /* skip; retried next start */
+      /* skip; retried next start or next list */
     }
   }
   return recovered;
@@ -189,24 +260,29 @@ export async function listCaptures() {
     return [];
   }
 
-  // Sessions still spooling have no (or a stale) .json — snapshot-assemble
-  // them so list/push/open keep seeing live recordings, as they always did.
-  // Cheap when nothing changed: one stat pair per open session.
+  // Spools: a live recorder's session gets a snapshot (so list/push/open
+  // keep seeing live recordings, as they always did); a dead recorder's
+  // gets finalized right here — a crashed `slink dev` heals on the next
+  // list instead of waiting for a tap restart. Cheap when nothing changed:
+  // one stat pair per open session.
   for (const f of files) {
     if (!f.endsWith(".json.spool")) continue;
     const jsonName = f.slice(0, -".spool".length);
     const jsonFile = path.join(CAPTURE_DIR, jsonName);
     try {
-      const [sp, js] = await Promise.all([
-        stat(path.join(CAPTURE_DIR, f)),
-        stat(jsonFile).catch(() => null),
-      ]);
-      if (!js || sp.mtimeMs > js.mtimeMs) {
-        await assembleSpool(jsonFile);
-        if (!files.includes(jsonName)) files.push(jsonName);
+      const spoolFile = path.join(CAPTURE_DIR, f);
+      const [sp, js] = await Promise.all([stat(spoolFile), stat(jsonFile).catch(() => null)]);
+      if (await spoolOwnerAlive(jsonFile)) {
+        if (!js || sp.mtimeMs > js.mtimeMs) await assembleSpool(jsonFile);
+      } else if (
+        (await assembleSpool(jsonFile, { finalize: true, endedAt: new Date(sp.mtimeMs).toISOString() })) == null
+      ) {
+        await rm(spoolFile, { force: true });
+        await rm(`${spoolFile}.pid`, { force: true });
       }
+      if (!files.includes(jsonName)) files.push(jsonName);
     } catch {
-      /* snapshot is best-effort; the finalizer will produce the real file */
+      /* best-effort; the finalizer or the next pass will produce the file */
     }
   }
 

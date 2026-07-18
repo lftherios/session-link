@@ -87,6 +87,10 @@ export async function pruneCommand(flags) {
   let done = 0;
   for (const c of remove) {
     try {
+      // The spool sidecars go with it — a leftover spool would re-materialize
+      // the pruned capture on the next list.
+      await rm(`${c.file}.spool`, { force: true });
+      await rm(`${c.file}.spool.pid`, { force: true });
       await rm(c.file, { force: true });
       done++;
     } catch {
@@ -110,6 +114,8 @@ export async function autoPrune() {
     let done = 0;
     for (const c of remove) {
       try {
+        await rm(`${c.file}.spool`, { force: true });
+        await rm(`${c.file}.spool.pid`, { force: true });
         await rm(c.file, { force: true });
         done++;
       } catch {

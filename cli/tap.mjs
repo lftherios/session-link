@@ -42,11 +42,12 @@ export class SessionRouter {
    * @param {number} [opts.idleMs]  silence after which a key rolls over
    * @param {() => number} [opts.now]  clock in ms (injectable for tests)
    */
-  constructor({ newSession, onFinalize, idleMs = DEFAULT_IDLE_MS, now = () => Date.now() }) {
+  constructor({ newSession, onFinalize, idleMs = DEFAULT_IDLE_MS, now = () => Date.now(), isBusy = () => false }) {
     this.newSession = newSession;
     this.onFinalize = onFinalize;
     this.idleMs = idleMs;
     this.now = now;
+    this.isBusy = isBusy;
     this.open = new Map(); // key -> { session, lastMs }
   }
 
@@ -58,7 +59,9 @@ export class SessionRouter {
   route(key, name) {
     const t = this.now();
     const cur = this.open.get(key);
-    if (cur && t - cur.lastMs <= this.idleMs) {
+    // A busy session (call mid-stream) is alive however stale its lastMs —
+    // idle is measured from request starts, and a stream can outlast the gap.
+    if (cur && (t - cur.lastMs <= this.idleMs || this.isBusy(cur.session))) {
       cur.lastMs = t;
       return cur.session;
     }
@@ -74,11 +77,13 @@ export class SessionRouter {
     if (cur) cur.lastMs = this.now();
   }
 
-  /** Finalize every session idle past the threshold. Call on a timer. */
+  /** Finalize every session idle past the threshold. Call on a timer.
+   *  Busy sessions are skipped — the next sweep gets them once their
+   *  in-flight calls have recorded. */
   sweep() {
     const t = this.now();
     for (const [key, cur] of this.open) {
-      if (t - cur.lastMs > this.idleMs) this.#end(key);
+      if (t - cur.lastMs > this.idleMs && !this.isBusy(cur.session)) this.#end(key);
     }
   }
 

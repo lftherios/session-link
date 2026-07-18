@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { gzipSync } from "node:zlib";
 import { SECRET_PATTERN_SOURCES } from "@session-link/format/secret-patterns";
 import { validateRun } from "@session-link/format/validate";
-import { readConfig } from "./store.mjs";
+import { assembleSpool, readConfig } from "./store.mjs";
 
 /**
  * The publish core, shared by `slink push` and the Publish button in
@@ -35,6 +35,9 @@ export async function resolveTarget(flags = {}) {
 
 /** Read + validate + scan a run file. Never uploads. */
 export async function inspectRunFile(file) {
+  // A still-recording session may exist only as a spool (or a stale
+  // snapshot) — materialize so `slink push <path>` works mid-session.
+  await assembleSpool(file).catch(() => null);
   let text;
   try {
     text = await readFile(file, "utf8");
