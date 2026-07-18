@@ -101,6 +101,15 @@ export class CaptureCommitRetry extends Error {
   }
 }
 
+/** Give up ownership of a spool: after this, any process's recovery pass
+ *  may finalize it. A long-lived tap whose finalize keeps aborting must
+ *  call this — its own live pid would otherwise pin the spool as
+ *  live-owned (and the capture as "(recording)") for the daemon's whole
+ *  lifetime, fencing out the very "later pass" the abort promised. */
+export async function releaseSpoolOwnership(file) {
+  await rm(pidPath(file), { force: true });
+}
+
 /** Atomic — a torn sidecar read once judged a live owner dead. Exported so
  *  recorders can heartbeat it on a timer. */
 export async function touchOwnerSidecar(file) {

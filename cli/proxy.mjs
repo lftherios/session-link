@@ -7,6 +7,7 @@ import {
   assembleSpool,
   newCapturePath,
   recoverSpools,
+  releaseSpoolOwnership,
   touchOwnerSidecar,
 } from "./store.mjs";
 import {
@@ -481,25 +482,37 @@ async function finalizeSession(session) {
   session.closed = true;
   if (session.seq === 0) return; // never recorded anything — nothing to save
   let saved = null;
-  try {
-    await Promise.race([
-      session.writes.catch(() => {}),
-      new Promise((r) => setTimeout(r, 3000).unref?.()),
-    ]);
-    saved = await assembleSpool(session.file, {
-      finalize: true,
-      // Stamp with the last recorded activity, not wall-clock now — after a
-      // machine-sleep the sweep fires at wake time, which isn't when the
-      // session actually ended.
-      endedAt: session.lastEndedAt ?? new Date().toISOString(),
-    });
-  } catch (e) {
-    if (e?.name === "CaptureCommitRetry") {
-      log(dim(`${e.message}`));
-      return;
+  await Promise.race([
+    session.writes.catch(() => {}),
+    new Promise((r) => setTimeout(r, 3000).unref?.()),
+  ]);
+  // Retryable aborts (a late append landing during assembly, a broken
+  // lock) settle in moments — but the tap must ACTUALLY retry: the session
+  // has left the router, and the tap's own live pid pins the spool as
+  // owned, so no external pass can finalize while the daemon runs. If
+  // retries exhaust, hand the spool to the world instead.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      saved = await assembleSpool(session.file, {
+        finalize: true,
+        // Stamp with the last recorded activity, not wall-clock now — after
+        // a machine-sleep the sweep fires at wake time, which isn't when
+        // the session actually ended.
+        endedAt: session.lastEndedAt ?? new Date().toISOString(),
+      });
+      break;
+    } catch (e) {
+      if (e?.name !== "CaptureCommitRetry") {
+        log(red(`failed to save capture: ${e?.message ?? e}`));
+        return;
+      }
+      if (attempt >= 5) {
+        await releaseSpoolOwnership(session.file).catch(() => {});
+        log(dim(`${e.message} (ownership released — any slink run can finish it)`));
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 2000).unref?.());
     }
-    log(red(`failed to save capture: ${e?.message ?? e}`));
-    return;
   }
   if (saved == null) {
     log(red("capture not finalized (spool missing, refused, or still receiving) — it will recover on a later slink run"));

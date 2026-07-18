@@ -153,3 +153,16 @@ test("finalize aborts with CaptureCommitRetry when the spool grows mid-assembly 
     assert.equal(outcome.n, 1);
   }
 });
+
+test("releaseSpoolOwnership hands a live-pinned spool to external recovery", async () => {
+  const f = cap("20260718-100009-kkkkkk");
+  const { appendSpool: ap, releaseSpoolOwnership, spoolOwnerAlive: alive } =
+    await import("../cli/store.mjs");
+  await ap(f, [span(1)], skeleton());
+  assert.equal(await alive(f), true); // pinned by our own live pid
+  await releaseSpoolOwnership(f);
+  assert.equal(await alive(f), false); // now anyone's recovery can finalize
+  const listed = await listCaptures(); // ...and the next list does exactly that
+  const entry = listed.find((c) => c.file === f);
+  assert.equal(entry?.in_progress, false);
+});
