@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   Braces,
@@ -729,7 +729,8 @@ function TreeRow({
         display: "flex",
         alignItems: "center",
         gap: 6,
-        padding: "7px 12px 7px 0",
+        height: ROW_H,
+        padding: "0 12px 0 0",
         paddingLeft: 10 + depth * 14,
         cursor: "pointer",
         background: selected ? "rgba(14,111,92,0.08)" : "transparent",
@@ -830,12 +831,125 @@ function TreeRow({
 
 /* ------------------------------------------------------------- component */
 
-export function RunViewer({ run }: { run: Run }) {
+/**
+ * Renders a session/v0 document. Two ways in:
+ *   run — the parsed document, inlined by the caller (local `slink open`,
+ *         bundled examples, small sessions).
+ *   src — a URL to fetch it from. The hosted site uses this for big
+ *         sessions so the run's bytes travel once, gzipped, instead of
+ *         being serialized into both the SSR markup and the hydration
+ *         payload (an 11.8MB run made a 17.6MB page that way).
+ */
+export function RunViewer({ run, src }: { run?: Run; src?: string }) {
+  const [fetched, setFetched] = useState<Run | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (run || !src) return;
+    let alive = true;
+    fetch(src)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`the server answered ${r.status}`);
+        return (await r.json()) as Run;
+      })
+      .then((data) => {
+        if (alive) setFetched(data);
+      })
+      .catch((e: unknown) => {
+        if (alive) setLoadError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [run, src]);
+
+  const resolved = run ?? fetched;
+  if (!resolved) {
+    return (
+      <div
+        className="rv"
+        style={{
+          fontFamily: T.mono,
+          fontSize: 12,
+          color: loadError ? T.error : T.faint,
+          border: `1px solid ${T.line}`,
+          borderRadius: 10,
+          background: T.panel,
+          padding: "48px 24px",
+          textAlign: "center",
+        }}
+      >
+        {loadError ? (
+          <>
+            couldn&apos;t load this session — {loadError}
+            {src && (
+              <>
+                {" · "}
+                <a href={src} style={{ color: T.ink }}>
+                  raw JSON
+                </a>
+              </>
+            )}
+          </>
+        ) : (
+          "loading session…"
+        )}
+      </div>
+    );
+  }
+  return <LoadedViewer run={resolved} />;
+}
+
+/** Every visible tree row is exactly this tall — the invariant the
+ *  windowing math depends on, enforced by an explicit height on the row. */
+const ROW_H = 30;
+const OVERSCAN = 12;
+
+function LoadedViewer({ run }: { run: Run }) {
   const idx = useMemo(() => indexRun(run), [run]);
   const [sel, setSel] = useState<string | null>(idx.roots[0]?.id ?? null);
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const [raw, setRaw] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  /* The visible tree, flattened. Thousands of rows are normal for real
+     agent traces, so only the window around the scroll position mounts —
+     this array is cheap (plain objects), the DOM is what's rationed. */
+  const rows = useMemo(() => {
+    const out: Array<{ span: Span; depth: number }> = [];
+    const walk = (list: Span[], depth: number) => {
+      for (const s of list) {
+        out.push({ span: s, depth });
+        if (!closed.has(s.id)) walk(idx.children.get(s.id) ?? [], depth + 1);
+      }
+    };
+    walk(idx.roots, 0);
+    return out;
+  }, [idx, closed]);
+
+  const treeRef = useRef<HTMLDivElement | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewH, setViewH] = useState(760);
+  useEffect(() => {
+    const el = treeRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const update = () => setViewH(el.clientHeight || 760);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /* Scroll a row index into the window — the windowed replacement for
+     scrollIntoView, which can't target a row that isn't mounted. */
+  const ensureVisible = (i: number) => {
+    const el = treeRef.current;
+    if (!el || i < 0) return;
+    const top = i * ROW_H;
+    if (top < el.scrollTop) el.scrollTop = top;
+    else if (top + ROW_H > el.scrollTop + el.clientHeight)
+      el.scrollTop = top + ROW_H - el.clientHeight;
+  };
 
   /* deep link: read #span=<id> on mount, write it on select */
   useEffect(() => {
@@ -843,13 +957,12 @@ export function RunViewer({ run }: { run: Run }) {
       const m = window.location.hash.match(/span=([\w.-]+)/);
       if (m && idx.byId.has(m[1])) {
         setSel(m[1]);
-        document
-          .getElementById(`rv-row-${m[1]}`)
-          ?.scrollIntoView({ block: "nearest" });
+        ensureVisible(rows.findIndex((r) => r.span.id === m[1]));
       }
     } catch {
       /* sandboxed embeds may not expose location — fine */
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx]);
 
   const select = (id: string) => {
@@ -877,42 +990,34 @@ export function RunViewer({ run }: { run: Run }) {
     window.setTimeout(() => setCopied(false), 1400);
   };
 
-  const rows: Array<{ span: Span; depth: number }> = [];
-  const walk = (list: Span[], depth: number) => {
-    for (const s of list) {
-      rows.push({ span: s, depth });
-      if (!closed.has(s.id)) walk(idx.children.get(s.id) ?? [], depth + 1);
-    }
-  };
-  walk(idx.roots, 0);
-
   const selected = sel ? idx.byId.get(sel) : undefined;
   const created = new Date(run.created_at);
 
-  const typeCounts: Array<[string, number]> = [];
-  let errorCount = 0;
-  for (const s of run.spans) {
-    if (s.status === "error") errorCount++;
-    const entry = typeCounts.find(([t]) => t === s.type);
-    if (entry) entry[1]++;
-    else typeCounts.push([s.type, 1]);
-  }
+  const { typeCounts, errorCount } = useMemo(() => {
+    const counts: Array<[string, number]> = [];
+    let errors = 0;
+    for (const s of run.spans) {
+      if (s.status === "error") errors++;
+      const entry = counts.find(([t]) => t === s.type);
+      if (entry) entry[1]++;
+      else counts.push([s.type, 1]);
+    }
+    return { typeCounts: counts, errorCount: errors };
+  }, [run]);
 
   /* keyboard: ↑/↓ move through visible rows, ←/→ collapse/expand. The
-     handler lives on the rows container so it fires while a row has focus. */
+     handler lives on the scroll container (which is focusable — a focused
+     row can unmount when it scrolls out of the window). */
   const onTreeKey = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const at = rows.findIndex((r) => r.span.id === sel);
-      const next =
-        rows[
-          Math.min(rows.length - 1, Math.max(0, at + (e.key === "ArrowDown" ? 1 : -1)))
-        ];
+      const ni = Math.min(rows.length - 1, Math.max(0, at + (e.key === "ArrowDown" ? 1 : -1)));
+      const next = rows[ni];
       if (next) {
         select(next.span.id);
-        const el = document.getElementById(`rv-row-${next.span.id}`);
-        el?.scrollIntoView({ block: "nearest" });
-        el?.focus();
+        ensureVisible(ni);
+        treeRef.current?.focus();
       }
     } else if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && sel) {
       e.preventDefault();
@@ -924,6 +1029,10 @@ export function RunViewer({ run }: { run: Run }) {
       });
     }
   };
+
+  /* the window: which slice of rows is actually in the DOM */
+  const first = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+  const last = Math.min(rows.length, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN);
 
   return (
     <div className="rv" style={{ fontFamily: T.sans, color: T.ink }}>
@@ -1076,32 +1185,40 @@ export function RunViewer({ run }: { run: Run }) {
               )}
             </span>
           </div>
-          {/* NOTE: virtualize this list (e.g. react-virtuoso) before real
-              agent traces arrive — thousands of rows are normal. */}
+          {/* Windowed: rows are fixed-height, so visibility is arithmetic.
+              A spacer keeps the scrollbar honest; only [first, last) mount. */}
           <div
+            ref={treeRef}
+            tabIndex={0}
+            aria-label="Trace spans"
             onKeyDown={onTreeKey}
+            onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
             style={{ padding: "6px 0", overflowY: "auto", maxHeight: "min(72vh, 760px)" }}
           >
-            {rows.map(({ span, depth }) => (
-              <TreeRow
-                key={span.id}
-                span={span}
-                depth={depth}
-                idx={idx}
-                selected={sel === span.id}
-                hasKids={(idx.children.get(span.id) ?? []).length > 0}
-                open={!closed.has(span.id)}
-                onToggle={() =>
-                  setClosed((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(span.id)) next.delete(span.id);
-                    else next.add(span.id);
-                    return next;
-                  })
-                }
-                onSelect={() => select(span.id)}
-              />
-            ))}
+            <div style={{ height: rows.length * ROW_H, position: "relative" }}>
+              <div style={{ position: "absolute", top: first * ROW_H, left: 0, right: 0 }}>
+                {rows.slice(first, last).map(({ span, depth }) => (
+                  <TreeRow
+                    key={span.id}
+                    span={span}
+                    depth={depth}
+                    idx={idx}
+                    selected={sel === span.id}
+                    hasKids={(idx.children.get(span.id) ?? []).length > 0}
+                    open={!closed.has(span.id)}
+                    onToggle={() =>
+                      setClosed((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(span.id)) next.delete(span.id);
+                        else next.add(span.id);
+                        return next;
+                      })
+                    }
+                    onSelect={() => select(span.id)}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
