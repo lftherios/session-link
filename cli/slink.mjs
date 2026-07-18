@@ -163,7 +163,9 @@ async function clipboard(text) {
   const candidates =
     process.platform === "darwin"
       ? [["pbcopy"]]
-      : [["wl-copy"], ["xclip", "-selection", "clipboard"]];
+      : process.platform === "win32"
+        ? [["clip"]]
+        : [["wl-copy"], ["xclip", "-selection", "clipboard"]];
   for (const [cmd, ...args] of candidates) {
     try {
       await new Promise((resolve, reject) => {

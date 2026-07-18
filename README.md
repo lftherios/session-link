@@ -12,7 +12,7 @@
 
 ![slink capturing an agent run and publishing it to a shareable URL](assets/demo.gif)
 
-**[▶ Open a real captured session →](https://session.link/r/agent-eval)**
+**[▶ Open a sample session in the viewer →](https://session.link/r/agent-eval)**
 
 </div>
 
@@ -26,18 +26,38 @@ Agent runs are ephemeral. When something interesting happens — a clever tool c
 # 1. Record — wrap your agent. Nothing leaves your machine.
 npx session.link dev -- python agent.py
 
-# 2. Publish — validate, secret-scan, one confirmation, a permanent link.
-npx session.link push
-# → https://session.link/r/9f3kx2mvq7wt   (copied to your clipboard)
+# 2. Publish — one-time GitHub sign-in, then validate, secret-scan, confirm.
+npx session.link login && npx session.link push
+# → https://session.link/r/9f3kx2mvq7wtd4   (copied to your clipboard)
 ```
 
-That's it — no code changes, no SDK, no account required to capture. `dev` points `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` at a local recording proxy, runs your command, and writes each call to `~/.slink` as it happens. Streaming is passed through untouched and reassembled. Optionally `npx session.link login` (GitHub) first, so published sessions are attributed to you.
+That's it — no code changes, no SDK. Capturing needs no account at all; `login` (free, GitHub) is only for publishing, so sessions are attributed and deletable by you. `dev` points `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` at a local recording proxy, runs your command, and writes each call to `~/.slink` as it happens — streaming passed through untouched and reassembled. Installed globally (npm or brew), the binary is `slink`; the `npx session.link` form is the same tool.
 
-Node agent instead? `slink dev -- node agent.js`. Already ran it — in Claude Code, Codex, opencode, pi, or Hermes? `slink import` reconstructs the session from your agent's own history ([see below](#works-with-the-agent-you-already-use)). Want to review before sharing? `slink open` browses your captures locally in the exact viewer the hosted site renders, with a Publish button on the page.
+- **Node agent?** `slink dev -- node agent.js` — anything that speaks the Anthropic or OpenAI API.
+- **Local models?** The proxy can point at any compatible upstream: `SLINK_UPSTREAM_OPENAI=http://localhost:11434/v1 slink dev -- …` records Ollama sessions too.
+- **Already ran it in Claude Code, Codex, opencode, pi, or Hermes?** `slink import` — [see below](#works-with-the-agent-you-already-use).
+- **Review before sharing?** `slink open` browses your captures locally in the exact viewer the hosted site renders, Publish button included.
 
-**Always on?** Instead of wrapping each run, leave `slink tap` running — a persistent recorder that segments every session flowing through it into its own capture. `eval "$(slink on)"` routes this shell's agents at it, so capture becomes a background fact; publish any session later with `slink share`.
+### Always on
 
-> Install today is npm (`npx session.link`, or `npm i -g session.link` for a global `slink`). Standalone `brew` / `curl | sh` binaries are coming soon.
+Instead of wrapping each run, install the tap once and forget it:
+
+```bash
+slink tap --install    # persistent recorder as a login service — survives reboots
+eval "$(slink on)"     # route this shell's agents through it
+```
+
+Every session flowing through is segmented into its own local capture, so recording becomes a background fact. Publish any one of them later with `slink share` — import-or-pick the newest capture and `push` it, in one step. Captures are plaintext on your disk and auto-pruned after 30 days (`SLINK_RETAIN_DAYS`); `slink prune` trims the buffer on demand.
+
+### Install
+
+```bash
+npm i -g session.link                              # Node 18.20+ / 20.10+ (npx works too)
+brew install lftherios/tap/slink                   # standalone binary, no Node
+curl -fsSL https://session.link/install.sh | sh    # same binary, any platform
+```
+
+Prebuilt binaries for macOS, Linux, and Windows (with `SHA256SUMS.txt`) are on the [releases page](https://github.com/lftherios/session-link/releases).
 
 ## Works with the agent you already use
 
@@ -52,19 +72,19 @@ Didn't wrap it in `slink dev`? Import it after the fact. `slink import` reconstr
 | <img src="assets/logos/hermes.png" height="16" align="center"> &nbsp;[Hermes](https://github.com/NousResearch/hermes-agent) <sup>experimental</sup> | `~/.hermes/state.db` (SQLite) | `slink import --from hermes` |
 
 ```bash
-# newest session in this repo, whichever agent produced it → a link
-slink share
+slink import   # newest session in this repo, whichever agent produced it
+slink push     # → a link   (or `slink share`: both steps in one)
 ```
 
-Imports are marked **`fidelity: reconstructed`** — the transcript carries the messages, tool calls, models, and token usage, but not the raw wire request bodies (a capture from `slink dev` is `exact`). The SQLite-backed stores (opencode, Hermes) need Node ≥ 22. Hermes is **experimental** — its `tool_calls` shape is inferred, not yet verified against a live session.
+Imports are marked **`fidelity: reconstructed`** — the transcript carries the messages, tool calls, models, and token usage, but not the raw wire request bodies (a capture from `slink dev` is `exact`). The SQLite-backed stores (opencode, Hermes) need Node ≥ 22.13 (built-in `node:sqlite`). Hermes is **experimental** — its `tool_calls` shape is inferred, not yet verified against a live session.
 
-**pi, live.** The [`@session-link/pi-extension`](packages/pi-extension) adds a `/slink` command to pi — publish the session you're in without leaving the TUI, at **`exact`** fidelity: it records each turn from pi's in-process SDK hooks, assembled system prompt and verbatim provider request included.
+**Using pi? Skip import entirely.** The [`@session-link/pi-extension`](packages/pi-extension) adds a `/slink` command to pi — publish the session you're in without leaving the TUI, at **`exact`** fidelity: it records each turn from pi's in-process SDK hooks, assembled system prompt and verbatim provider request included.
 
 ## What a shared link gives you
 
 A published session isn't a screenshot — it's the real thing, rendered:
 
-- 🌳 **An interactive trace tree** with a timing micro-waterfall — spans colored by kind (llm_call, tool_call, retrieval, agent), collapsible, navigable.
+- 🌳 **An interactive trace tree** with a timing micro-waterfall — spans colored by kind (llm_call, tool_call, retrieval, agent), collapsible, navigable. Windowed rendering keeps it smooth on real sessions: a 12MB, 4,000-span working day scrolls like a toy example.
 - 💬 **Formatted messages** — system / user / assistant / thinking / tool calls, with a **Raw JSON** toggle one click away (normalization is never lossy; the raw payload is preserved).
 - 📊 **Token, cost, latency, and score chips** rolled up per run and per span.
 - 🔗 **`#span=` deep links** — point a teammate at step 14, not "scroll down a bit."
@@ -75,9 +95,10 @@ A published session isn't a screenshot — it's the real thing, rendered:
 `slink` runs in the path of your prompts and API keys, so it's built to be safe to run on real work:
 
 - **Capture is 100% local.** A recording proxy tees the calls to disk; nothing is uploaded until you run `push`.
+- **API keys never touch the capture.** The proxy records request/response bodies only — auth headers are forwarded upstream and dropped, so they can't end up in a published session.
 - **Secrets are scanned twice** — client-side before a single byte leaves your machine, and again server-side before anything touches disk (`sk-…`, `ghp_…`, `AKIA…`, Stripe keys, PEM blocks). A hit blocks the publish.
-- **Sessions are immutable and content-addressed** — the exact bytes are served back, so anyone can verify the hash. Deletion is a clean tombstone, never a silent edit.
-- **Unlisted by default** — ~66 bits of unguessable URL, no public index, crawlers excluded. You decide what gets shared, one link at a time.
+- **Sessions are immutable and content-addressed** — the exact bytes are served back, so anyone can verify: `curl -s https://session.link/api/runs/<id>/raw | shasum -a 256`. Deletion is a clean tombstone, never a silent edit.
+- **Unlisted by default** — ~69 bits of unguessable URL, no public index, crawlers excluded. You decide what gets shared, one link at a time.
 
 ## What's in the box
 
@@ -107,7 +128,7 @@ The hosted service lives at **[session.link](https://session.link)**; this repo 
 
 ## License
 
-MIT © [lftherios](https://github.com/lftherios) — see [LICENSE](LICENSE).
+MIT © [session.link](https://session.link) — see [LICENSE](LICENSE).
 
 ---
 

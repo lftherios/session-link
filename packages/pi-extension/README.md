@@ -26,7 +26,7 @@ In a pi session:
 /slink
 ```
 
-→ `session.link: published → https://session.link/r/9f3kx2mvq7wt` (also copied
+→ `session.link: published → https://session.link/r/9f3kx2mvq7wtd4` (also copied
 to your clipboard).
 
 ## Notes

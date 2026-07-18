@@ -9,7 +9,9 @@ export async function openSqlite(file) {
   try {
     mod = await import("node:sqlite");
   } catch {
-    throw new Error("importing this harness needs Node ≥ 22 (built-in node:sqlite)");
+    throw new Error(
+      "importing this harness needs Node ≥ 22.13 (built-in node:sqlite; on 22.5–22.12 pass --experimental-sqlite)",
+    );
   }
   return new mod.DatabaseSync(file, { readOnly: true });
 }
