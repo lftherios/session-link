@@ -92,13 +92,18 @@ A published session isn't a screenshot — it's the real thing, rendered:
 
 ## Private by design
 
-`slink` runs in the path of your prompts and API keys, so it's built to be safe to run on real work:
+`slink` runs in the path of your prompts and API keys, so it's built to be safe to run on real work — and honest about where the edges are:
 
 - **Capture is 100% local.** A recording proxy tees the calls to disk; nothing is uploaded until you run `push`.
 - **API keys never touch the capture.** The proxy records request/response bodies only — auth headers are forwarded upstream and dropped, so they can't end up in a published session.
-- **Secrets are scanned twice** — client-side before a single byte leaves your machine, and again server-side before anything touches disk (`sk-…`, `ghp_…`, `AKIA…`, Stripe keys, PEM blocks). A hit blocks the publish.
-- **Sessions are immutable and content-addressed** — the exact bytes are served back, so anyone can verify: `curl -s https://session.link/api/runs/<id>/raw | shasum -a 256`. Deletion is a clean tombstone, never a silent edit.
-- **Unlisted by default** — ~69 bits of unguessable URL, no public index, crawlers excluded. You decide what gets shared, one link at a time.
+- **Secrets are scanned twice** — client-side before a single byte leaves your machine, and again server-side before anything touches disk. The scan is deliberately high-precision, low-recall: [a short list of unambiguous key formats](packages/format/secret-patterns.mjs) (`sk-…`, `ghp_…`, `AKIA…`, Stripe, PEM blocks), not DLP. It catches a pasted key; it can't know which *content* is sensitive — that's what reviewing in `slink open` before publishing is for.
+- **Sessions are immutable and content-addressed** — the exact bytes are served back, so anyone can verify: `curl -s https://session.link/api/runs/<id>/raw | shasum -a 256`.
+- **Deletion is a tombstone, and publishes are owned.** Deleting (only your account can) takes the page, unfurls, and raw bytes offline immediately. The underlying blob is currently retained server-side — re-publishing identical bytes from your account revives the same URL — so treat publishing as hard to fully un-ring; a true purge path is on the roadmap.
+- **Unlisted is not access control.** ~69 bits of unguessable URL, no public index, crawlers excluded — the share-a-doc-link model. Anyone holding the link can read the session; keep genuinely sensitive runs local.
+
+### If session.link disappears
+
+Your captures never leave `~/.slink` unless you publish them. The [format](packages/format) and [viewer](packages/viewer) are MIT — a `session/v0` file renders forever, with or without the hosted service — and every published session's exact bytes are one `curl` away for backup. `slink push --server <url>` (or `SLINK_SERVER`) points the client at any compatible sink; session.link is the default, not a hardcode.
 
 ## What's in the box
 
