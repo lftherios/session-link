@@ -91,6 +91,8 @@ export async function pruneCommand(flags) {
       // the pruned capture on the next list.
       await rm(`${c.file}.spool`, { force: true });
       await rm(`${c.file}.spool.pid`, { force: true });
+      await rm(`${c.file}.spool.corrupt`, { force: true });
+      await rm(`${c.file}.lock`, { force: true });
       await rm(c.file, { force: true });
       done++;
     } catch {
@@ -116,6 +118,8 @@ export async function autoPrune() {
       try {
         await rm(`${c.file}.spool`, { force: true });
         await rm(`${c.file}.spool.pid`, { force: true });
+        await rm(`${c.file}.spool.corrupt`, { force: true });
+        await rm(`${c.file}.lock`, { force: true });
         await rm(c.file, { force: true });
         done++;
       } catch {

@@ -358,19 +358,31 @@ export async function dev({ port, name, cmd }) {
       log("no LLM calls captured — nothing saved");
       return;
     }
+    let saved = null;
     try {
       // Close first (a call we gave up draining must not respool a span at a
-      // finalized path), let in-flight appends land, then assemble the spool
-      // into the final session/v0 capture in one streaming pass.
+      // finalized path), let in-flight appends land — bounded: a wedged disk
+      // write must not hold the exit hostage — then assemble the spool into
+      // the final session/v0 capture in one streaming pass.
       session.closed = true;
-      await session.writes.catch(() => {});
-      await assembleSpool(session.file, {
+      await Promise.race([
+        session.writes.catch(() => {}),
+        new Promise((r) => setTimeout(r, 3000).unref?.()),
+      ]);
+      saved = await assembleSpool(session.file, {
         finalize: true,
         endedAt: session.lastEndedAt ?? new Date().toISOString(),
       });
     } catch (e) {
       // One clean line, and never clobber the child's own exit code.
       log(red(`failed to save capture: ${e?.message ?? e}`));
+      process.exitCode ||= 1;
+      return;
+    }
+    if (saved == null) {
+      // assembleSpool returns null (not throws) when the spool vanished or
+      // was refused — success must not be claimed for a capture not written.
+      log(red("failed to save capture: spool missing or unreadable"));
       process.exitCode ||= 1;
       return;
     }
@@ -407,9 +419,13 @@ export async function dev({ port, name, cmd }) {
 async function finalizeSession(session) {
   session.closed = true;
   if (session.seq === 0) return; // never recorded anything — nothing to save
+  let saved = null;
   try {
-    await session.writes.catch(() => {});
-    await assembleSpool(session.file, {
+    await Promise.race([
+      session.writes.catch(() => {}),
+      new Promise((r) => setTimeout(r, 3000).unref?.()),
+    ]);
+    saved = await assembleSpool(session.file, {
       finalize: true,
       // Stamp with the last recorded activity, not wall-clock now — after a
       // machine-sleep the sweep fires at wake time, which isn't when the
@@ -418,6 +434,10 @@ async function finalizeSession(session) {
     });
   } catch (e) {
     log(red(`failed to save capture: ${e?.message ?? e}`));
+    return;
+  }
+  if (saved == null) {
+    log(red("failed to save capture: spool missing or unreadable"));
     return;
   }
   log(`${green("●")} session ended · ${session.seq} call${session.seq === 1 ? "" : "s"} → ${dim(session.file)}`);

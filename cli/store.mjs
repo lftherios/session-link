@@ -1,4 +1,4 @@
-import { appendFile, chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, chmod, mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { createReadStream, createWriteStream } from "node:fs";
 import { once } from "node:events";
 import readline from "node:readline";
@@ -74,16 +74,69 @@ const pidPath = (file) => `${spoolPath(file)}.pid`;
 const jsonLine = (o) =>
   JSON.stringify(o).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
 
-/** Is the recorder that owns this spool still running? */
-async function spoolOwnerAlive(file) {
+const lockPath = (file) => `${file}.lock`;
+
+// Boot timestamp (ms, ± scheduler drift). Recorded in the owner sidecar so
+// a spool from before a reboot reads as dead even when its pid has been
+// recycled to some long-lived daemon — post-reboot pids are densely
+// re-claimed, and a squatted pid would otherwise pin the spool live for
+// the machine's whole uptime.
+const bootMs = () => Math.round(Date.now() - os.uptime() * 1000);
+const BOOT_TOLERANCE_MS = 15_000;
+
+const writeOwnerSidecar = (file) =>
+  writeFile(pidPath(file), JSON.stringify({ pid: process.pid, boot: bootMs() }));
+
+/** Is the recorder that owns this spool still running? (Exported for tests.) */
+export async function spoolOwnerAlive(file) {
+  let pid;
+  let boot = null;
   try {
-    const pid = Number((await readFile(pidPath(file), "utf8")).trim());
-    if (!Number.isInteger(pid) || pid <= 0) return false;
-    process.kill(pid, 0);
-    return true;
+    const raw = (await readFile(pidPath(file), "utf8")).trim();
+    if (raw.startsWith("{")) ({ pid, boot = null } = JSON.parse(raw));
+    else pid = Number(raw); // sidecar from before the boot token existed
   } catch {
     return false;
   }
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  if (boot != null && Math.abs(boot - bootMs()) > BOOT_TOLERANCE_MS) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    // EPERM means the process EXISTS but belongs to another user — that is
+    // alive; treating it as dead once falsely recovered live sessions in
+    // shared-SLINK_HOME setups and lost their pre-recovery spans.
+    return e?.code === "EPERM";
+  }
+}
+
+/**
+ * A tiny cross-process mutex for the commit step. Check-then-rename is
+ * inherently non-atomic: a snapshot racing a finalizer through the same
+ * μs-wide gap could revert a finalized capture to in_progress with no
+ * spool left to repair from. The lock is held for the few milliseconds of
+ * [re-check → rename → cleanup]; a crashed holder's lock breaks by age.
+ */
+async function withCommitLock(file, fn) {
+  const lock = lockPath(file);
+  for (let i = 0; i < 40; i++) {
+    try {
+      await writeFile(lock, String(process.pid), { flag: "wx" });
+    } catch (e) {
+      if (e?.code !== "EEXIST") throw e;
+      const age = await stat(lock).then((s) => Date.now() - s.mtimeMs, () => 0);
+      if (age > 5000) await rm(lock, { force: true }); // crashed holder
+      else await new Promise((r) => setTimeout(r, 50));
+      continue;
+    }
+    try {
+      return await fn();
+    } finally {
+      await rm(lock, { force: true });
+    }
+  }
+  throw new Error("capture commit lock is stuck");
 }
 
 /**
@@ -99,7 +152,7 @@ export async function appendSpool(file, spans, skeleton) {
   await mkdir(path.dirname(file), { recursive: true });
   const spool = spoolPath(file);
   const size = await stat(spool).then((s) => s.size, () => 0);
-  if (size === 0) await writeFile(pidPath(file), String(process.pid));
+  if (size === 0) await writeOwnerSidecar(file);
   const payload =
     (size > 0 ? "\n" : "") +
     (size === 0 ? jsonLine(skeleton) + "\n" : "") +
@@ -117,14 +170,15 @@ export async function appendSpool(file, spans, skeleton) {
  */
 export async function assembleSpool(file, { finalize = false, endedAt } = {}) {
   const spool = spoolPath(file);
+  let spoolMtimeMs;
   try {
-    await stat(spool);
+    spoolMtimeMs = (await stat(spool)).mtimeMs;
   } catch {
     return null;
   }
   // Snapshot mode is advisory and must never beat the authoritative
   // finalizer: remember what the .json looked like before assembling, and
-  // bail before the rename if either file changed hands (see below).
+  // bail inside the commit lock if either file changed hands (see below).
   const jsonBefore = await stat(file).then((s) => s.mtimeMs, () => null);
   const rl = readline.createInterface({
     input: createReadStream(spool, { encoding: "utf8" }),
@@ -192,26 +246,34 @@ export async function assembleSpool(file, { finalize = false, endedAt } = {}) {
     await rm(tmp, { force: true });
     throw e;
   }
-  if (!finalize) {
-    // The finalizer may have won while we streamed: if the spool is gone or
-    // the .json changed under us, our snapshot is stale — discard it rather
-    // than revert a finalized capture to in_progress (unrepairable: the
-    // spool it would take to re-finalize no longer exists).
-    const [spoolStill, jsonNow] = await Promise.all([
-      stat(spool).then(() => true, () => false),
-      stat(file).then((s) => s.mtimeMs, () => null),
-    ]);
-    if (!spoolStill || jsonNow !== jsonBefore) {
-      await rm(tmp, { force: true });
-      return null;
+  // The commit — serialized across processes: a finalizer and a snapshot
+  // must never interleave their [re-check → rename → cleanup] sections.
+  return withCommitLock(file, async () => {
+    if (!finalize) {
+      // The finalizer may have won while we streamed: if the spool is gone
+      // or the .json changed under us, our snapshot is stale — discard it
+      // rather than revert a finalized capture to in_progress (unrepairable:
+      // the spool it would take to re-finalize no longer exists).
+      const [spoolStill, jsonNow] = await Promise.all([
+        stat(spool).then(() => true, () => false),
+        stat(file).then((s) => s.mtimeMs, () => null),
+      ]);
+      if (!spoolStill || jsonNow !== jsonBefore) {
+        await rm(tmp, { force: true });
+        return null;
+      }
+      await rename(tmp, file);
+      // Stamp the snapshot with the spool's own mtime: the freshness gate
+      // (spool newer than json → re-assemble) must keep firing for appends
+      // that landed while we streamed, and go quiet only when caught up.
+      await utimes(file, new Date(), new Date(spoolMtimeMs)).catch(() => {});
+      return spans;
     }
-  }
-  await rename(tmp, file);
-  if (finalize) {
+    await rename(tmp, file);
     await rm(spool, { force: true });
     await rm(pidPath(file), { force: true });
-  }
-  return spans;
+    return spans;
+  });
 }
 
 /**
@@ -241,8 +303,10 @@ export async function recoverSpools() {
       if ((await assembleSpool(file, { finalize: true, endedAt: new Date(s.mtimeMs).toISOString() })) != null)
         recovered += 1;
       else {
-        // empty/corrupt spool — nothing salvageable
-        await rm(spool, { force: true });
+        // Unsalvageable as-is (empty, or a torn header ahead of durable
+        // spans). Set it aside instead of deleting — the bytes may still
+        // matter to someone, and a rename stops the rescan loop.
+        await rename(spool, `${spool}.corrupt`).catch(() => {});
         await rm(`${spool}.pid`, { force: true });
       }
     } catch {
@@ -277,13 +341,24 @@ export async function listCaptures() {
       } else if (
         (await assembleSpool(jsonFile, { finalize: true, endedAt: new Date(sp.mtimeMs).toISOString() })) == null
       ) {
-        await rm(spoolFile, { force: true });
+        await rename(spoolFile, `${spoolFile}.corrupt`).catch(() => {});
         await rm(`${spoolFile}.pid`, { force: true });
       }
       if (!files.includes(jsonName)) files.push(jsonName);
     } catch {
       /* best-effort; the finalizer or the next pass will produce the file */
     }
+  }
+
+  // Orphan owner sidecars: a crash between sidecar-write and first append
+  // leaves a .pid with no spool. Old ones are noise — sweep them.
+  for (const f of files) {
+    if (!f.endsWith(".json.spool.pid")) continue;
+    if (files.includes(f.slice(0, -".pid".length))) continue;
+    const full = path.join(CAPTURE_DIR, f);
+    stat(full)
+      .then((s) => (Date.now() - s.mtimeMs > 3_600_000 ? rm(full, { force: true }) : null))
+      .catch(() => {});
   }
 
   const out = [];
@@ -304,6 +379,25 @@ export async function listCaptures() {
       const run = JSON.parse(await readFile(file, "utf8"));
       // Accept both the current name and the pre-rebrand run/v0.
       if (run?.schema !== "session/v0" && run?.schema !== "run/v0") continue;
+      let inProgress = run.metadata?.in_progress === true;
+      if (inProgress) {
+        const spoolExists = await stat(spoolPath(file)).then(() => true, () => false);
+        if (!spoolExists && !(await spoolOwnerAlive(file))) {
+          // Stranded mid-flight — no spool to finalize from, no live owner
+          // (a pre-recovery crash, or the blast radius of a lost race).
+          // Heal in place so it stops reading as "(recording)" forever and
+          // becomes prunable again.
+          delete run.metadata.in_progress;
+          const root = run.spans?.[0];
+          if (root && !root.ended_at) {
+            const last = run.spans[run.spans.length - 1];
+            root.ended_at = last?.ended_at ?? root.started_at;
+            root.status ??= "ok";
+          }
+          await writeRun(file, run).catch(() => {});
+          inProgress = false;
+        }
+      }
       out.push({
         file,
         name: run.name,
@@ -317,7 +411,7 @@ export async function listCaptures() {
               .filter(Boolean),
           ),
         ],
-        in_progress: run.metadata?.in_progress === true,
+        in_progress: inProgress,
       });
     } catch {
       /* skip unreadable file */
