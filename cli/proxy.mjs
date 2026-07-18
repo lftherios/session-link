@@ -1,6 +1,6 @@
 import http from "node:http";
 import { spawn } from "node:child_process";
-import { CAPTURE_DIR, newCapturePath, writeRun } from "./store.mjs";
+import { CAPTURE_DIR, appendSpool, assembleSpool, newCapturePath, recoverSpools } from "./store.mjs";
 import {
   assembleAnthropicSse,
   assembleOpenaiChatSse,
@@ -75,7 +75,11 @@ function newSession(name, command) {
     file: newCapturePath(now),
     seq: 0,
     writes: Promise.resolve(),
-    run: {
+    // Only this skeleton lives in heap. Spans are appended to the session's
+    // spool and forgotten — the always-on tap must stay flat-memory over
+    // arbitrarily long sessions (the old shape held every span and rewrote
+    // the whole file per call: O(session²) I/O, hundreds of MB resident).
+    skeleton: {
       schema: "session/v0",
       name,
       created_at: now.toISOString(),
@@ -92,12 +96,13 @@ function newSession(name, command) {
  * All capture writes go through one per-session chain: concurrent calls,
  * and the finalize on exit, must land in order — the README's own
  * `slink dev -- <fast command>` used to crash when finish()'s write raced
- * the last call's still-in-flight flush.
+ * the last call's still-in-flight flush. Appends are O(call), and the
+ * span is unreferenced the moment its line is on disk.
  */
-function flush(session) {
+function flush(session, objs) {
   session.writes = session.writes
     .catch(() => {}) // an earlier failed write must not poison the chain
-    .then(() => writeRun(session.file, session.run))
+    .then(() => appendSpool(session.file, objs))
     .catch((e) => {
       // A failing capture disk must not be silent: warn once, keep proxying.
       if (!session.writeFailed) {
@@ -109,12 +114,12 @@ function flush(session) {
   return session.writes;
 }
 
-/** Flushed to disk after every call — a crash never loses captured spans. */
+/** Appended to the spool after every call — a crash never loses captured spans. */
 async function record(session, span) {
   session.seq += 1;
-  session.run.spans.push(span);
-  if (span.ended_at) session.run.spans[0].ended_at = span.ended_at;
-  await flush(session);
+  // The first record also lays down the spool header (lazy: a session that
+  // never captures anything leaves no file at all).
+  await flush(session, session.seq === 1 ? [session.skeleton, span] : [span]);
 }
 
 function logSpan(span, ms) {
@@ -336,12 +341,11 @@ export async function dev({ port, name, cmd }) {
       log("no LLM calls captured — nothing saved");
       return;
     }
-    const root = session.run.spans[0];
-    root.ended_at = new Date().toISOString();
-    root.status = "ok";
-    delete session.run.metadata.in_progress;
     try {
-      await flush(session);
+      // Let in-flight appends land, then assemble the spool into the final
+      // session/v0 capture in one streaming pass.
+      await session.writes.catch(() => {});
+      await assembleSpool(session.file, { finalize: true, endedAt: new Date().toISOString() });
     } catch (e) {
       // One clean line, and never clobber the child's own exit code.
       log(red(`failed to save capture: ${e?.message ?? e}`));
@@ -377,15 +381,12 @@ export async function dev({ port, name, cmd }) {
   }
 }
 
-/** Close out a session the tap has segmented: stamp the root, drop the in-progress flag, flush. */
+/** Close out a session the tap has segmented: assemble its spool into the final capture. */
 async function finalizeSession(session) {
   if (session.seq === 0) return; // never recorded anything — nothing to save
-  const root = session.run.spans[0];
-  root.ended_at = new Date().toISOString();
-  root.status = "ok";
-  delete session.run.metadata.in_progress;
   try {
-    await flush(session);
+    await session.writes.catch(() => {});
+    await assembleSpool(session.file, { finalize: true, endedAt: new Date().toISOString() });
   } catch (e) {
     log(red(`failed to save capture: ${e?.message ?? e}`));
     return;
@@ -436,6 +437,12 @@ export async function serve({ port = 4141, idleMs } = {}) {
     OPENAI_BASE_URL: `http://127.0.0.1:${p}/openai/v1`,
   };
   log(`session.link tap · http://127.0.0.1:${p} · capturing to ${dim(CAPTURE_DIR)}`);
+
+  // A previous recorder that died mid-session left its spool behind. Anything
+  // idle past the gap can't be live (a fresh spool may belong to a running
+  // `slink dev` — leave those), so finish what it started.
+  const recovered = await recoverSpools(router.idleMs);
+  if (recovered) log(dim(`recovered ${recovered} interrupted capture${recovered === 1 ? "" : "s"}`));
 
   // Rolling buffer: sweep old/empty captures on start so ambient recording
   // doesn't grow ~/.slink without bound (SLINK_RETAIN_DAYS, default 30).
