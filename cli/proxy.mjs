@@ -503,6 +503,10 @@ async function finalizeSession(session) {
       break;
     } catch (e) {
       if (e?.name !== "CaptureCommitRetry") {
+        // Even a non-retryable failure (ENOSPC, EIO) shouldn't leave the
+        // spool pinned by our live pid for the daemon's lifetime — release
+        // so another process (or a later run) can try where we failed.
+        await releaseSpoolOwnership(session.file).catch(() => {});
         log(red(`failed to save capture: ${e?.message ?? e}`));
         return;
       }
