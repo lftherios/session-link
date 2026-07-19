@@ -1,0 +1,95 @@
+# goreleaser config for the Go slink CLI (P4 of docs/go-migration.md).
+#
+# NOT YET WIRED TO RELEASE. This produces the P4 distribution — compressed
+# archives + checksums + a Homebrew tap update + deb/rpm — replacing the
+# 61MB raw Bun binaries with ~3MB archives. It runs only when a v* tag is
+# pushed AND the release workflow is enabled; the npm cutover is a separate,
+# deliberate step the maintainer takes (see the migration doc's hard gate).
+#
+# The viewer bundle (internal/open/viewer.js) must exist before `goreleaser
+# build` — CI generates it via `npm run build:viewer && node
+# scripts/golden.mjs` before invoking goreleaser (see .github/workflows).
+version: 2
+
+project_name: slink
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: slink
+    main: ./cmd/slink
+    binary: slink
+    env:
+      - CGO_ENABLED=0 # pure-Go sqlite (modernc); static, no libc dependency
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: slink
+    # tar.gz everywhere except Windows (zip) — the ~3MB compressed form the
+    # curl installer and Homebrew consume, vs the ~7MB raw binary.
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    # Binary-only archives — LICENSE/README live at the repo root, outside
+    # goreleaser's go/ workdir; the binary is self-contained (embedded
+    # viewer, static sqlite), so the archive is just `slink`.
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+# Homebrew tap auto-update — retires update-formula.mjs + the manual copy.
+# goreleaser computes the sha256s, renders the cask, and commits it to
+# lftherios/homebrew-tap on each release. Casks install the prebuilt binary
+# (goreleaser's current Homebrew path; `brews`/formulae is deprecated).
+homebrew_casks:
+  - name: slink
+    repository:
+      owner: lftherios
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
+    homepage: "https://session.link"
+    description: "Capture LLM sessions locally, publish the ones worth sharing"
+    commit_author:
+      name: goreleaser
+      email: noreply@session.link
+    # The binary isn't notarized; clear the quarantine bit so a first run
+    # doesn't hit Gatekeeper on macOS.
+    hooks:
+      post:
+        install: |
+          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/slink"]
+
+# Linux packages — new channels the Bun binaries never had.
+nfpms:
+  - id: slink
+    package_name: slink
+    homepage: "https://session.link"
+    description: "Capture LLM sessions locally, publish the ones worth sharing"
+    maintainer: "session.link <noreply@session.link>"
+    license: "MIT"
+    formats: [deb, rpm, apk]
+    bindir: /usr/bin
+
+release:
+  github:
+    owner: lftherios
+    name: session-link
+  # Drafts by default so a tag never auto-publishes a release before the
+  # maintainer reviews it — belt-and-suspenders with the workflow gate.
+  draft: true
+  name_template: "v{{ .Version }}"
+
+# The npm platform packages are intentionally NOT produced here — the
+# migration decision sunsets npm at cutover rather than shipping Go via npm.

@@ -59,3 +59,38 @@ git tag v0.1.0 && git push --tags
   releases repo first.)
 - **Installer**: `public/install.sh` is served at `https://session.link/install.sh`
   (it's a static file in `public/`). Docs headline: `curl -fsSL https://session.link/install.sh | sh`.
+
+## P4: the Go distribution (built, not yet armed)
+
+The Go CLI (`go/`) ships via **goreleaser** — `go/.goreleaser.yaml` builds
+compressed archives (~5MB vs the Bun binaries' 61MB), a checksums file,
+deb/rpm/apk packages, and auto-updates the Homebrew **cask** in
+`lftherios/homebrew-tap`. `packaging/install.sh` is the archive-aware
+`curl | sh` installer (checksum-verified, no Node).
+
+**This is staged, not live.** Two gates keep a tag from shipping Go
+binaries by accident, and neither the npm deprecation nor the cutover
+happens until it's deliberately triggered:
+
+1. `.github/workflows/release-go.yml` runs only when the repo variable
+   `GO_RELEASE_ENABLED` is set to `on`.
+2. goreleaser creates the GitHub Release as a **draft**.
+
+### When cutover is authorized
+
+1. Create a PAT with `contents:write` on `lftherios/homebrew-tap`; set it
+   as the `HOMEBREW_TAP_TOKEN` repo secret.
+2. Set repo variable `GO_RELEASE_ENABLED=on`.
+3. Bump `go/cmd/slink/main.go`'s fallback `version` is unnecessary —
+   goreleaser stamps `main.version` from the tag. Just tag: `git tag
+   v0.3.0 && git push --tags`.
+4. Review the draft release, then publish it.
+5. Move `packaging/install.sh` to the server repo's `public/install.sh`
+   (served at `https://session.link/install.sh`); update the README
+   install section; deprecate the `session.link` npm package with a
+   pointer. **These last steps are the npm sunset — do them only when
+   the maintainer decides.**
+
+Validate the config any time without releasing:
+`cd go && goreleaser check` and
+`goreleaser release --snapshot --clean --skip=publish` (writes `go/dist/`).

@@ -1,0 +1,47 @@
+# Go release via goreleaser (P4). DISABLED BY DEFAULT — the migration
+# doc's hard gate: the maintainer flips the trigger and pushes the first
+# v* tag deliberately, alongside the npm sunset. Until then this never runs.
+#
+# To arm it: change the `if:` guard below (or remove it) and set the
+# HOMEBREW_TAP_TOKEN secret (a PAT with contents:write on lftherios/
+# homebrew-tap). NPM_TOKEN is NOT used here — npm publishing stays in the
+# existing release.yml until sunset.
+name: release-go
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  goreleaser:
+    # HARD GATE: the release is armed only when this repo variable is "on".
+    # Set it (Settings → Variables → GO_RELEASE_ENABLED = on) when cutting
+    # over. Absent/anything-else, the job is skipped — a tag can't ship Go
+    # binaries by accident.
+    if: vars.GO_RELEASE_ENABLED == 'on'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # goreleaser needs full history for the changelog
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      # The viewer bundle is embedded via go:embed — build it and let the
+      # golden harness emit it into the module (drift-checked) before build.
+      - run: npm ci
+      - run: npm run build:viewer && node scripts/golden.mjs --check
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+          workdir: go
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

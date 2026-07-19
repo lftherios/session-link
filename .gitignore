@@ -8,3 +8,6 @@ packages/cli/binaries/
 # Go build output
 /go/slink
 /go/internal/open/viewer.js
+
+# goreleaser snapshot output
+/go/dist/
