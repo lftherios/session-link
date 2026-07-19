@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,7 @@ import (
 // Found is a discovered session ready to load into Input.
 type Found struct {
 	Harness string
+	Recency int64 // ns since epoch; auto-detect picks the max across harnesses
 	load    func() (Input, error)
 }
 
@@ -75,8 +77,8 @@ func readLines(file string) ([]string, error) {
 	return lines, nil
 }
 
-func fileInput(file, harness string) Found {
-	return Found{Harness: harness, load: func() (Input, error) {
+func fileInput(file, harness string, recency int64) Found {
+	return Found{Harness: harness, Recency: recency, load: func() (Input, error) {
 		lines, err := readLines(file)
 		if err != nil {
 			return Input{}, err
@@ -86,11 +88,11 @@ func fileInput(file, harness string) Found {
 	}}
 }
 
-// newestFile returns the most-recently-modified .jsonl under dir.
-func newestFile(dir string) string {
+// newestFile returns the most-recently-modified .jsonl under dir and its mtime.
+func newestFile(dir string) (string, int64) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return ""
+		return "", 0
 	}
 	best, bestT := "", int64(-1)
 	for _, e := range entries {
@@ -105,7 +107,7 @@ func newestFile(dir string) string {
 			bestT, best = t, filepath.Join(dir, e.Name())
 		}
 	}
-	return best
+	return best, bestT
 }
 
 /* ------------------------------------------------------------- sqlite */
@@ -175,27 +177,30 @@ func Latest(harness, cwd string) (*Found, bool) {
 		}
 		return nil, false
 	}
-	// Auto-detect: pick the most-recent across every harness.
-	order := []string{"claude-code", "pi", "codex", "opencode", "hermes"}
-	for _, h := range order {
+	// Auto-detect: the newest session ACROSS every harness by recency, like
+	// the JS importer (not first-found in a fixed order).
+	var best *Found
+	for _, h := range []string{"claude-code", "pi", "codex", "opencode", "hermes"} {
 		if f, ok := try[h](cwd); ok {
-			return f, true
+			if best == nil || f.Recency > best.Recency {
+				best = f
+			}
 		}
 	}
-	return nil, false
+	return best, best != nil
 }
 
 func latestClaude(cwd string) (*Found, bool) {
-	if f := newestFile(claudeProjectDir(cwd)); f != "" {
-		found := fileInput(f, "claude-code")
+	if f, t := newestFile(claudeProjectDir(cwd)); f != "" {
+		found := fileInput(f, "claude-code", t)
 		return &found, true
 	}
 	return nil, false
 }
 
 func latestPi(cwd string) (*Found, bool) {
-	if f := newestFile(piProjectDir(cwd)); f != "" {
-		found := fileInput(f, "pi")
+	if f, t := newestFile(piProjectDir(cwd)); f != "" {
+		found := fileInput(f, "pi", t)
 		return &found, true
 	}
 	return nil, false
@@ -225,7 +230,7 @@ func latestCodex(cwd string) (*Found, bool) {
 		head := firstJSONLine(r.path)
 		if strOr(head["type"], "") == "session_meta" {
 			if strOr(m(head["payload"])["cwd"], "") == cwd {
-				found := fileInput(r.path, "codex")
+				found := fileInput(r.path, "codex", r.mod)
 				return &found, true
 			}
 		}
@@ -255,13 +260,14 @@ func latestOpencode(cwd string) (*Found, bool) {
 	if err != nil {
 		return nil, false
 	}
-	rows, err := queryRows(db, "SELECT id FROM session WHERE directory = ? ORDER BY time_created DESC LIMIT 1", cwd)
+	rows, err := queryRows(db, "SELECT id, time_created FROM session WHERE directory = ? ORDER BY time_created DESC LIMIT 1", cwd)
 	db.Close()
 	if err != nil || len(rows) == 0 {
 		return nil, false
 	}
 	id, _ := rows[0]["id"].(string)
-	found := Found{Harness: "opencode", load: func() (Input, error) { return loadOpencode(id) }}
+	// opencode time_created is ms; scale to ns to compare with file mtimes.
+	found := Found{Harness: "opencode", Recency: int64(numOr(rows[0]["time_created"], 0)) * 1e6, load: func() (Input, error) { return loadOpencode(id) }}
 	return &found, true
 }
 
@@ -272,8 +278,11 @@ func loadOpencode(id string) (Input, error) {
 	}
 	defer db.Close()
 	sessions, err := queryRows(db, "SELECT * FROM session WHERE id = ?", id)
-	if err != nil || len(sessions) == 0 {
+	if err != nil {
 		return Input{}, err
+	}
+	if len(sessions) == 0 {
+		return Input{}, fmt.Errorf("opencode session %q not found in %s", id, opencodeDBPath())
 	}
 	msgRows, _ := queryRows(db, "SELECT id, time_created, data FROM message WHERE session_id = ? ORDER BY time_created, id", id)
 	partRows, _ := queryRows(db, "SELECT message_id, time_created, data FROM part WHERE session_id = ? ORDER BY time_created, id", id)
@@ -300,13 +309,14 @@ func latestHermes(cwd string) (*Found, bool) {
 	if err != nil {
 		return nil, false
 	}
-	rows, err := queryRows(db, "SELECT id FROM sessions WHERE cwd = ? ORDER BY started_at DESC LIMIT 1", cwd)
+	rows, err := queryRows(db, "SELECT id, started_at FROM sessions WHERE cwd = ? ORDER BY started_at DESC LIMIT 1", cwd)
 	db.Close()
 	if err != nil || len(rows) == 0 {
 		return nil, false
 	}
 	id, _ := rows[0]["id"].(string)
-	found := Found{Harness: "hermes", load: func() (Input, error) { return loadHermes(id) }}
+	// hermes started_at is seconds; scale to ns.
+	found := Found{Harness: "hermes", Recency: int64(numOr(rows[0]["started_at"], 0)) * 1e9, load: func() (Input, error) { return loadHermes(id) }}
 	return &found, true
 }
 
@@ -317,8 +327,11 @@ func loadHermes(id string) (Input, error) {
 	}
 	defer db.Close()
 	sessions, err := queryRows(db, "SELECT * FROM sessions WHERE id = ?", id)
-	if err != nil || len(sessions) == 0 {
+	if err != nil {
 		return Input{}, err
+	}
+	if len(sessions) == 0 {
+		return Input{}, fmt.Errorf("hermes session %q not found in %s", id, hermesDBPath())
 	}
 	messages, _ := queryRows(db, "SELECT "+hermesMessageCols+" FROM messages WHERE session_id = ? ORDER BY id", id)
 	msgs := make([]any, len(messages))
@@ -380,6 +393,9 @@ func sniff(lines []string) string {
 	}
 	for _, e := range peek {
 		if strOr(e["type"], "") == "session_meta" {
+			return "codex"
+		}
+		if strOr(e["type"], "") == "response_item" && e["payload"] != nil {
 			return "codex"
 		}
 	}

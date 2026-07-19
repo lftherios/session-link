@@ -56,8 +56,14 @@ func hermesString(v any) string {
 	case nil:
 		return "null"
 	default:
-		b, _ := json.Marshal(x)
-		return string(b) // unreachable for real payloads
+		// JS String(obj) is "[object Object]", String(arr) is a comma-join.
+		switch v.(type) {
+		case map[string]any:
+			return "[object Object]"
+		case []any:
+			return jsArrayJoin(v.([]any))
+		}
+		return fmt.Sprintf("%v", v)
 	}
 }
 
@@ -399,4 +405,14 @@ func buildHermesRun(session map[string]any, messages []any) map[string]any {
 		"metadata": metadata,
 		"spans":    spans,
 	}
+}
+
+func jsArrayJoin(a []any) string {
+	parts := make([]string, len(a))
+	for i, x := range a {
+		if x != nil {
+			parts[i] = hermesString(x)
+		}
+	}
+	return strings.Join(parts, ",")
 }
