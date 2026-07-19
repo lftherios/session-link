@@ -38,6 +38,24 @@ func TestValidateRunOverGoldens(t *testing.T) {
 			t.Fatalf("%s: %v", f, errs[0])
 		}
 	}
+	// Format keywords must be ASSERTED (ajv-formats parity): a malformed
+	// timestamp is rejected client-side, not first by the server.
+	badDate := map[string]any{
+		"schema": "session/v0", "created_at": "not-a-date-time",
+		"spans": []any{map[string]any{"id": "root", "type": "agent"}},
+	}
+	if errs := format.ValidateRun(any(badDate)); len(errs) == 0 {
+		t.Fatal("malformed created_at must be rejected")
+	}
+	// And an invalid document must produce errors, not a printer panic.
+	badType := map[string]any{
+		"schema": "session/v0", "created_at": "2026-07-19T10:00:00Z",
+		"spans": []any{map[string]any{"id": "root", "type": "agent", "parent_id": 42}},
+	}
+	if errs := format.ValidateRun(any(badType)); len(errs) == 0 {
+		t.Fatal("numeric parent_id must be rejected")
+	}
+
 	// And the invariants the schema can't express.
 	bad := map[string]any{
 		"schema": "session/v0", "created_at": "2026-07-19T10:00:00Z",

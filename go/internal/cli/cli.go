@@ -134,9 +134,12 @@ func ListCaptures(dir string) []Capture {
 		if inProgress {
 			if _, err := os.Stat(spool.SpoolPath(file)); err != nil && !spool.OwnerAlive(file) {
 				// Stranded — no spool, no live owner. RecoverDead can't see
-				// it (no spool to walk); heal like the JS listing does.
-				healStranded(file, run)
-				inProgress = false
+				// it (no spool to walk). The heal runs under the commit lock
+				// with state re-read there; only a SUCCESSFUL heal clears
+				// the flag (a failed one must stay prune-protected).
+				if spool.HealStranded(file) {
+					inProgress = false
+				}
 			}
 		}
 		spans, _ := run["spans"].([]any)
@@ -165,45 +168,18 @@ func ListCaptures(dir string) []Capture {
 	return out
 }
 
-func healStranded(file string, run map[string]any) {
-	meta, _ := run["metadata"].(map[string]any)
-	delete(meta, "in_progress")
-	spans, _ := run["spans"].([]any)
-	if len(spans) > 0 {
-		root, _ := spans[0].(map[string]any)
-		if root != nil && root["ended_at"] == nil {
-			last, _ := spans[len(spans)-1].(map[string]any)
-			if ea, ok := last["ended_at"].(string); ok {
-				root["ended_at"] = ea
-			} else if sa, ok := root["started_at"].(string); ok {
-				root["ended_at"] = sa
-			}
-			if root["status"] == nil {
-				root["status"] = "ok"
-			}
-		}
-	}
-	b, err := json.Marshal(run)
-	if err != nil {
-		return
-	}
-	tmp := fmt.Sprintf("%s.heal.tmp", file)
-	if os.WriteFile(tmp, b, 0o644) == nil {
-		os.Rename(tmp, file)
-	}
-}
-
 /* ------------------------------------------------------ publish pipeline */
 
 // Inspection mirrors inspectRunFile: read + validate + scan, never upload.
 type Inspection struct {
-	Text    string
-	Name    string
-	Spans   int
-	Models  []string
-	Bytes   int
-	Errors  []string
-	Secrets []scan.Hit
+	Text       string
+	Name       string
+	Spans      int
+	Models     []string
+	Bytes      int
+	InProgress bool
+	Errors     []string
+	Secrets    []scan.Hit
 }
 
 func InspectRunFile(file string) (*Inspection, error) {
@@ -213,12 +189,17 @@ func InspectRunFile(file string) (*Inspection, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s", file)
 	}
-	var data map[string]any
-	if err := json.Unmarshal(raw, &data); err != nil {
+	var anyData any
+	if err := json.Unmarshal(raw, &anyData); err != nil {
 		return nil, fmt.Errorf("%s is not valid JSON", file)
 	}
+	// Non-object JSON is valid JSON — the schema reports "must be object",
+	// matching the JS error path.
+	data, _ := anyData.(map[string]any)
 	ins := &Inspection{Text: string(raw), Bytes: len(raw)}
 	ins.Name, _ = data["name"].(string)
+	meta, _ := data["metadata"].(map[string]any)
+	ins.InProgress = meta != nil && meta["in_progress"] == true
 	spans, _ := data["spans"].([]any)
 	ins.Spans = len(spans)
 	seen := map[string]bool{}
@@ -233,7 +214,7 @@ func InspectRunFile(file string) (*Inspection, error) {
 			ins.Models = append(ins.Models, id)
 		}
 	}
-	ins.Errors = format.ValidateRun(any(data))
+	ins.Errors = format.ValidateRun(anyData)
 	if len(ins.Errors) == 0 {
 		ins.Secrets = scan.ForSecrets(ins.Text)
 	}
@@ -295,7 +276,7 @@ func PlanPrune(captures []Capture, now time.Time, olderThan time.Duration, keep 
 			continue
 		}
 		tooOld := false
-		if olderThan > 0 {
+		if olderThan >= 0 { // 0 prunes everything finished, like the JS planner
 			created, err := time.Parse(time.RFC3339, c.CreatedAt)
 			tooOld = err == nil && now.Sub(created) > olderThan
 		}

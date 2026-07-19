@@ -10,7 +10,13 @@ import (
 	"fmt"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
+
+// LocalizedString(nil) dereferences a nil printer — any invalid document
+// would panic the CLI instead of listing errors.
+var printer = message.NewPrinter(language.English)
 
 //go:embed session.schema.json
 var schemaJSON []byte
@@ -23,6 +29,10 @@ func mustCompile() *jsonschema.Schema {
 		panic(err)
 	}
 	c := jsonschema.NewCompiler()
+	// ajv-formats asserts format keywords in the JS CLI and the SERVER's
+	// ingest gate; without this, a malformed created_at passes the Go CLI
+	// locally and then 400s at upload.
+	c.AssertFormat()
 	if err := c.AddResource("session.schema.json", doc); err != nil {
 		panic(err)
 	}
@@ -62,7 +72,7 @@ func flatten(ve *jsonschema.ValidationError) []string {
 				path += "/" + p
 			}
 		}
-		return []string{fmt.Sprintf("%s %s", path, ve.ErrorKind.LocalizedString(nil))}
+		return []string{fmt.Sprintf("%s %s", path, ve.ErrorKind.LocalizedString(printer))}
 	}
 	out := []string{}
 	for _, c := range ve.Causes {

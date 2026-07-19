@@ -16,7 +16,7 @@ import (
 
 func runList(args []string) {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
-	limit := fs.Int("limit", 20, "rows to show")
+	limit := fs.Int("limit", 10, "rows to show")
 	fs.Parse(args)
 	captures := cli.ListCaptures(cli.CaptureDir())
 	if len(captures) == 0 {
@@ -78,6 +78,12 @@ func runPush(args []string) {
 		os.Exit(1)
 	}
 	fmt.Fprintln(os.Stderr, "✓ no credentials detected")
+	if ins.InProgress {
+		fmt.Fprintln(os.Stderr, "  still recording — publishing a snapshot")
+	}
+	if ins.Bytes > 25*1024*1024 {
+		fmt.Fprintln(os.Stderr, "  exceeds the server's 25MB ingest cap — this will likely be rejected")
+	}
 
 	target, apiKey := cli.ResolveTarget(*server, *key)
 	if !*yes {
@@ -100,14 +106,21 @@ func runPush(args []string) {
 				msg = m
 			}
 		}
+		if res.Status == 401 {
+			msg += " — try `slink login` (JS CLI) or pass --key"
+		}
 		die(fmt.Sprintf("✗ %s (HTTP %d)", msg, res.Status))
 	}
 	url, _ := res.Body["url"].(string)
+	verb := "published"
+	if res.Status == 200 {
+		verb = "already published" // dedupe: same bytes, same URL
+	}
 	copied := ""
 	if clipboard(url) {
 		copied = "  (URL copied)"
 	}
-	fmt.Fprintf(os.Stderr, "✓ published%s\n", copied)
+	fmt.Fprintf(os.Stderr, "✓ %s%s\n", verb, copied)
 	fmt.Println(url)
 }
 
@@ -135,9 +148,18 @@ func runPrune(args []string) {
 		fmt.Fprintln(os.Stderr, "nothing to prune")
 		return
 	}
-	for _, c := range remove {
-		fmt.Fprintf(os.Stderr, "  %s  %s (%d spans)\n", ago(c.CreatedAt), clip(c.Name, 48), c.Spans)
+	var bytes int64
+	for i, c := range remove {
+		if st, err := os.Stat(c.File); err == nil {
+			bytes += st.Size()
+		}
+		if i < 8 { // cap the listing like the JS command
+			fmt.Fprintf(os.Stderr, "  %s  %s (%d spans)\n", ago(c.CreatedAt), clip(c.Name, 48), c.Spans)
+		} else if i == 8 {
+			fmt.Fprintf(os.Stderr, "  … and %d more\n", len(remove)-8)
+		}
 	}
+	fmt.Fprintf(os.Stderr, "  reclaims %s\n", fmtBytes(int(bytes)))
 	if *dryRun {
 		fmt.Fprintf(os.Stderr, "dry run — %d capture(s) would be pruned\n", len(remove))
 		return

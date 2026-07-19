@@ -3,6 +3,7 @@ package spool
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -80,6 +81,69 @@ func RecoverDead(dir string) int {
 		}
 	}
 	return recovered
+}
+
+// HealStranded repairs an in_progress capture whose spool is gone and
+// whose owner is dead — inside the commit lock, with the state RE-READ
+// there: an unlocked heal from a stale read once overwrote a concurrent
+// finalizer's full capture (the exact bug the JS reference documents).
+// Returns true when the capture is (already or now) healthy.
+func HealStranded(captureJSON string) bool {
+	healed := false
+	err := withCommitLock(captureJSON, 2500*time.Millisecond, func(stillHeld func() bool) error {
+		raw, err := os.ReadFile(captureJSON)
+		if err != nil {
+			return err
+		}
+		var run map[string]any
+		if err := json.Unmarshal(raw, &run); err != nil {
+			return err
+		}
+		meta, _ := run["metadata"].(map[string]any)
+		if meta == nil || meta["in_progress"] != true {
+			healed = true // already fine
+			return nil
+		}
+		if _, err := os.Stat(SpoolPath(captureJSON)); err == nil {
+			return nil // a spool reappeared — the finalizer owns this now
+		}
+		if !stillHeld() {
+			return nil
+		}
+		delete(meta, "in_progress")
+		spans, _ := run["spans"].([]any)
+		if len(spans) > 0 {
+			root, _ := spans[0].(map[string]any)
+			if root != nil && root["ended_at"] == nil {
+				if last, _ := spans[len(spans)-1].(map[string]any); last != nil {
+					if ea, ok := last["ended_at"].(string); ok {
+						root["ended_at"] = ea
+					}
+				}
+				if root["ended_at"] == nil {
+					root["ended_at"] = root["started_at"]
+				}
+				if root["status"] == nil {
+					root["status"] = "ok"
+				}
+			}
+		}
+		b, err := json.Marshal(run)
+		if err != nil {
+			return err
+		}
+		tmp := fmt.Sprintf("%s.%s.tmp", captureJSON, randHex(4))
+		if err := os.WriteFile(tmp, b, 0o644); err != nil {
+			return err
+		}
+		if err := os.Rename(tmp, captureJSON); err != nil {
+			os.Remove(tmp)
+			return err
+		}
+		healed = true
+		return nil
+	})
+	return err == nil && healed
 }
 
 func sweepOlderThan(path string, age time.Duration, viaRename bool) {
