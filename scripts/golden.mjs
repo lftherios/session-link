@@ -80,6 +80,16 @@ await emit(
   path.join(root, "go", "internal", "format", "session.schema.json"),
   await readFile(path.join(root, "packages", "format", "session.schema.json"), "utf8"),
 );
+// The viewer bundle for `slink open` (go:embed). Built, not committed —
+// ensure-written in BOTH modes whenever the source bundle exists, so
+// --check stays green on fresh clones and go builds get their input
+// after `npm run build:viewer && node scripts/golden.mjs --check`.
+try {
+  const { default: viewerJs } = await import("../cli/viewer.mjs");
+  await writeFile(path.join(root, "go", "internal", "open", "viewer.js"), viewerJs);
+} catch {
+  /* viewer not built — go open builds will say so */
+}
 
 /* --------------------------------------------------------- proxy cases */
 const ASSEMBLERS = {

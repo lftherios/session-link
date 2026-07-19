@@ -19,5 +19,20 @@ jobs:
       - run: npm test
       # The Go-migration parity oracle: goldens must match the JS reference.
       - run: node scripts/golden.mjs --check
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - run: npm ci
+      # golden emits the drift-checked artifacts the Go build embeds
+      - run: npm run build:viewer && node scripts/golden.mjs --check
+      - run: cd go && go vet ./... && go test ./...
       - run: npm run validate
       - run: npm run build:cli

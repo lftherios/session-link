@@ -40,6 +40,7 @@ func runList(args []string) {
 func runPush(args []string) {
 	fs := flag.NewFlagSet("push", flag.ExitOnError)
 	yes := fs.Bool("yes", false, "publish without confirmation")
+	pick := fs.Bool("pick", false, "choose from recent captures")
 	server := fs.String("server", "", "override the publish target")
 	key := fs.String("key", "", "override the API key")
 	fs.Parse(args)
@@ -50,7 +51,33 @@ func runPush(args []string) {
 		if len(captures) == 0 {
 			die("nothing captured yet — run the tap first, or pass a session/v0 .json path")
 		}
-		file = captures[0].File
+		if *pick {
+			if !term.IsTerminal(int(os.Stdin.Fd())) {
+				die("--pick needs a TTY")
+			}
+			for i, cc := range captures {
+				if i >= 10 {
+					break
+				}
+				marker := ""
+				if cc.InProgress {
+					marker = "  (recording)"
+				}
+				fmt.Fprintf(os.Stderr, "%4d  %-9s %-38s %d spans%s\n", i+1, ago(cc.CreatedAt), clip(cc.Name, 38), cc.Spans, marker)
+			}
+			fmt.Fprint(os.Stderr, "publish which? [1] ")
+			line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+			n := 1
+			if t := strings.TrimSpace(line); t != "" {
+				fmt.Sscanf(t, "%d", &n)
+			}
+			if n < 1 || n > len(captures) {
+				die(fmt.Sprintf("no capture #%d", n))
+			}
+			file = captures[n-1].File
+		} else {
+			file = captures[0].File
+		}
 	}
 
 	ins, err := cli.InspectRunFile(file)

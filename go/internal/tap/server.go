@@ -59,6 +59,17 @@ type Server struct {
 	router   *Router
 	client   *http.Client
 	inflight sync.WaitGroup
+	// single, when set, is `slink dev` mode: every recordable call lands in
+	// this one session and the router is bypassed.
+	single *Session
+}
+
+// NewDevServer is the wrapper-mode recorder: one fixed session for the
+// whole invocation.
+func NewDevServer(captureDir, name string) (*Server, *Session) {
+	s := NewServer(captureDir, DefaultIdle)
+	s.single = NewSession(captureDir, name, time.Now())
+	return s, s.single
 }
 
 func NewServer(captureDir string, idle time.Duration) *Server {
@@ -125,12 +136,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var session *Session
 	if kind != "" {
-		key := headerOr(r, SessionHeader, AmbientKey)
-		name := headerOr(r, LabelHeader, "")
-		if name == "" {
-			name = deriveName(reqBuf)
+		if s.single != nil {
+			session = s.single
+			session.Begin()
+		} else {
+			key := headerOr(r, SessionHeader, AmbientKey)
+			name := headerOr(r, LabelHeader, "")
+			if name == "" {
+				name = deriveName(reqBuf)
+			}
+			session = s.router.Route(key, name) // Route Begin()s under its mutex
 		}
-		session = s.router.Route(key, name) // Route Begin()s under its mutex
 		defer session.End()
 	}
 	s.inflight.Add(1)
