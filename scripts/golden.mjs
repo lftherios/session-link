@@ -70,6 +70,16 @@ await emit(
   path.join(root, "packages", "format", "secret-patterns.json"),
   stringify(SECRET_PATTERN_SOURCES),
 );
+// go:embed can't reach outside the go/ module — these copies are emitted
+// here and drift-checked so the embedded artifacts can never diverge.
+await emit(
+  path.join(root, "go", "internal", "scan", "secret-patterns.json"),
+  stringify(SECRET_PATTERN_SOURCES),
+);
+await emit(
+  path.join(root, "go", "internal", "format", "session.schema.json"),
+  await readFile(path.join(root, "packages", "format", "session.schema.json"), "utf8"),
+);
 
 /* --------------------------------------------------------- proxy cases */
 const ASSEMBLERS = {

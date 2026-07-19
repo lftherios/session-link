@@ -46,7 +46,7 @@ func TestRouterIdleAndBusySemantics(t *testing.T) {
 	if len(finalized) != 0 {
 		t.Fatal("busy session must not be swept")
 	}
-	s1.End() // the explicit in-flight call ends
+	s1.End()                 // the explicit in-flight call ends
 	now = now.Add(time.Hour) // the busy reuse bumped last-seen; go idle again
 	r.Sweep()
 	// The sweep finalizes asynchronously; wait for it.

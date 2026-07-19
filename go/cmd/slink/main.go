@@ -27,13 +27,19 @@ func main() {
 		fmt.Printf("slink %s (go)\n", version)
 	case "tap":
 		runTap(os.Args[2:])
+	case "list", "ls":
+		runList(os.Args[2:])
+	case "push":
+		runPush(os.Args[2:])
+	case "prune":
+		runPrune(os.Args[2:])
 	default:
 		usage()
 	}
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "slink(go): port in progress — `slink tap` and `slink version` for now; use the JS CLI for everything else")
+	fmt.Fprintln(os.Stderr, "slink(go): port in progress — tap, list, push, prune, version; use the JS CLI for the rest")
 	os.Exit(1)
 }
 
