@@ -67,13 +67,13 @@ chmod +x "${tmp}/slink"
 
 # Pick an install dir we can write to.
 dir="${SLINK_INSTALL_DIR:-}"
-if [ -z "$dir" ]; then
-  if [ -w /usr/local/bin ] 2>/dev/null; then
-    dir=/usr/local/bin
-  else
-    dir="${HOME}/.local/bin"
-    mkdir -p "$dir"
-  fi
+if [ -n "$dir" ]; then
+  mkdir -p "$dir" 2>/dev/null || true
+elif [ -w /usr/local/bin ] 2>/dev/null; then
+  dir=/usr/local/bin
+else
+  dir="${HOME}/.local/bin"
+  mkdir -p "$dir"
 fi
 
 if [ -w "$dir" ] 2>/dev/null; then
