@@ -51,13 +51,15 @@ Every session flowing through is segmented into its own local capture, so record
 
 ### Install
 
+`slink` is a single native binary (no runtime to install). Three ways to get it:
+
 ```bash
-npm i -g session.link                              # Node 18.20+ / 20.10+ (npx works too)
-brew install lftherios/tap/slink                   # standalone binary, no Node
-curl -fsSL https://session.link/install.sh | sh    # same binary, any platform
+brew install lftherios/tap/slink                   # macOS / Linux, no Node
+curl -fsSL https://session.link/install.sh | sh    # any platform, checksum-verified
+npm i -g session.link                              # or `npx session.link` — delivers the same binary
 ```
 
-Prebuilt binaries for macOS, Linux, and Windows (with `SHA256SUMS.txt`) are on the [releases page](https://github.com/lftherios/session-link/releases).
+The `npm`/`npx` path ships the native binary too (npm fetches only the ~5MB package for your platform); a tiny Node launcher execs it, so that channel needs Node while `brew`/`curl` don't. Prebuilt archives for macOS, Linux, and Windows — plus `checksums.txt` and `.deb`/`.rpm`/`.apk` — are on the [releases page](https://github.com/lftherios/session-link/releases).
 
 ## Works with the agent you already use
 
