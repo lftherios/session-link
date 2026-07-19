@@ -4,3 +4,6 @@ packages/cli/dist/
 packages/cli/binaries/
 *.tgz
 .DS_Store
+
+# Go build output
+/go/slink
