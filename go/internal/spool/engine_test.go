@@ -29,10 +29,12 @@ func TestGoldenSpools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no spool fixtures: %v", err)
 	}
+	ran := 0
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
+		ran++
 		t.Run(e.Name(), func(t *testing.T) {
 			dir := filepath.Join(casesDir, e.Name())
 			var meta struct {
@@ -80,6 +82,9 @@ func TestGoldenSpools(t *testing.T) {
 				t.Fatalf("document mismatch\n--- got ---\n%s\n--- want ---\n%s", g, w)
 			}
 		})
+	}
+	if ran == 0 {
+		t.Fatal("zero golden fixtures ran — the parity test passed vacuously")
 	}
 }
 

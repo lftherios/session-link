@@ -142,7 +142,7 @@ func OwnerAlive(captureJSON string) bool {
 		return true // legacy sidecar: plain pid semantics
 	}
 	fresh := time.Since(st.ModTime()) <= SidecarFresh
-	bootMatches := absDiff(*boot, bootMs()) <= BootTolerance.Milliseconds()
+	bootMatches := bootTokenReliable && absDiff(*boot, bootMs()) <= BootTolerance.Milliseconds()
 	return fresh || (bootMatches && pid != 1)
 }
 
@@ -200,7 +200,8 @@ func Assemble(captureJSON string, opts AssembleOptions) (int, error) {
 				// partial/torn line — drop it
 			} else if skeleton == nil {
 				var schema string
-				if obj["schema"] == nil || json.Unmarshal(obj["schema"], &schema) != nil || schema == "" {
+				// Parity with JS: any string schema passes, "" included.
+				if obj["schema"] == nil || json.Unmarshal(obj["schema"], &schema) != nil {
 					discard()
 					return 0, ErrRefused
 				}
@@ -278,8 +279,12 @@ func Assemble(captureJSON string, opts AssembleOptions) (int, error) {
 			return err
 		}
 		committed = true
-		os.Remove(spool)
-		os.Remove(PidPath(captureJSON))
+		if rerr := os.Remove(spool); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+			return rerr
+		}
+		if rerr := os.Remove(PidPath(captureJSON)); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+			return rerr
+		}
 		return nil
 	})
 	if err != nil {
@@ -305,11 +310,17 @@ func writeHeader(w *bufio.Writer, skeleton map[string]json.RawMessage, opts Asse
 	}
 	root := map[string]json.RawMessage{}
 	if len(rootSpans) > 0 {
+		// Unmarshal of a JSON null nils the map — assigning into it later
+		// would panic; a failed/empty unmarshal falls back like JS's
+		// spans?.[0] ?? default.
 		json.Unmarshal(rootSpans[0], &root)
-	} else {
-		root["id"] = json.RawMessage(`"root"`)
-		root["parent_id"] = json.RawMessage(`null`)
-		root["type"] = json.RawMessage(`"agent"`)
+	}
+	if len(root) == 0 {
+		root = map[string]json.RawMessage{
+			"id":        json.RawMessage(`"root"`),
+			"parent_id": json.RawMessage(`null`),
+			"type":      json.RawMessage(`"agent"`),
+		}
 	}
 	head := map[string]json.RawMessage{}
 	for k, v := range skeleton {
@@ -322,7 +333,11 @@ func writeHeader(w *bufio.Writer, skeleton map[string]json.RawMessage, opts Asse
 		if endedAt == "" {
 			endedAt = time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 		}
-		root["ended_at"] = json.RawMessage(`"` + endedAt + `"`)
+		endedJSON, err := json.Marshal(endedAt)
+		if err != nil {
+			return err
+		}
+		root["ended_at"] = json.RawMessage(endedJSON)
 		root["status"] = json.RawMessage(`"ok"`)
 		if head["metadata"] != nil {
 			var md map[string]json.RawMessage
@@ -360,8 +375,17 @@ func withCommitLock(captureJSON string, wait time.Duration, fn func(stillHeld fu
 	for {
 		f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err == nil {
-			f.WriteString(token)
-			f.Close()
+			// The token must land: an unverifiable lock (ENOSPC mid-write)
+			// would mask the disk error as an eternal ErrCommitRetry.
+			if _, werr := f.WriteString(token); werr != nil {
+				f.Close()
+				os.Remove(lock)
+				return werr
+			}
+			if cerr := f.Close(); cerr != nil {
+				os.Remove(lock)
+				return cerr
+			}
 			stillHeld := func() bool {
 				b, err := os.ReadFile(lock)
 				return err == nil && string(b) == token
