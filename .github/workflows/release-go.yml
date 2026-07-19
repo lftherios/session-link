@@ -45,3 +45,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      # The npm binary channel: platform packages + the session.link
+      # launcher. This REPLACES the JS session.link package on npm — at
+      # cutover, remove session.link from release.yml's publish loop so the
+      # two don't fight over the name. Uses the tag as the version.
+      - name: publish npm binary channel
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+          node scripts/build-npm.mjs "${GITHUB_REF_NAME#v}" --publish

@@ -34,5 +34,7 @@ jobs:
       # golden emits the drift-checked artifacts the Go build embeds
       - run: npm run build:viewer && node scripts/golden.mjs --check
       - run: cd go && go vet ./... && go test ./...
+      # Build-smoke the npm binary channel (cross-compile all targets; no publish).
+      - run: node scripts/build-npm.mjs 0.0.0-ci
       - run: npm run validate
       - run: npm run build:cli

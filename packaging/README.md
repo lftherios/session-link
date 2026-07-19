@@ -62,11 +62,20 @@ git tag v0.1.0 && git push --tags
 
 ## P4: the Go distribution (built, not yet armed)
 
-The Go CLI (`go/`) ships via **goreleaser** — `go/.goreleaser.yaml` builds
-compressed archives (~5MB vs the Bun binaries' 61MB), a checksums file,
-deb/rpm/apk packages, and auto-updates the Homebrew **cask** in
-`lftherios/homebrew-tap`. `packaging/install.sh` is the archive-aware
-`curl | sh` installer (checksum-verified, no Node).
+The Go CLI (`go/`) ships through four channels:
+
+- **goreleaser** (`go/.goreleaser.yaml`) — compressed archives (~5MB vs
+  the Bun binaries' 61MB), a checksums file, deb/rpm/apk, and Homebrew
+  **cask** auto-update to `lftherios/homebrew-tap`.
+- **`curl | sh`** — `packaging/install.sh`, archive-aware and
+  checksum-verified, no Node.
+- **npm** (`scripts/build-npm.mjs`) — the binary stays on npm via the
+  platform-package + `optionalDependencies` pattern: per-platform
+  `@session-link/cli-<goos>-<goarch>` packages (os/cpu-gated, binary
+  only) + a `session.link` launcher whose `bin` shim resolves and execs
+  the matching binary. Keeps `npx session.link` working; npm downloads
+  only the ~5MB package matching the user's platform. The launcher
+  **replaces** the JS `session.link` package at cutover.
 
 **This is staged, not live.** Two gates keep a tag from shipping Go
 binaries by accident, and neither the npm deprecation nor the cutover
@@ -87,9 +96,15 @@ happens until it's deliberately triggered:
 4. Review the draft release, then publish it.
 5. Move `packaging/install.sh` to the server repo's `public/install.sh`
    (served at `https://session.link/install.sh`); update the README
-   install section; deprecate the `session.link` npm package with a
-   pointer. **These last steps are the npm sunset — do them only when
-   the maintainer decides.**
+   install section.
+6. **npm stays as a binary channel** (not sunset): the release-go
+   workflow's "publish npm binary channel" step runs
+   `scripts/build-npm.mjs <version> --publish`, which publishes the six
+   `@session-link/cli-*` platform packages and the `session.link`
+   launcher. **At the same time, remove `session.link` from the JS
+   `release.yml` publish loop** so the JS bundle and the Go launcher
+   don't fight over the name. `@session-link/format` and
+   `@session-link/viewer` keep publishing from `release.yml`.
 
 Validate the config any time without releasing:
 `cd go && goreleaser check` and

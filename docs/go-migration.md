@@ -64,12 +64,17 @@ The Go code implements contracts, not the JS code's shape:
 
 ## Decisions (settled 2026-07-19)
 
-- **npm is dropped at the P4 cutover.** Post-cutover distribution is
-  brew / `curl | sh` / GitHub-Release binaries only. The `session.link`
-  npm package is deprecated with a pointer at cutover time; the README's
-  install section and the quickstart's `npx` examples change accordingly.
-  (`@session-link/format` and `@session-link/viewer` stay on npm — the
-  server and embedders consume them.)
+- **npm stays as a binary channel** (revised 2026-07-19 — the package
+  is already getting downloads; keep the `npx session.link` funnel). The
+  Go binary ships via the platform-package + `optionalDependencies`
+  pattern (esbuild/Biome style): per-platform
+  `@session-link/cli-<goos>-<goarch>` packages (os/cpu-gated, binary
+  only) plus a `session.link` launcher whose `bin` shim resolves and
+  execs the matching binary. At cutover, `session.link` on npm switches
+  from the JS bundle (`packages/cli`) to this launcher, and the JS
+  `release.yml` stops publishing `packages/cli` as `session.link`. Not a
+  sunset. (`@session-link/format` and `@session-link/viewer` stay on npm
+  for the server and embedders.)
 - **Importers port to Go in P3** as phased. The golden fixtures pin all
   five mappings; contributions become fixtures + Go mapping.
 - **`session/v0` is hard-frozen until parity.** No format changes while

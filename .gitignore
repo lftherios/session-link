@@ -11,3 +11,4 @@ packages/cli/binaries/
 
 # goreleaser snapshot output
 /go/dist/
+/go/dist-npm/
