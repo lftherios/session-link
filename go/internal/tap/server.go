@@ -348,6 +348,9 @@ func (s *Server) Serve(ctx context.Context, addr string) error {
 	if recovered := spool.RecoverDead(s.CaptureDir); recovered > 0 {
 		log.Printf("recovered %d interrupted capture(s)", recovered)
 	}
+	if pruned := autoPrune(s.CaptureDir); pruned > 0 {
+		log.Printf("pruned %d old capture(s)", pruned)
+	}
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {

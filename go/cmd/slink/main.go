@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lftherios/session-link/internal/cli"
 	"github.com/lftherios/session-link/internal/tap"
 )
 
@@ -33,13 +34,19 @@ func main() {
 		runPush(os.Args[2:])
 	case "prune":
 		runPrune(os.Args[2:])
+	case "login":
+		runLogin(os.Args[2:])
+	case "on":
+		runOn(os.Args[2:])
+	case "off":
+		runOff()
 	default:
 		usage()
 	}
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "slink(go): port in progress — tap, list, push, prune, version; use the JS CLI for the rest")
+	fmt.Fprintln(os.Stderr, "slink(go): port in progress — tap [--install], list, push, prune, login, on/off, version; use the JS CLI for the rest")
 	os.Exit(1)
 }
 
@@ -47,7 +54,28 @@ func runTap(args []string) {
 	fs := flag.NewFlagSet("tap", flag.ExitOnError)
 	port := fs.Int("port", 4141, "listen port")
 	idleMin := fs.Int("idle", 15, "ambient session idle gap, minutes")
+	install := fs.Bool("install", false, "install as a login service (launchd/systemd)")
+	uninstall := fs.Bool("uninstall", false, "remove the login service")
 	fs.Parse(args)
+
+	if *install || *uninstall {
+		var r cli.ServiceResult
+		if *uninstall {
+			r = cli.UninstallService()
+		} else {
+			r = cli.InstallService(*port)
+		}
+		if !r.OK {
+			fmt.Fprintln(os.Stderr, r.Error)
+			os.Exit(1)
+		}
+		if *uninstall {
+			fmt.Fprintf(os.Stderr, "✓ tap login service removed  %s\n", r.Path)
+		} else {
+			fmt.Fprintf(os.Stderr, "✓ tap installed as a login service — it captures on every login\n  %s\n", r.Path)
+		}
+		return
+	}
 
 	home := os.Getenv("SLINK_HOME")
 	if home == "" {

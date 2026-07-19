@@ -160,3 +160,71 @@ func TestListSeesFinalizedAndSpooled(t *testing.T) {
 		t.Fatalf("listing: %+v", captures)
 	}
 }
+
+func TestServiceGenerators(t *testing.T) {
+	plist := LaunchdPlist([]string{"/usr/local/bin/slink", "tap", "--port", "4141"}, "/home/u/.slink/tap.log", ServiceLabel)
+	for _, want := range []string{
+		"<string>link.session.tap</string>",
+		"<string>/usr/local/bin/slink</string>",
+		"<string>--port</string>",
+		"<key>KeepAlive</key>",
+		"<string>/home/u/.slink/tap.log</string>",
+	} {
+		if !strings.Contains(plist, want) {
+			t.Fatalf("plist missing %q", want)
+		}
+	}
+	// XML escaping — a path with & must not corrupt the plist.
+	esc := LaunchdPlist([]string{"/apps/a&b/slink"}, "/l.log", ServiceLabel)
+	if !strings.Contains(esc, "a&amp;b") {
+		t.Fatal("xml escaping missing")
+	}
+	unit := SystemdUnit([]string{"/opt/my apps/slink", "tap", "--port", "4141"})
+	if !strings.Contains(unit, `ExecStart="/opt/my apps/slink" tap --port 4141`) {
+		t.Fatalf("unit quoting: %s", unit)
+	}
+	if !strings.Contains(unit, "Restart=always") {
+		t.Fatal("unit must restart")
+	}
+}
+
+func TestBrowserLoginPollFlow(t *testing.T) {
+	t.Setenv("SLINK_HOME", t.TempDir())
+	polls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/api/auth/cli":
+			json.NewEncoder(w).Encode(map[string]any{"code": "c1", "user_code": "AB-12", "url": "https://x/cli/c1"})
+		case r.URL.Path == "/api/auth/cli/c1":
+			polls++
+			if polls < 2 {
+				w.WriteHeader(202)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"key": "rk_granted", "login": "tester"})
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer ts.Close()
+
+	var notes []string
+	r, err := BrowserLogin(ts.URL, func(s string) { notes = append(notes, s) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Login != "tester" {
+		t.Fatalf("login: %+v", r)
+	}
+	c := ReadConfig()
+	if c.APIKey != "rk_granted" || c.Server != ts.URL {
+		t.Fatalf("config not saved: %+v", c)
+	}
+	st, _ := os.Stat(r.ConfigPath)
+	if st.Mode().Perm() != 0o600 {
+		t.Fatalf("config perms: %v", st.Mode().Perm())
+	}
+	if len(notes) == 0 || !strings.Contains(notes[1], "AB-12") {
+		t.Fatalf("user code must be surfaced: %v", notes)
+	}
+}
