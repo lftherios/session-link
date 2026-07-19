@@ -1,0 +1,9 @@
+{
+  "model": "gpt-golden-mini",
+  "stream": true,
+  "temperature": 0.2,
+  "input": "Write a haiku about lighthouses.",
+  "tools": [
+    { "type": "function", "function": { "name": "lookup_tide", "description": "Tide table lookup", "parameters": { "type": "object", "properties": { "port": { "type": "string" } } } } }
+  ]
+}

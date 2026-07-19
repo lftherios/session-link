@@ -1,0 +1,70 @@
+[
+  {
+    "id": "msg_u1",
+    "time_created": 1752900001000,
+    "data": { "role": "user", "time": { "created": 1752900001000 } },
+    "parts": [
+      { "type": "text", "text": "Add a hello() function to util.js" },
+      { "type": "file", "mime": "text/plain", "filename": "notes.txt", "url": "file:///tmp/demo/notes.txt" }
+    ]
+  },
+  {
+    "id": "msg_a1",
+    "time_created": 1752900002000,
+    "data": {
+      "role": "assistant",
+      "modelID": "gpt-5.6-terra-fast",
+      "providerID": "openai",
+      "tokens": { "total": 105, "input": 80, "output": 20, "reasoning": 5, "cache": { "read": 10, "write": 0 } },
+      "time": { "created": 1752900002000, "completed": 1752900006000 },
+      "finish": "stop"
+    },
+    "parts": [
+      { "type": "step-start", "snapshot": "snap_1" },
+      { "type": "reasoning", "text": "I need to open util.js and append the function." },
+      {
+        "type": "tool",
+        "tool": "edit",
+        "callID": "call_edit_1",
+        "state": {
+          "status": "completed",
+          "input": { "filePath": "/tmp/demo/util.js", "newString": "function hello() { return \"hi\"; }" },
+          "output": "edited /tmp/demo/util.js",
+          "time": { "start": 1752900003000, "end": 1752900004000 }
+        }
+      },
+      { "type": "text", "text": "Added hello() to util.js." },
+      { "type": "step-finish", "reason": "stop", "tokens": {} }
+    ]
+  },
+  {
+    "id": "msg_u2",
+    "time_created": 1752900007000,
+    "data": { "role": "user", "time": { "created": 1752900007000 } },
+    "parts": [{ "type": "text", "text": "Great, now run the tests" }]
+  },
+  {
+    "id": "msg_a2",
+    "time_created": 1752900008000,
+    "data": {
+      "role": "assistant",
+      "tokens": { "total": 150, "input": 120, "output": 30 },
+      "time": { "created": 1752900008000, "completed": 1752900012000 },
+      "finish": "stop"
+    },
+    "parts": [
+      {
+        "type": "tool",
+        "tool": "bash",
+        "callID": "call_bash_1",
+        "state": {
+          "status": "completed",
+          "input": { "command": "node --test" },
+          "output": "pass 3\nfail 0\n",
+          "time": { "start": 1752900009000, "end": 1752900011000 }
+        }
+      },
+      { "type": "text", "text": "All 3 tests pass." }
+    ]
+  }
+]

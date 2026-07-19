@@ -1,0 +1,252 @@
+{
+  "id": "s1",
+  "parent_id": "root",
+  "type": "llm_call",
+  "name": "responses.create",
+  "started_at": "2026-07-19T11:00:00.000Z",
+  "ended_at": "2026-07-19T11:00:03.250Z",
+  "status": "ok",
+  "model": {
+    "id": "gpt-golden-mini",
+    "provider": "openai"
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What's the weather in Reykjavik? Then log it."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_call",
+            "id": "call_g1",
+            "name": "get_weather",
+            "arguments": {
+              "city": "Reykjavik"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_call_id": "call_g1",
+            "content": [
+              {
+                "type": "text",
+                "text": "4C, windy"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "system": "You are a terse weather assistant.",
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Look up current weather",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city"
+          ]
+        }
+      },
+      {
+        "name": "log_weather",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "output": {
+    "messages": [
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "text": "The tool already returned 4C and windy.\nReport it, then log the result."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Reykjavik is 4C and windy right now."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_call",
+            "id": "call_g2",
+            "name": "log_weather",
+            "arguments": {
+              "city": "Reykjavik",
+              "summary": "4C, windy"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "raw": {
+    "request": {
+      "model": "gpt-golden-mini",
+      "stream": true,
+      "instructions": "You are a terse weather assistant.",
+      "max_output_tokens": 256,
+      "reasoning_effort": "low",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "What's the weather in Reykjavik? Then log it."
+            }
+          ]
+        },
+        {
+          "type": "function_call",
+          "call_id": "call_g1",
+          "name": "get_weather",
+          "arguments": "{\"city\":\"Reykjavik\"}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "call_g1",
+          "output": "4C, windy"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "Look up current weather",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ]
+          }
+        },
+        {
+          "type": "function",
+          "name": "log_weather",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "response": {
+      "id": "resp_golden1",
+      "object": "response",
+      "status": "completed",
+      "model": "gpt-golden-mini",
+      "output": [
+        {
+          "type": "reasoning",
+          "id": "rs_g1",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "The tool already returned 4C and windy."
+            },
+            {
+              "type": "summary_text",
+              "text": "Report it, then log the result."
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "id": "msg_g1",
+          "role": "assistant",
+          "status": "completed",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "Reykjavik is 4C and windy right now.",
+              "annotations": []
+            }
+          ]
+        },
+        {
+          "type": "function_call",
+          "id": "fc_g1",
+          "call_id": "call_g2",
+          "name": "log_weather",
+          "arguments": "{\"city\":\"Reykjavik\",\"summary\":\"4C, windy\"}",
+          "status": "completed"
+        }
+      ],
+      "usage": {
+        "input_tokens": 88,
+        "input_tokens_details": {
+          "cached_tokens": 16
+        },
+        "output_tokens": 41,
+        "output_tokens_details": {
+          "reasoning_tokens": 12
+        },
+        "total_tokens": 129
+      }
+    }
+  },
+  "params": {
+    "max_output_tokens": 256,
+    "reasoning_effort": "low"
+  },
+  "metadata": {
+    "stream": true
+  },
+  "usage": {
+    "input_tokens": 88,
+    "output_tokens": 41,
+    "cache_read_tokens": 16
+  }
+}

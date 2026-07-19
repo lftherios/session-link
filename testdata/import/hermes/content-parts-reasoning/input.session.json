@@ -1,0 +1,12 @@
+{
+  "id": "hermes_golden_parts",
+  "title": null,
+  "display_name": "parts and reasoning",
+  "model": "hermes-4-405b",
+  "billing_provider": null,
+  "system_prompt": null,
+  "cwd": null,
+  "source": null,
+  "started_at": 1752910000,
+  "ended_at": null
+}

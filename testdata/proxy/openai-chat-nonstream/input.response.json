@@ -1,0 +1,22 @@
+{
+  "id": "chatcmpl-golden2",
+  "object": "chat.completion",
+  "created": 1789000300,
+  "model": "gpt-test-1",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Overcast at 19C in Amsterdam: expect grey skies but no rain soon."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 91,
+    "completion_tokens": 18,
+    "total_tokens": 109,
+    "prompt_tokens_details": { "cached_tokens": 40 }
+  }
+}

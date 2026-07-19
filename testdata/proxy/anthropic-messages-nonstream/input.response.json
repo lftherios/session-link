@@ -1,0 +1,14 @@
+{
+  "id": "msg_02golden",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5",
+  "content": [{ "type": "text", "text": "4" }],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 61,
+    "output_tokens": 5,
+    "cache_read_input_tokens": 30
+  }
+}

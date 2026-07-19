@@ -1,0 +1,59 @@
+{
+  "id": "s1",
+  "parent_id": "root",
+  "type": "llm_call",
+  "name": "messages.create",
+  "started_at": "2026-07-19T11:10:00.000Z",
+  "ended_at": "2026-07-19T11:10:00.400Z",
+  "status": "error",
+  "model": {
+    "id": "claude-sonnet-5",
+    "provider": "anthropic"
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Say hello."
+          }
+        ]
+      }
+    ]
+  },
+  "output": {
+    "messages": []
+  },
+  "raw": {
+    "request": {
+      "model": "claude-sonnet-5",
+      "max_tokens": 128,
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Say hello."
+            }
+          ]
+        }
+      ]
+    },
+    "response": {
+      "type": "error",
+      "error": {
+        "type": "rate_limit_error",
+        "message": "Number of request tokens has exceeded your per-minute rate limit."
+      }
+    }
+  },
+  "params": {
+    "max_tokens": 128
+  },
+  "error": {
+    "message": "Number of request tokens has exceeded your per-minute rate limit."
+  }
+}

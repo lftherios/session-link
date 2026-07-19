@@ -1,0 +1,143 @@
+{
+  "schema": "session/v0",
+  "name": "ses_golden_edge",
+  "created_at": "2025-07-19T07:26:40.000Z",
+  "source": {
+    "kind": "import",
+    "harness": "opencode",
+    "label": "session-import@0.1.0",
+    "fidelity": "reconstructed"
+  },
+  "metadata": {
+    "session_id": "ses_golden_edge"
+  },
+  "spans": [
+    {
+      "id": "root",
+      "parent_id": null,
+      "type": "agent",
+      "name": "ses_golden_edge",
+      "started_at": "2025-07-19T07:26:40.000Z",
+      "ended_at": "2025-07-19T07:26:47.000Z",
+      "status": "ok"
+    },
+    {
+      "id": "s1",
+      "parent_id": "root",
+      "type": "llm_call",
+      "name": "turn",
+      "started_at": "2025-07-19T07:26:42.000Z",
+      "ended_at": "2025-07-19T07:26:46.000Z",
+      "status": "error",
+      "model": {
+        "id": "unknown",
+        "provider": "unknown"
+      },
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "fetch the status page and summarize it"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "tool_call",
+                "id": "call_err_1",
+                "name": "bash",
+                "arguments": {
+                  "command": "curl https://status.invalid"
+                }
+              },
+              {
+                "type": "tool_call",
+                "id": "call_meta_1",
+                "name": "webfetch",
+                "arguments": {
+                  "url": "https://example.com/status"
+                }
+              },
+              {
+                "type": "text",
+                "text": ""
+              }
+            ]
+          }
+        ]
+      },
+      "error": {
+        "message": "rate limited"
+      }
+    },
+    {
+      "id": "s2",
+      "parent_id": "s1",
+      "type": "tool_call",
+      "name": "bash",
+      "started_at": "2025-07-19T07:26:43.000Z",
+      "ended_at": "2025-07-19T07:26:44.000Z",
+      "status": "error",
+      "input": {
+        "name": "bash",
+        "arguments": {
+          "command": "curl https://status.invalid"
+        },
+        "tool_call_id": "call_err_1"
+      },
+      "output": {
+        "result": "exit 6: could not resolve host",
+        "is_error": true
+      }
+    },
+    {
+      "id": "s3",
+      "parent_id": "s1",
+      "type": "tool_call",
+      "name": "webfetch",
+      "started_at": "2025-07-19T07:26:42.000Z",
+      "ended_at": "2025-07-19T07:26:46.000Z",
+      "status": "ok",
+      "input": {
+        "name": "webfetch",
+        "arguments": {
+          "url": "https://example.com/status"
+        },
+        "tool_call_id": "call_meta_1"
+      },
+      "output": {
+        "result": "All systems operational."
+      }
+    },
+    {
+      "id": "s4",
+      "parent_id": "root",
+      "type": "custom",
+      "name": "trailing message(s) — no assistant reply",
+      "started_at": "2025-07-19T07:26:47.000Z",
+      "ended_at": "2025-07-19T07:26:47.000Z",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "are you still there?"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

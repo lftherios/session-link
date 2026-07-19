@@ -1,0 +1,20 @@
+data: {"id":"chatcmpl-golden1","object":"chat.completion.chunk","created":1789000000,"model":"gpt-test-1","choices":[{"index":0,"delta":{"role":"assistant","content":null},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-golden1","object":"chat.completion.chunk","created":1789000000,"model":"gpt-test-1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_g1","type":"function","function":{"name":"get_","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-golden1","object":"chat.completion.chunk","created":1789000000,"model":"gpt-test-1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"name":"weather","arguments":"{\"ci"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-golden1","object":"chat.completion.chunk","created":1789000000,"model":"gpt-test-1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ty\":\"Amst"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-golden1","object":"chat.completion.chunk","created":1789000000,"model":"gpt-test-1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"erdam\"}"}},{"index":1,"id":"call_g2","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-golden1","object":"chat.completion.chunk","created":1789000000,"model":"gpt-test-1","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"city\":"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-golden1","object":"chat.completion.chunk","created":1789000000,"model":"gpt-test-1","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"\"Lisbon\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-golden1","object":"chat.completion.chunk","created":1789000000,"model":"gpt-test-1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: {"id":"chatcmpl-golden1","object":"chat.completion.chunk","created":1789000000,"model":"gpt-test-1","choices":[],"usage":{"prompt_tokens":58,"completion_tokens":31,"total_tokens":89,"prompt_tokens_details":{"cached_tokens":16}}}
+
+data: [DONE]
+

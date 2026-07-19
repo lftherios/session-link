@@ -1,0 +1,16 @@
+{
+  "model": "gpt-golden-mini",
+  "stream": true,
+  "instructions": "You are a terse weather assistant.",
+  "max_output_tokens": 256,
+  "reasoning_effort": "low",
+  "input": [
+    { "role": "user", "content": [{ "type": "input_text", "text": "What's the weather in Reykjavik? Then log it." }] },
+    { "type": "function_call", "call_id": "call_g1", "name": "get_weather", "arguments": "{\"city\":\"Reykjavik\"}" },
+    { "type": "function_call_output", "call_id": "call_g1", "output": "4C, windy" }
+  ],
+  "tools": [
+    { "type": "function", "name": "get_weather", "description": "Look up current weather", "parameters": { "type": "object", "properties": { "city": { "type": "string" } }, "required": ["city"] } },
+    { "type": "function", "name": "log_weather", "parameters": { "type": "object", "properties": { "city": { "type": "string" }, "summary": { "type": "string" } } } }
+  ]
+}

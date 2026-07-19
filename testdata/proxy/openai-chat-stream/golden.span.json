@@ -1,0 +1,173 @@
+{
+  "id": "s1",
+  "parent_id": "root",
+  "type": "llm_call",
+  "name": "chat.completions",
+  "started_at": "2026-07-19T11:00:00.000Z",
+  "ended_at": "2026-07-19T11:00:02.250Z",
+  "status": "ok",
+  "model": {
+    "id": "gpt-test-1",
+    "provider": "openai"
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "system",
+        "content": [
+          {
+            "type": "text",
+            "text": "You are a weather bot."
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Compare the weather in Amsterdam and Lisbon."
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Look up current weather for a city",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city"
+          ]
+        }
+      }
+    ]
+  },
+  "output": {
+    "messages": [
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_call",
+            "id": "call_g1",
+            "name": "get_weather",
+            "arguments": {
+              "city": "Amsterdam"
+            }
+          },
+          {
+            "type": "tool_call",
+            "id": "call_g2",
+            "name": "get_weather",
+            "arguments": {
+              "city": "Lisbon"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "raw": {
+    "request": {
+      "model": "gpt-test-1",
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "temperature": 0.2,
+      "max_tokens": 256,
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are a weather bot."
+        },
+        {
+          "role": "user",
+          "content": "Compare the weather in Amsterdam and Lisbon."
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "Look up current weather for a city",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ]
+            }
+          }
+        }
+      ],
+      "tool_choice": "auto"
+    },
+    "response": {
+      "id": "chatcmpl-golden1",
+      "model": "gpt-test-1",
+      "created": 1789000000,
+      "object": "chat.completion",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call_g1",
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "arguments": "{\"city\":\"Amsterdam\"}"
+                }
+              },
+              {
+                "id": "call_g2",
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "arguments": "{\"city\":\"Lisbon\"}"
+                }
+              }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 58,
+        "completion_tokens": 31,
+        "total_tokens": 89,
+        "prompt_tokens_details": {
+          "cached_tokens": 16
+        }
+      }
+    }
+  },
+  "params": {
+    "temperature": 0.2,
+    "max_tokens": 256
+  },
+  "metadata": {
+    "stream": true
+  },
+  "usage": {
+    "input_tokens": 58,
+    "output_tokens": 31,
+    "cache_read_tokens": 16
+  }
+}

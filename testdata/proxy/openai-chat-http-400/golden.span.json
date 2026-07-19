@@ -1,0 +1,55 @@
+{
+  "id": "s1",
+  "parent_id": "root",
+  "type": "llm_call",
+  "name": "chat.completions",
+  "started_at": "2026-07-19T11:10:00.000Z",
+  "ended_at": "2026-07-19T11:10:00.320Z",
+  "status": "error",
+  "model": {
+    "id": "gpt-test-1",
+    "provider": "openai"
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello?"
+          }
+        ]
+      }
+    ]
+  },
+  "output": {
+    "messages": []
+  },
+  "raw": {
+    "request": {
+      "model": "gpt-test-1",
+      "max_tokens": 999999,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello?"
+        }
+      ]
+    },
+    "response": {
+      "error": {
+        "message": "max_tokens is too large: 999999. This model supports at most 16384 completion tokens.",
+        "type": "invalid_request_error",
+        "param": "max_tokens",
+        "code": null
+      }
+    }
+  },
+  "params": {
+    "max_tokens": 999999
+  },
+  "error": {
+    "message": "max_tokens is too large: 999999. This model supports at most 16384 completion tokens."
+  }
+}

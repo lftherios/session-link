@@ -1,0 +1,106 @@
+{
+  "id": "s1",
+  "parent_id": "root",
+  "type": "llm_call",
+  "name": "messages.create",
+  "started_at": "2026-07-19T11:15:00.000Z",
+  "ended_at": "2026-07-19T11:15:03.000Z",
+  "status": "ok",
+  "model": {
+    "id": "claude-sonnet-5",
+    "provider": "anthropic"
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Think carefully, then greet me."
+          }
+        ]
+      }
+    ]
+  },
+  "output": {
+    "messages": [
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "text": "A greeting was requested."
+          },
+          {
+            "type": "redacted_thinking",
+            "data": "UkVEQUNURURfU1lOVEhFVElD"
+          },
+          {
+            "type": "text",
+            "text": "Hello there."
+          }
+        ]
+      }
+    ]
+  },
+  "raw": {
+    "request": {
+      "model": "claude-sonnet-5",
+      "max_tokens": 2048,
+      "stream": true,
+      "thinking": {
+        "type": "enabled",
+        "budget_tokens": 1024
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Think carefully, then greet me."
+            }
+          ]
+        }
+      ]
+    },
+    "response": {
+      "id": "msg_03golden",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-sonnet-5",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "A greeting was requested.",
+          "signature": "c2lnZmFrZQ=="
+        },
+        {
+          "type": "redacted_thinking",
+          "data": "UkVEQUNURURfU1lOVEhFVElD"
+        },
+        {
+          "type": "text",
+          "text": "Hello there."
+        }
+      ],
+      "usage": {
+        "input_tokens": 18,
+        "output_tokens": 41
+      },
+      "stop_reason": "end_turn",
+      "stop_sequence": null
+    }
+  },
+  "params": {
+    "max_tokens": 2048
+  },
+  "metadata": {
+    "stream": true
+  },
+  "usage": {
+    "input_tokens": 18,
+    "output_tokens": 41
+  }
+}

@@ -1,0 +1,197 @@
+{
+  "id": "s1",
+  "parent_id": "root",
+  "type": "llm_call",
+  "name": "chat.completions",
+  "started_at": "2026-07-19T11:05:00.000Z",
+  "ended_at": "2026-07-19T11:05:01.400Z",
+  "status": "ok",
+  "model": {
+    "id": "gpt-test-1",
+    "provider": "openai"
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "system",
+        "content": [
+          {
+            "type": "text",
+            "text": "You are a weather bot."
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What does this sky mean for Amsterdam today?"
+          },
+          {
+            "type": "image",
+            "url": "https://example.test/sky.png"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_call",
+            "id": "call_g1",
+            "name": "get_weather",
+            "arguments": {
+              "city": "Amsterdam"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_call_id": "call_g1",
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"temp_c\":19,\"sky\":\"overcast\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Look up current weather for a city",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city"
+          ]
+        }
+      }
+    ]
+  },
+  "output": {
+    "messages": [
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Overcast at 19C in Amsterdam: expect grey skies but no rain soon."
+          }
+        ]
+      }
+    ]
+  },
+  "raw": {
+    "request": {
+      "model": "gpt-test-1",
+      "temperature": 0,
+      "max_completion_tokens": 512,
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are a weather bot."
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "What does this sky mean for Amsterdam today?"
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "https://example.test/sky.png"
+              }
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call_g1",
+              "type": "function",
+              "function": {
+                "name": "get_weather",
+                "arguments": "{\"city\":\"Amsterdam\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_g1",
+          "content": "{\"temp_c\":19,\"sky\":\"overcast\"}"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "Look up current weather for a city",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "response": {
+      "id": "chatcmpl-golden2",
+      "object": "chat.completion",
+      "created": 1789000300,
+      "model": "gpt-test-1",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Overcast at 19C in Amsterdam: expect grey skies but no rain soon."
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 91,
+        "completion_tokens": 18,
+        "total_tokens": 109,
+        "prompt_tokens_details": {
+          "cached_tokens": 40
+        }
+      }
+    }
+  },
+  "params": {
+    "temperature": 0,
+    "max_completion_tokens": 512
+  },
+  "usage": {
+    "input_tokens": 91,
+    "output_tokens": 18,
+    "cache_read_tokens": 40
+  }
+}

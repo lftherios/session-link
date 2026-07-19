@@ -1,0 +1,57 @@
+{
+  "id": "s1",
+  "parent_id": "root",
+  "type": "llm_call",
+  "name": "messages.create",
+  "started_at": "2026-07-19T11:05:00.000Z",
+  "ended_at": "2026-07-19T11:05:02.000Z",
+  "status": "ok",
+  "model": {
+    "id": "claude-sonnet-5",
+    "provider": "anthropic"
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Say hello."
+          }
+        ]
+      }
+    ]
+  },
+  "output": {
+    "messages": []
+  },
+  "raw": {
+    "request": {
+      "model": "claude-sonnet-5",
+      "max_tokens": 256,
+      "stream": true,
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Say hello."
+            }
+          ]
+        }
+      ]
+    },
+    "response": {
+      "unassembled_sse": "event: ping\ndata: {\"type\":\"ping\"}\n\ndata: this line is not JSON at all\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"orphan delta with no message_start\"}}\n\ndata: [DONE]\n"
+    }
+  },
+  "params": {
+    "max_tokens": 256
+  },
+  "metadata": {
+    "stream": true
+  },
+  "fidelity": "partial"
+}

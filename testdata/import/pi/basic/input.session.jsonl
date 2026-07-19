@@ -1,0 +1,6 @@
+{"type":"session","version":3,"id":"01900000-0000-7000-8000-000000000001","timestamp":"2026-07-19T10:00:00.000Z","cwd":"/tmp/demo"}
+{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-5","timestamp":"2026-07-19T10:00:00.500Z"}
+{"type":"message","id":"m1","parentId":null,"timestamp":"2026-07-19T10:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"Count the lines in notes.txt"}]}}
+{"type":"message","id":"m2","parentId":"m1","timestamp":"2026-07-19T10:00:04.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-sonnet-5","content":[{"type":"thinking","thinking":"wc -l is the simplest way to count lines","thinkingSignature":"{opaque-sig}"},{"type":"text","text":"Counting now."},{"type":"toolCall","id":"call_p1","name":"bash","arguments":{"command":"wc -l notes.txt"}}],"usage":{"input":210,"output":45,"cacheRead":64,"totalTokens":319}}}
+{"type":"message","id":"m3","parentId":"m2","timestamp":"2026-07-19T10:00:05.000Z","message":{"role":"toolResult","toolCallId":"call_p1","toolName":"bash","content":[{"type":"text","text":"12 notes.txt"}]}}
+{"type":"message","id":"m4","parentId":"m3","timestamp":"2026-07-19T10:00:07.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-sonnet-5","content":[{"type":"text","text":"notes.txt has 12 lines."}],"usage":{"input":260,"output":12}}}

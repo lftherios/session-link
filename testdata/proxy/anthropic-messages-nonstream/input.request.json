@@ -1,0 +1,33 @@
+{
+  "model": "claude-sonnet-5",
+  "max_tokens": 512,
+  "temperature": 0,
+  "stop_sequences": ["END"],
+  "system": [
+    { "type": "text", "text": "You are a terse assistant." },
+    { "type": "text", "text": "Answer with a bare number when possible." }
+  ],
+  "messages": [
+    { "role": "user", "content": "What is 2+2? Use the calculator tool." },
+    {
+      "role": "assistant",
+      "content": [
+        { "type": "tool_use", "id": "toolu_02golden", "name": "calculator", "input": { "expr": "2+2" } }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_02golden",
+          "is_error": false,
+          "content": [{ "type": "text", "text": "4" }]
+        }
+      ]
+    }
+  ],
+  "tools": [
+    { "name": "calculator", "description": "Evaluate arithmetic", "input_schema": { "type": "object", "properties": { "expr": { "type": "string" } } } }
+  ]
+}

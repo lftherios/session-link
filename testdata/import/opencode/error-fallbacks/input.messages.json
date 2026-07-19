@@ -1,0 +1,50 @@
+[
+  {
+    "id": "msg_u1",
+    "time_created": 1752910001000,
+    "data": { "role": "user", "time": { "created": 1752910001000 } },
+    "parts": [{ "type": "text", "text": "fetch the status page and summarize it" }]
+  },
+  {
+    "id": "msg_a1",
+    "time_created": 1752910002000,
+    "data": {
+      "role": "assistant",
+      "time": { "created": 1752910002000, "completed": 1752910006000 },
+      "finish": "error",
+      "error": { "message": "rate limited" }
+    },
+    "parts": [
+      {
+        "type": "tool",
+        "tool": "bash",
+        "callID": "call_err_1",
+        "state": {
+          "status": "error",
+          "input": { "command": "curl https://status.invalid" },
+          "error": "exit 6: could not resolve host",
+          "time": { "start": 1752910003000, "end": 1752910004000 }
+        }
+      },
+      {
+        "type": "tool",
+        "tool": "webfetch",
+        "callID": "call_meta_1",
+        "state": {
+          "status": "completed",
+          "input": { "url": "https://example.com/status" },
+          "metadata": { "output": "All systems operational." }
+        }
+      },
+      { "type": "tool", "tool": "bash" },
+      { "type": "patch", "hash": "deadbeef" },
+      { "type": "text", "text": "" }
+    ]
+  },
+  {
+    "id": "msg_u2",
+    "time_created": 1752910007000,
+    "data": { "role": "user", "time": { "created": 1752910007000 } },
+    "parts": [{ "type": "text", "text": "are you still there?" }]
+  }
+]

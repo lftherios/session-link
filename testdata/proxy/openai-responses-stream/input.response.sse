@@ -1,0 +1,41 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_golden1","object":"response","status":"in_progress","model":"gpt-golden-mini","output":[]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_g1","summary":[]}}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_g1","output_index":0,"summary_index":0,"delta":"The tool already returned 4C and windy."}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_g1","output_index":0,"summary_index":1,"delta":"Report it, then log the result."}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_g1","summary":[{"type":"summary_text","text":"The tool already returned 4C and windy."},{"type":"summary_text","text":"Report it, then log the result."}]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_g1","role":"assistant","status":"in_progress","content":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_g1","output_index":1,"content_index":0,"delta":"Reykjavik is 4C"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_g1","output_index":1,"content_index":0,"delta":" and windy right now."}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","item_id":"msg_g1","output_index":1,"content_index":0,"text":"Reykjavik is 4C and windy right now."}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":2,"item":{"type":"function_call","id":"fc_g1","call_id":"call_g2","name":"log_weather","arguments":""}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","item_id":"fc_g1","output_index":2,"delta":"{\"city\":\"Reykjavik\","}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","item_id":"fc_g1","output_index":2,"delta":"\"summary\":\"4C, windy\"}"}
+
+event: response.function_call_arguments.done
+data: {"type":"response.function_call_arguments.done","item_id":"fc_g1","output_index":2,"arguments":"{\"city\":\"Reykjavik\",\"summary\":\"4C, windy\"}"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_golden1","object":"response","status":"completed","model":"gpt-golden-mini","output":[{"type":"reasoning","id":"rs_g1","summary":[{"type":"summary_text","text":"The tool already returned 4C and windy."},{"type":"summary_text","text":"Report it, then log the result."}]},{"type":"message","id":"msg_g1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Reykjavik is 4C and windy right now.","annotations":[]}]},{"type":"function_call","id":"fc_g1","call_id":"call_g2","name":"log_weather","arguments":"{\"city\":\"Reykjavik\",\"summary\":\"4C, windy\"}","status":"completed"}],"usage":{"input_tokens":88,"input_tokens_details":{"cached_tokens":16},"output_tokens":41,"output_tokens_details":{"reasoning_tokens":12},"total_tokens":129}}}

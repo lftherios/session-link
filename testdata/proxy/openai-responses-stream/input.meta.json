@@ -1,0 +1,7 @@
+{
+  "kind": "openai.responses",
+  "streamed": true,
+  "started_at": "2026-07-19T11:00:00.000Z",
+  "ended_at": "2026-07-19T11:00:03.250Z",
+  "httpStatus": 200
+}

@@ -1,0 +1,9 @@
+{
+  "id": "ses_golden_basic",
+  "title": "Add a greeting function",
+  "directory": "/tmp/demo",
+  "model": "{\"id\":\"gpt-5.6-terra-fast\",\"providerID\":\"openai\",\"variant\":\"default\"}",
+  "agent": "build",
+  "version": "1.18.3",
+  "time_created": 1752900000000
+}

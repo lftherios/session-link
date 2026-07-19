@@ -1,0 +1,7 @@
+{
+  "model": "gpt-test-1",
+  "max_tokens": 999999,
+  "messages": [
+    { "role": "user", "content": "Hello?" }
+  ]
+}

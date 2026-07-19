@@ -1,0 +1,9 @@
+event: ping
+data: {"type":"ping"}
+
+data: this line is not JSON at all
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"orphan delta with no message_start"}}
+
+data: [DONE]

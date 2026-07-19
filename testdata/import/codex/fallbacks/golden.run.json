@@ -1,0 +1,126 @@
+{
+  "schema": "session/v0",
+  "name": "Please refactor the configuration loader so that every environment variable o…",
+  "created_at": "2026-07-19T11:00:00.000Z",
+  "source": {
+    "kind": "import",
+    "harness": "codex",
+    "label": "session-import@0.1.0",
+    "fidelity": "reconstructed"
+  },
+  "metadata": {
+    "session_id": "sess-golden-2",
+    "cwd": "/tmp/edge"
+  },
+  "spans": [
+    {
+      "id": "root",
+      "parent_id": null,
+      "type": "agent",
+      "name": "Please refactor the configuration loader so that every environment variable o…",
+      "started_at": "2026-07-19T11:00:00.000Z",
+      "ended_at": "2026-07-19T11:00:07.000Z",
+      "status": "ok"
+    },
+    {
+      "id": "s1",
+      "parent_id": "root",
+      "type": "llm_call",
+      "name": "turn",
+      "started_at": "2026-07-19T11:00:01.000Z",
+      "ended_at": "2026-07-19T11:00:06.000Z",
+      "status": "ok",
+      "model": {
+        "id": "unknown",
+        "provider": "openai"
+      },
+      "input": {
+        "system": "Plain string base instructions.",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Please refactor the configuration loader so that every environment variable override is validated before merging defaults"
+              },
+              {
+                "type": "image",
+                "url": "data:image/png;base64,AAAA"
+              },
+              {
+                "type": "input_file",
+                "filename": "notes.txt"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "text": "[reasoning]"
+              },
+              {
+                "type": "text",
+                "text": "Done."
+              },
+              {
+                "type": "tool_call",
+                "id": "fc_1",
+                "name": "apply_patch",
+                "arguments": "*** Begin Patch (not json)"
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 50,
+        "output_tokens": 9
+      }
+    },
+    {
+      "id": "s2",
+      "parent_id": "s1",
+      "type": "tool_call",
+      "name": "apply_patch",
+      "started_at": "2026-07-19T11:00:03.000Z",
+      "ended_at": "2026-07-19T11:00:06.000Z",
+      "status": "ok",
+      "input": {
+        "name": "apply_patch",
+        "arguments": "*** Begin Patch (not json)",
+        "tool_call_id": "fc_1"
+      },
+      "output": {
+        "result": null
+      }
+    },
+    {
+      "id": "s3",
+      "parent_id": "root",
+      "type": "custom",
+      "name": "trailing message(s) — no assistant reply",
+      "started_at": "2026-07-19T11:00:07.000Z",
+      "ended_at": "2026-07-19T11:00:07.000Z",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "one more thing"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

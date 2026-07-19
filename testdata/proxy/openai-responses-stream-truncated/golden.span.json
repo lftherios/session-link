@@ -1,0 +1,78 @@
+{
+  "id": "s1",
+  "parent_id": "root",
+  "type": "llm_call",
+  "name": "responses.create",
+  "started_at": "2026-07-19T11:05:00.000Z",
+  "ended_at": "2026-07-19T11:05:01.100Z",
+  "status": "ok",
+  "model": {
+    "id": "gpt-golden-mini",
+    "provider": "openai"
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Write a haiku about lighthouses."
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "lookup_tide",
+        "description": "Tide table lookup",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "port": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "output": {
+    "messages": []
+  },
+  "raw": {
+    "request": {
+      "model": "gpt-golden-mini",
+      "stream": true,
+      "temperature": 0.2,
+      "input": "Write a haiku about lighthouses.",
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "lookup_tide",
+            "description": "Tide table lookup",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "port": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "response": {
+      "unassembled_sse": "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_golden2\",\"object\":\"response\",\"status\":\"in_progress\",\"model\":\"gpt-golden-mini\",\"output\":[]}}\n\nevent: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"msg_g2\",\"role\":\"assistant\",\"status\":\"in_progress\",\"content\":[]}}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_g2\",\"output_index\":0,\"content_index\":0,\"delta\":\"Salt wind on the\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_g2\",\"output_index\":0,\"content_index\":0,\"delta\":\" stones —\"}\n"
+    }
+  },
+  "params": {
+    "temperature": 0.2
+  },
+  "metadata": {
+    "stream": true
+  },
+  "fidelity": "partial"
+}

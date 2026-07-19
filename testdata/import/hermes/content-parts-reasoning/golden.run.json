@@ -1,0 +1,226 @@
+{
+  "schema": "session/v0",
+  "name": "parts and reasoning",
+  "created_at": "2025-07-19T07:26:40.000Z",
+  "source": {
+    "kind": "import",
+    "harness": "hermes",
+    "label": "session-import@0.1.0",
+    "fidelity": "reconstructed"
+  },
+  "metadata": {
+    "session_id": "hermes_golden_parts"
+  },
+  "spans": [
+    {
+      "id": "root",
+      "parent_id": null,
+      "type": "agent",
+      "name": "parts and reasoning",
+      "started_at": "2025-07-19T07:26:40.000Z",
+      "ended_at": "2025-07-19T07:26:45.000Z",
+      "status": "ok"
+    },
+    {
+      "id": "s1",
+      "parent_id": "root",
+      "type": "llm_call",
+      "name": "turn",
+      "started_at": "2025-07-19T07:26:41.500Z",
+      "ended_at": "2025-07-19T07:26:42.000Z",
+      "status": "ok",
+      "model": {
+        "id": "hermes-4-405b",
+        "provider": "unknown"
+      },
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "look at this screenshot"
+              },
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:image/png;base64,AAAA"
+                }
+              },
+              {
+                "type": "text",
+                "text": "a bare string part"
+              },
+              {
+                "type": "text",
+                "text": "typeless dict with text"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "text": "The user attached an image; I should read the notes file first."
+              },
+              {
+                "type": "text",
+                "text": ""
+              },
+              {
+                "type": "tool_call",
+                "id": "call_read_1",
+                "name": "read_file",
+                "arguments": {
+                  "path": "notes.txt"
+                }
+              },
+              {
+                "type": "tool_call",
+                "id": "call_0_1",
+                "name": "probe",
+                "arguments": "not json at all"
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "output_tokens": 9
+      }
+    },
+    {
+      "id": "s2",
+      "parent_id": "s1",
+      "type": "tool_call",
+      "name": "read_file",
+      "started_at": "2025-07-19T07:26:42.000Z",
+      "status": "ok",
+      "input": {
+        "name": "read_file",
+        "arguments": {
+          "path": "notes.txt"
+        },
+        "tool_call_id": "call_read_1"
+      },
+      "ended_at": "2025-07-19T07:26:43.000Z",
+      "output": {
+        "result": "{\"stdout\":\"note: remember the milk\",\"exit_code\":0}"
+      }
+    },
+    {
+      "id": "s3",
+      "parent_id": "s1",
+      "type": "tool_call",
+      "name": "probe",
+      "started_at": "2025-07-19T07:26:42.000Z",
+      "status": "ok",
+      "input": {
+        "name": "probe",
+        "arguments": "not json at all",
+        "tool_call_id": "call_0_1"
+      },
+      "ended_at": "2025-07-19T07:26:43.500Z",
+      "output": {
+        "result": "probe ran with raw args"
+      }
+    },
+    {
+      "id": "s4",
+      "parent_id": "root",
+      "type": "llm_call",
+      "name": "turn",
+      "started_at": "2025-07-19T07:26:43.500Z",
+      "ended_at": "2025-07-19T07:26:44.000Z",
+      "status": "error",
+      "model": {
+        "id": "hermes-4-405b",
+        "provider": "unknown"
+      },
+      "input": {
+        "messages": [
+          {
+            "role": "tool",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_call_id": "call_read_1",
+                "content": [
+                  {
+                    "type": "data",
+                    "data": {
+                      "stdout": "note: remember the milk",
+                      "exit_code": 0
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_call_id": "call_0_1",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "probe ran with raw args"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "text": "fallback reasoning field used by some providers"
+              },
+              {
+                "type": "text",
+                "text": "I could not finish reading everything."
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "output_tokens": 7
+      }
+    },
+    {
+      "id": "s5",
+      "parent_id": "root",
+      "type": "custom",
+      "name": "trailing message(s) — no assistant reply",
+      "started_at": "2025-07-19T07:26:45.000Z",
+      "ended_at": "2025-07-19T07:26:45.000Z",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "no reply after this — trailing message"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

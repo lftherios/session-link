@@ -1,0 +1,15 @@
+{"timestamp":"2026-07-19T10:00:00.000Z","type":"session_meta","payload":{"session_id":"sess-golden-1","cwd":"/tmp/demo","model_provider":"openai","base_instructions":{"text":"You are Codex, a coding agent."},"timestamp":"2026-07-19T10:00:00.000Z","cli_version":"0.144.5"}}
+{"timestamp":"2026-07-19T10:00:00.000Z","type":"turn_context","payload":{"turn_id":"t1","model":"gpt-5.5"}}
+{"timestamp":"2026-07-19T10:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>sandbox: workspace-write; approvals: on-request</environment_context>"}]}}
+{"timestamp":"2026-07-19T10:00:01.000Z","type":"event_msg","payload":{"type":"user_message","message":"Add a health endpoint to the server"}}
+{"timestamp":"2026-07-19T10:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Add a health endpoint to the server"}]}}
+{"timestamp":"2026-07-19T10:00:02.000Z","type":"response_item","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"I should look at the server file first."}]}}
+{"timestamp":"2026-07-19T10:00:03.000Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"cat\",\"server.js\"]}","call_id":"call_1","internal_chat_message_metadata_passthrough":{"turn_id":"t1"}}}
+{"timestamp":"2026-07-19T10:00:04.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_1","output":"const app = express();\napp.listen(3000);"}}
+{"timestamp":"2026-07-19T10:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":200,"cached_input_tokens":80,"output_tokens":40,"reasoning_output_tokens":12}}}}
+{"timestamp":"2026-07-19T10:00:06.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Added GET /health returning 200."}],"internal_chat_message_metadata_passthrough":{"turn_id":"t1"}}}
+{"timestamp":"2026-07-19T10:00:07.000Z","type":"turn_context","payload":{"turn_id":"t2","model":"gpt-5.5-mini"}}
+{"timestamp":"2026-07-19T10:00:08.000Z","type":"event_msg","payload":{"type":"user_message","message":"Now add a test for it"}}
+{"timestamp":"2026-07-19T10:00:08.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Now add a test for it"}]}}
+{"timestamp":"2026-07-19T10:00:09.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":260,"output_tokens":22}}}}
+{"timestamp":"2026-07-19T10:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Added a supertest case for /health."}],"internal_chat_message_metadata_passthrough":{"turn_id":"t2"}}}

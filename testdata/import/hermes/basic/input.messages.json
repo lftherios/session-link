@@ -1,0 +1,50 @@
+[
+  {
+    "role": "user",
+    "content": "what files are in this project?",
+    "tool_call_id": null,
+    "tool_calls": null,
+    "tool_name": null,
+    "timestamp": 1752900001,
+    "token_count": null,
+    "finish_reason": null,
+    "reasoning": null,
+    "reasoning_content": null
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_call_id": null,
+    "tool_calls": "[{\"id\":\"call_ls_1\",\"type\":\"function\",\"function\":{\"name\":\"bash\",\"arguments\":\"{\\\"command\\\":\\\"ls\\\"}\"}}]",
+    "tool_name": null,
+    "timestamp": 1752900002,
+    "token_count": 18,
+    "finish_reason": "tool_calls",
+    "reasoning": null,
+    "reasoning_content": null
+  },
+  {
+    "role": "tool",
+    "content": "README.md\nsrc",
+    "tool_call_id": "call_ls_1",
+    "tool_calls": null,
+    "tool_name": "bash",
+    "timestamp": 1752900003.25,
+    "token_count": null,
+    "finish_reason": null,
+    "reasoning": null,
+    "reasoning_content": null
+  },
+  {
+    "role": "assistant",
+    "content": "Two entries: README.md and src.",
+    "tool_call_id": null,
+    "tool_calls": null,
+    "tool_name": null,
+    "timestamp": 1752900004,
+    "token_count": 22,
+    "finish_reason": "stop",
+    "reasoning": null,
+    "reasoning_content": null
+  }
+]

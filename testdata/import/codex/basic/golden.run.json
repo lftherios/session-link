@@ -1,0 +1,163 @@
+{
+  "schema": "session/v0",
+  "name": "Add a health endpoint to the server",
+  "created_at": "2026-07-19T10:00:00.000Z",
+  "source": {
+    "kind": "import",
+    "harness": "codex",
+    "label": "session-import@0.1.0",
+    "fidelity": "reconstructed"
+  },
+  "metadata": {
+    "session_id": "sess-golden-1",
+    "cwd": "/tmp/demo",
+    "harness_version": "0.144.5"
+  },
+  "spans": [
+    {
+      "id": "root",
+      "parent_id": null,
+      "type": "agent",
+      "name": "Add a health endpoint to the server",
+      "started_at": "2026-07-19T10:00:00.000Z",
+      "ended_at": "2026-07-19T10:00:10.000Z",
+      "status": "ok"
+    },
+    {
+      "id": "s1",
+      "parent_id": "root",
+      "type": "llm_call",
+      "name": "turn",
+      "started_at": "2026-07-19T10:00:01.000Z",
+      "ended_at": "2026-07-19T10:00:06.000Z",
+      "status": "ok",
+      "model": {
+        "id": "gpt-5.5",
+        "provider": "openai"
+      },
+      "input": {
+        "system": "You are Codex, a coding agent.",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "<environment_context>sandbox: workspace-write; approvals: on-request</environment_context>"
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Add a health endpoint to the server"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "text": "I should look at the server file first."
+              },
+              {
+                "type": "text",
+                "text": "Added GET /health returning 200."
+              },
+              {
+                "type": "tool_call",
+                "id": "call_1",
+                "name": "shell",
+                "arguments": {
+                  "command": [
+                    "cat",
+                    "server.js"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 200,
+        "output_tokens": 40,
+        "cache_read_tokens": 80,
+        "reasoning_tokens": 12
+      }
+    },
+    {
+      "id": "s2",
+      "parent_id": "s1",
+      "type": "tool_call",
+      "name": "shell",
+      "started_at": "2026-07-19T10:00:03.000Z",
+      "ended_at": "2026-07-19T10:00:04.000Z",
+      "status": "ok",
+      "input": {
+        "name": "shell",
+        "arguments": {
+          "command": [
+            "cat",
+            "server.js"
+          ]
+        },
+        "tool_call_id": "call_1"
+      },
+      "output": {
+        "result": "const app = express();\napp.listen(3000);"
+      }
+    },
+    {
+      "id": "s3",
+      "parent_id": "root",
+      "type": "llm_call",
+      "name": "turn",
+      "started_at": "2026-07-19T10:00:08.000Z",
+      "ended_at": "2026-07-19T10:00:10.000Z",
+      "status": "ok",
+      "model": {
+        "id": "gpt-5.5-mini",
+        "provider": "openai"
+      },
+      "input": {
+        "system": "You are Codex, a coding agent.",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Now add a test for it"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Added a supertest case for /health."
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 260,
+        "output_tokens": 22
+      }
+    }
+  ]
+}
