@@ -57,11 +57,10 @@ The Go code implements contracts, not the JS code's shape:
   removes the Node ≥22.13 constraint for SQLite importers.
 - **P4 — distribution cutover.** goreleaser: tar.gz/zip archives +
   checksums, GitHub Release, Homebrew tap auto-update (retires
-  `update-formula.mjs` + manual copy), deb/rpm. npm keeps working via
-  platform packages (`optionalDependencies` + tiny JS launcher, the
-  esbuild pattern, ~4MB per platform). `install.sh` switches to archives.
-  First Go release = v0.3.0. JS CLI enters maintenance as the reference
-  implementation.
+  `update-formula.mjs` + manual copy), deb/rpm. The `session.link` npm
+  package is deprecated with a pointer (decision below — npm sunsets);
+  `install.sh` switches to archives. First Go release = v0.3.0. JS CLI
+  enters maintenance as the reference implementation.
 
 ## Decisions (settled 2026-07-19)
 

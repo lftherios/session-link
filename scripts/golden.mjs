@@ -32,6 +32,7 @@ import { fileURLToPath } from "node:url";
 import { validateRun } from "../packages/format/validate.mjs";
 import { SECRET_PATTERN_SOURCES } from "../packages/format/secret-patterns.mjs";
 import { parseSseText, assembleAnthropicSse, assembleOpenaiChatSse, assembleResponsesSse, buildLlmSpan } from "../cli/normalize.mjs";
+import { appendSpool, assembleSpool } from "../cli/store.mjs";
 import { transcriptToRun } from "../cli/import-session.mjs";
 import { piSessionToRun } from "../cli/import-pi.mjs";
 import { codexRolloutToRun } from "../cli/import-codex.mjs";
@@ -166,6 +167,31 @@ for (const harness of await listCases(path.join(TESTDATA, "import"))) {
     } catch (e) {
       report(dir, false, e.message);
     }
+  }
+}
+
+/* --------------------------------------------------------- spool cases */
+// The spool-layer contract (docs/spool-protocol.md): input.spool is copied
+// into a temp capture dir and assembled by the JS reference; the golden is
+// the resulting session/v0 document. Parity for Go is PARSED equality —
+// assembled bytes are implementation-specific (key order), the document is
+// the contract. meta: { mode: "finalize"|"snapshot", endedAt? }.
+import { cp, mkdtemp, rm as rmDir } from "node:fs/promises";
+import os from "node:os";
+for (const name of await listCases(path.join(TESTDATA, "spool"))) {
+  const dir = path.join(TESTDATA, "spool", name);
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "slink-golden-"));
+  try {
+    const meta = JSON.parse(await readFile(path.join(dir, "input.meta.json"), "utf8"));
+    const cap = path.join(tmpDir, "cap.json");
+    await cp(path.join(dir, "input.spool"), cap + ".spool");
+    const n = await assembleSpool(cap, meta.mode === "finalize" ? { finalize: true, endedAt: meta.endedAt } : {});
+    const doc = n == null ? { refused: true } : JSON.parse(await readFile(cap, "utf8"));
+    await emit(path.join(dir, "golden.doc.json"), stringify({ spans: n, doc }));
+  } catch (e) {
+    report(dir, false, e.message);
+  } finally {
+    await rmDir(tmpDir, { recursive: true, force: true });
   }
 }
 

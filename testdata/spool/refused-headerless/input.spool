@@ -1,0 +1,2 @@
+{"id":"s1","parent_id":"root","type":"llm_call","model":{"id":"m"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]},"output":{"messages":[]},"started_at":"2026-07-19T09:00:01.000Z","ended_at":"2026-07-19T09:00:02.000Z"}
+{"id":"s2","parent_id":"root","type":"llm_call","model":{"id":"m"},"input":{"messages":[]},"output":{"messages":[]},"started_at":"2026-07-19T09:00:03.000Z","ended_at":"2026-07-19T09:00:04.000Z"}
