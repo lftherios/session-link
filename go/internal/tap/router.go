@@ -26,6 +26,9 @@ type Router struct {
 	newSession func(name string) *Session
 	onFinalize func(*Session)
 	open       map[string]*routed
+	// finalizing tracks sweep/rollover finalize goroutines so shutdown can
+	// drain them — an untracked one died mid-commit at process exit.
+	finalizing sync.WaitGroup
 }
 
 type routed struct {
@@ -48,7 +51,10 @@ func NewRouter(idle time.Duration, now func() time.Time, newSession func(string)
 }
 
 // Route returns the session a call on key belongs to, rolling stale idle
-// sessions over — never busy ones.
+// sessions over — never busy ones. The returned session is already
+// Begin()-ed under the router mutex: incrementing pending here closes the
+// Route→Begin TOCTOU where a sweep (after a suspend landing in the gap)
+// could finalize the just-routed session. Callers must End().
 func (r *Router) Route(key, name string) *Session {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -56,14 +62,24 @@ func (r *Router) Route(key, name string) *Session {
 	if cur, ok := r.open[key]; ok {
 		if t.Sub(cur.last) <= r.idle || cur.session.Busy() {
 			cur.last = t
+			cur.session.Begin()
 			return cur.session
 		}
 		delete(r.open, key)
-		go r.onFinalize(cur.session)
+		r.spawnFinalize(cur.session)
 	}
 	s := r.newSession(name)
 	r.open[key] = &routed{session: s, last: t}
+	s.Begin()
 	return s
+}
+
+func (r *Router) spawnFinalize(s *Session) {
+	r.finalizing.Add(1)
+	go func() {
+		defer r.finalizing.Done()
+		r.onFinalize(s)
+	}()
 }
 
 // Sweep finalizes idle, non-busy sessions. Call on a timer.
@@ -79,7 +95,7 @@ func (r *Router) Sweep() {
 	}
 	r.mu.Unlock()
 	for _, s := range out {
-		go r.onFinalize(s)
+		r.spawnFinalize(s)
 	}
 }
 
@@ -93,8 +109,9 @@ func (r *Router) FinalizeAll() {
 	}
 	r.mu.Unlock()
 	for _, s := range out {
-		r.onFinalize(s)
+		r.spawnFinalize(s)
 	}
+	r.finalizing.Wait() // synchronous for callers, parallel across sessions
 }
 
 // Open snapshots the currently open sessions (for heartbeats).
@@ -106,6 +123,21 @@ func (r *Router) Open() []*Session {
 		out = append(out, cur.session)
 	}
 	return out
+}
+
+// DrainFinalizes waits (bounded) for sweep/rollover finalizes in flight.
+func (r *Router) DrainFinalizes(d time.Duration) bool {
+	ch := make(chan struct{})
+	go func() {
+		r.finalizing.Wait()
+		close(ch)
+	}()
+	select {
+	case <-ch:
+		return true
+	case <-time.After(d):
+		return false
+	}
 }
 
 // Size is the number of open sessions.

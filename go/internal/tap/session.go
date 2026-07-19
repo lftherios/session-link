@@ -20,7 +20,12 @@ const cliLabel = "slink-go@0.0.0-dev"
 type Session struct {
 	File string
 
+	// mu guards fast state only (seq/closed/lastEndedAt) — NEVER disk I/O,
+	// so heartbeats and finalize can't be wedged by a hung write. writeSem
+	// (cap 1) serializes [id assignment → append] so spool order matches id
+	// order; Finalize drains it with a bound, like the JS 3s write-drain.
 	mu          sync.Mutex
+	writeSem    chan struct{}
 	seq         int
 	closed      bool
 	lastEndedAt string
@@ -43,7 +48,11 @@ func NewSession(dir, name string, now time.Time) *Session {
 		}},
 	}
 	sk, _ := spool.EncodeLine(skeleton)
-	return &Session{File: spool.NewCapturePath(dir, now), skeleton: sk}
+	return &Session{
+		File:     spool.NewCapturePath(dir, now),
+		skeleton: sk,
+		writeSem: make(chan struct{}, 1),
+	}
 }
 
 func cwd() string {
@@ -65,26 +74,39 @@ func (s *Session) End()   { s.pending.Add(-1) }
 // build, and appends it — one serialized critical section, so ids are
 // unique and spool order matches id order.
 func (s *Session) Record(build func(id string) (map[string]any, string)) {
+	s.writeSem <- struct{}{} // serialize [id assignment → append]
+	defer func() { <-s.writeSem }()
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed {
+		s.mu.Unlock()
 		log.Printf("late span after session close — not recorded")
 		return
 	}
 	id := fmt.Sprintf("s%d", s.seq+1)
+	s.seq++
+	s.mu.Unlock()
+
 	span, endedAt := build(id)
 	line, err := spool.EncodeLine(span)
 	if err != nil {
 		log.Printf("capture encode failed: %v", err)
 		return
 	}
-	s.seq++
 	if endedAt != "" {
+		s.mu.Lock()
 		s.lastEndedAt = endedAt
+		s.mu.Unlock()
 	}
-	if err := spool.Append(s.File, [][]byte{line}, s.skeleton, func() bool { return s.closed }); err != nil {
+	if err := spool.Append(s.File, [][]byte{line}, s.skeleton, s.isClosed); err != nil {
 		log.Printf("capture write failed: %v — recording may be incomplete", err)
 	}
+}
+
+func (s *Session) isClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closed
 }
 
 // Heartbeat refreshes the owner sidecar for a live, non-empty session.
@@ -94,6 +116,18 @@ func (s *Session) Heartbeat() {
 	s.mu.Unlock()
 	if active {
 		_ = spool.TouchOwnerSidecar(s.File)
+	}
+}
+
+// drainWrites waits (bounded) for an in-flight append — the JS reference's
+// 3s write-drain: a wedged disk must not hold finalize or exit hostage.
+func (s *Session) drainWrites(d time.Duration) bool {
+	select {
+	case s.writeSem <- struct{}{}:
+		<-s.writeSem
+		return true
+	case <-time.After(d):
+		return false
 	}
 }
 
@@ -108,6 +142,7 @@ func (s *Session) Finalize() {
 	if seq == 0 {
 		return // never recorded anything — nothing to save
 	}
+	s.drainWrites(3 * time.Second)
 	if endedAt == "" {
 		endedAt = time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 	}

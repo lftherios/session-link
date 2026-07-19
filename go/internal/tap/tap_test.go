@@ -29,21 +29,24 @@ func TestRouterIdleAndBusySemantics(t *testing.T) {
 		func(s *Session) { finalized = append(finalized, s) },
 	)
 
-	s1 := r.Route("k", "a")
+	s1 := r.Route("k", "a") // Route Begin()s; balance with End when the call finishes
+	s1.End()
 	if got := r.Route("k", "b"); got != s1 {
 		t.Fatal("within the idle window the session is reused")
 	}
-	// Busy sessions survive any staleness.
+	s1.End()
+	// Busy sessions survive any staleness: leave one call in flight.
 	s1.Begin()
 	now = now.Add(time.Hour)
 	if got := r.Route("k", "c"); got != s1 {
 		t.Fatal("busy session must be reused, not rolled over")
 	}
+	s1.End() // the Route's own Begin
 	r.Sweep()
 	if len(finalized) != 0 {
 		t.Fatal("busy session must not be swept")
 	}
-	s1.End()
+	s1.End() // the explicit in-flight call ends
 	now = now.Add(time.Hour) // the busy reuse bumped last-seen; go idle again
 	r.Sweep()
 	// The sweep finalizes asynchronously; wait for it.

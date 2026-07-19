@@ -31,8 +31,30 @@ func RecoverDead(dir string) int {
 		return 0
 	}
 	recovered := 0
+	names := map[string]bool{}
+	for _, e := range entries {
+		names[e.Name()] = true
+	}
 	for _, e := range entries {
 		name := e.Name()
+		// The protocol's litter sweeps: staging tmps, orphan sidecars,
+		// abandoned locks (removed via the same atomic rename-first break
+		// as the commit lock), and graves from crashed breakers.
+		full := filepath.Join(dir, name)
+		switch {
+		case strings.HasSuffix(name, ".tmp"):
+			sweepOlderThan(full, time.Hour, false)
+			continue
+		case strings.HasSuffix(name, ".json.spool.pid") && !names[strings.TrimSuffix(name, ".pid")]:
+			sweepOlderThan(full, time.Hour, false)
+			continue
+		case strings.HasSuffix(name, ".json.lock"):
+			sweepOlderThan(full, 10*time.Minute, true)
+			continue
+		case strings.HasSuffix(name, ".stale"):
+			sweepOlderThan(full, 10*time.Minute, false)
+			continue
+		}
 		if !strings.HasSuffix(name, ".json.spool") {
 			continue
 		}
@@ -58,4 +80,19 @@ func RecoverDead(dir string) int {
 		}
 	}
 	return recovered
+}
+
+func sweepOlderThan(path string, age time.Duration, viaRename bool) {
+	st, err := os.Stat(path)
+	if err != nil || time.Since(st.ModTime()) <= age {
+		return
+	}
+	if !viaRename {
+		os.Remove(path)
+		return
+	}
+	grave := fmt.Sprintf("%s.%d.sweep.stale", path, os.Getpid())
+	if os.Rename(path, grave) == nil {
+		os.Remove(grave)
+	}
 }

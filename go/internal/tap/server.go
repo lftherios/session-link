@@ -62,6 +62,9 @@ type Server struct {
 }
 
 func NewServer(captureDir string, idle time.Duration) *Server {
+	if idle <= 0 {
+		idle = DefaultIdle // also keeps the sweep ticker from panicking
+	}
 	s := &Server{
 		CaptureDir: captureDir,
 		Idle:       idle,
@@ -116,7 +119,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	reqBuf, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "read body", http.StatusBadRequest)
+		writeErrorJSON(w, http.StatusInternalServerError, "proxy_error", err.Error())
 		return
 	}
 
@@ -127,8 +130,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if name == "" {
 			name = deriveName(reqBuf)
 		}
-		session = s.router.Route(key, name)
-		session.Begin()
+		session = s.router.Route(key, name) // Route Begin()s under its mutex
 		defer session.End()
 	}
 	s.inflight.Add(1)
@@ -136,7 +138,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	up, err := http.NewRequestWithContext(r.Context(), r.Method, s.Upstreams[provider]+subpath, strings.NewReader(string(reqBuf)))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		writeErrorJSON(w, http.StatusInternalServerError, "proxy_error", err.Error())
 		return
 	}
 	for k, vs := range r.Header {
@@ -176,7 +178,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	isSse := strings.Contains(resp.Header.Get("content-type"), "text/event-stream")
 	flusher, _ := w.(http.Flusher)
-	var captured []byte
+	// Non-nil: JS resText is "" for an empty body — a response that fails
+	// to parse (unparsed_body + capture gap), not an absent response.
+	captured := []byte{}
 	overflow := false
 	transportError := ""
 	buf := make([]byte, 32<<10)
@@ -263,10 +267,24 @@ func (s *Server) recordCall(sess *Session, kind string, reqBuf, resBuf []byte, i
 }
 
 func truncate(s string, n int) string {
-	if len(s) > n {
-		return s[:n]
+	if len(s) <= n {
+		return s
 	}
-	return s
+	// Cut at a rune boundary: a mid-rune slice becomes U+FFFD when
+	// re-marshaled, diverging from the JS capture of the same stream.
+	cut := n
+	for cut > 0 && (s[cut]&0xC0) == 0x80 {
+		cut--
+	}
+	return s[:cut]
+}
+
+func writeErrorJSON(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("content-type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]any{"code": code, "message": message},
+	})
 }
 
 func headerOr(r *http.Request, key, def string) string {
@@ -276,38 +294,32 @@ func headerOr(r *http.Request, key, def string) string {
 	return def
 }
 
-// deriveName mirrors the JS: the first user message's text, ellipsized,
-// else the model id.
+// deriveName mirrors the JS: the first user message's text (string, or
+// the joined .text of content parts — non-text parts contribute empty
+// strings), ellipsized at 60, else the model id, String()-ified.
 func deriveName(reqBuf []byte) string {
-	var body struct {
-		Model    any `json:"model"`
-		Messages []struct {
-			Role    string          `json:"role"`
-			Content json.RawMessage `json:"content"`
-		} `json:"messages"`
-	}
+	var body map[string]any
 	if json.Unmarshal(reqBuf, &body) != nil {
 		return ""
 	}
-	for _, m := range body.Messages {
-		if m.Role != "user" {
+	messages, _ := body["messages"].([]any)
+	for _, mv := range messages {
+		mm, _ := mv.(map[string]any)
+		if mm == nil || mm["role"] != "user" {
 			continue
 		}
 		var text string
-		var asString string
-		if json.Unmarshal(m.Content, &asString) == nil {
-			text = asString
-		} else {
-			var parts []struct {
-				Text string `json:"text"`
+		switch c := mm["content"].(type) {
+		case string:
+			text = c
+		case []any:
+			parts := make([]string, 0, len(c))
+			for _, p := range c {
+				pm, _ := p.(map[string]any)
+				t, _ := pm["text"].(string)
+				parts = append(parts, t) // non-strings join as "" like JS
 			}
-			if json.Unmarshal(m.Content, &parts) == nil {
-				var joined []string
-				for _, p := range parts {
-					joined = append(joined, p.Text)
-				}
-				text = strings.Join(joined, " ")
-			}
+			text = strings.Join(parts, " ")
 		}
 		text = strings.TrimSpace(text)
 		if text != "" {
@@ -319,8 +331,12 @@ func deriveName(reqBuf []byte) string {
 		}
 		break
 	}
-	if s, ok := body.Model.(string); ok {
-		return s
+	switch mv := body["model"].(type) {
+	case string:
+		return mv
+	case float64:
+		b, _ := json.Marshal(mv)
+		return string(b)
 	}
 	return ""
 }
@@ -378,10 +394,25 @@ func (s *Server) Serve(ctx context.Context, addr string) error {
 	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	srv.Shutdown(shutCtx)
+	// Force-close whatever outlived the graceful window (JS
+	// closeAllConnections): an active stream's handler must return so its
+	// partial span records during the drain below.
+	srv.Close()
 	// Drain in-flight BEFORE finalizing — finalize consumes the spool, and
 	// a record landing after that has nowhere valid to go.
 	waitTimeout(&s.inflight, 5*time.Second)
-	s.router.FinalizeAll()
+	// FinalizeAll also drains sweep/rollover finalizes already in flight;
+	// bounded — a wedged disk must not hold exit hostage.
+	fin := make(chan struct{})
+	go func() {
+		s.router.FinalizeAll()
+		close(fin)
+	}()
+	select {
+	case <-fin:
+	case <-time.After(15 * time.Second):
+		log.Printf("gave up waiting for finalizes — recovery will finish them")
+	}
 	return nil
 }
 
