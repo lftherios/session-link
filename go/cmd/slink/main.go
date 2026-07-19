@@ -44,16 +44,17 @@ func main() {
 		runOpen(os.Args[2:])
 	case "dev":
 		runDev(os.Args[2:])
+	case "import":
+		runImport(os.Args[2:])
 	case "share":
-		fmt.Fprintln(os.Stderr, "slink(go): share needs the importers, which land in P3 — use the JS CLI's `slink share`, or `slink push` for tap/dev captures")
-		os.Exit(1)
+		runShare(os.Args[2:])
 	default:
 		usage()
 	}
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "slink(go): port in progress — tap [--install], dev, list, push, prune, login, on/off, open, version; `share` needs P3 importers")
+	fmt.Fprintln(os.Stderr, "slink(go): port in progress — tap [--install], dev, list, push, prune, login, on/off, open, import, share, version")
 	os.Exit(1)
 }
 
