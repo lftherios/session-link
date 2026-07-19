@@ -111,11 +111,13 @@ Your captures never leave `~/.slink` unless you publish them. The [format](packa
 
 An open client and an open format, not a thin wrapper around a hosted API:
 
-| Package | What it is |
+| Component | What it is |
 | --- | --- |
-| [`session.link`](packages/cli) | the `slink` CLI — recording proxy, importer, local viewer, publish flow. Zero-dependency bundle. |
+| [`slink`](go) | the CLI + always-on tap — recording proxy, importer, local viewer, publish flow. A single native Go binary (~7MB, no runtime). |
 | [`@session-link/format`](packages/format) | the open `session/v0` format — TypeScript types, JSON Schema, and `validateRun`. |
-| [`@session-link/viewer`](packages/viewer) | the React trace-tree component that renders a session — the same one the hosted site uses. Embed it. |
+| [`@session-link/viewer`](packages/viewer) | the React trace-tree component that renders a session — the same one the hosted site uses, embedded in the CLI for `slink open`. |
+
+The CLI is Go as of v0.3.0 (previously a Node bundle; the pre-Go source is tagged `js-cli-v0.2`). `@session-link/format` and `@session-link/viewer` stay on npm — the hosted server and any embedder consume them.
 
 The `session/v0` wire format is open-world: unknown span types, content parts, roles, and extra fields all validate and round-trip, so it degrades gracefully as providers and frameworks evolve. It's pre-1.0 and will change before it's frozen.
 
@@ -129,7 +131,7 @@ Today, one link lets you **inspect**. Next, anchored to the same URLs:
 
 ## Contributing
 
-Issues and PRs welcome. `npm install`, then `npm test` (CLI + format + viewer) and `npm run build:cli`. The demo GIF regenerates from a checked-in [VHS](https://github.com/charmbracelet/vhs) tape: `vhs assets/demo.tape`.
+Issues and PRs welcome. The CLI is Go — `cd go && go test ./...`. For the format and viewer packages, `npm install` then `npm test`; `npm run build:viewer` rebuilds the bundle the Go CLI embeds. The demo GIF regenerates from a checked-in [VHS](https://github.com/charmbracelet/vhs) tape: `vhs assets/demo.tape`.
 
 The hosted service lives at **[session.link](https://session.link)**; this repo is the open client and format.
 

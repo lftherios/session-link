@@ -15,7 +15,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: for f in cli/*.mjs scripts/*.mjs packages/format/*.mjs; do node --check "$f"; done
+      - run: for f in scripts/*.mjs packages/format/*.mjs; do node --check "$f"; done
       - run: npm test
       # The Go-migration parity oracle: goldens must match the JS reference.
       - run: node scripts/golden.mjs --check
@@ -37,4 +37,3 @@ jobs:
       # Build-smoke the npm binary channel (cross-compile all targets; no publish).
       - run: node scripts/build-npm.mjs 0.0.0-ci
       - run: npm run validate
-      - run: npm run build:cli
