@@ -63,17 +63,18 @@ The Go code implements contracts, not the JS code's shape:
   First Go release = v0.3.0. JS CLI enters maintenance as the reference
   implementation.
 
-## Open decisions (recommendations marked)
+## Decisions (settled 2026-07-19)
 
-- **npm shape**: keep npm with platform binaries *(recommended)* vs drop
-  npm. Dropping abandons the `npx session.link` funnel; keeping costs the
-  shim package complexity.
-- **Importer phasing**: P3 as listed *(recommended)* vs hybrid-forever
-  (importers stay JS, Go shells out) — hybrid keeps the community
-  contribution bar low but reintroduces the Node dependency the migration
-  removes.
-- **Freeze `session/v0` during P1–P3** *(recommended)* vs dual-implement
-  format changes as they land.
+- **npm is dropped at the P4 cutover.** Post-cutover distribution is
+  brew / `curl | sh` / GitHub-Release binaries only. The `session.link`
+  npm package is deprecated with a pointer at cutover time; the README's
+  install section and the quickstart's `npx` examples change accordingly.
+  (`@session-link/format` and `@session-link/viewer` stay on npm — the
+  server and embedders consume them.)
+- **Importers port to Go in P3** as phased. The golden fixtures pin all
+  five mappings; contributions become fixtures + Go mapping.
+- **`session/v0` is hard-frozen until parity.** No format changes while
+  the port runs; blob-ref/attachment work queues behind it.
 
 ## Risks
 
