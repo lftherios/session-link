@@ -1,0 +1,12 @@
+{
+  "model": "claude-sonnet-5",
+  "max_tokens": 1024,
+  "stream": true,
+  "system": "You are a terse assistant.",
+  "messages": [
+    { "role": "user", "content": [{ "type": "text", "text": "What is 2+2? Use the calculator tool." }] }
+  ],
+  "tools": [
+    { "name": "calculator", "description": "Evaluate arithmetic", "input_schema": { "type": "object", "properties": { "expr": { "type": "string" } } } }
+  ]
+}

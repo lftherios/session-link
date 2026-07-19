@@ -19,6 +19,7 @@
   },
   "files": [
     "index.mjs",
+    "secret-patterns.json",
     "index.d.ts",
     "types.ts",
     "validate.mjs",

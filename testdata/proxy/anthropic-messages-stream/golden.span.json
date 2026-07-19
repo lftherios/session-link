@@ -1,0 +1,131 @@
+{
+  "id": "s1",
+  "parent_id": "root",
+  "type": "llm_call",
+  "name": "messages.create",
+  "started_at": "2026-07-19T10:00:00.000Z",
+  "ended_at": "2026-07-19T10:00:04.500Z",
+  "status": "ok",
+  "model": {
+    "id": "claude-sonnet-5",
+    "provider": "anthropic"
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is 2+2? Use the calculator tool."
+          }
+        ]
+      }
+    ],
+    "system": "You are a terse assistant.",
+    "tools": [
+      {
+        "name": "calculator",
+        "description": "Evaluate arithmetic",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "expr": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "output": {
+    "messages": [
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "text": "Simple arithmetic; the tool was requested."
+          },
+          {
+            "type": "tool_call",
+            "id": "toolu_01golden",
+            "name": "calculator",
+            "arguments": {
+              "expr": "2+2"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "raw": {
+    "request": {
+      "model": "claude-sonnet-5",
+      "max_tokens": 1024,
+      "stream": true,
+      "system": "You are a terse assistant.",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "What is 2+2? Use the calculator tool."
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "name": "calculator",
+          "description": "Evaluate arithmetic",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "expr": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "response": {
+      "id": "msg_01golden",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-sonnet-5",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "Simple arithmetic; the tool was requested."
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_01golden",
+          "name": "calculator",
+          "input": {
+            "expr": "2+2"
+          }
+        }
+      ],
+      "usage": {
+        "input_tokens": 42,
+        "output_tokens": 57
+      },
+      "stop_reason": "tool_use",
+      "stop_sequence": null
+    }
+  },
+  "params": {
+    "max_tokens": 1024
+  },
+  "metadata": {
+    "stream": true
+  },
+  "usage": {
+    "input_tokens": 42,
+    "output_tokens": 57
+  }
+}

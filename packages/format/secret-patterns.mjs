@@ -1,6 +1,11 @@
 /**
- * Credential patterns — single source of truth, shared by the server ingest
- * gate (lib/secrets.ts) and the CLI's client-side pre-push scan (cli/slink.mjs).
+ * Credential patterns — the human-edited source. The language-neutral
+ * artifact `secret-patterns.json` is GENERATED from this file
+ * (`node scripts/golden.mjs --update`) and CI fails on drift; the Go
+ * CLI/daemon compiles the JSON's sources with Go's regexp, so every
+ * pattern must stay RE2-compatible: no lookahead, no backreferences.
+ * The TS server (lib/secrets.ts) and the JS CLI import this module.
+ *
  * Exported as regex sources, not RegExp objects: global regexes carry
  * lastIndex state, so each consumer constructs its own instances.
  *
