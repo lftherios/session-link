@@ -1,9 +1,14 @@
 name: release
 
-# Tag a version (e.g. `git tag v0.1.0 && git push --tags`) to publish any
-# packages whose version isn't on npm yet, and attach standalone binaries to a
-# GitHub Release. Each package.json version is the source of truth: bump the
-# ones you changed, then tag — unchanged packages are skipped, not re-published.
+# Tag a version (e.g. `git tag v0.3.1 && git push --tags`) to publish any
+# @session-link/* library whose version isn't on npm yet. Each package.json
+# version is the source of truth: bump the ones you changed, then tag —
+# unchanged packages are skipped, not re-published.
+#
+# As of the Go cutover (v0.3.0): the CLI is `session.link` on npm as the Go
+# LAUNCHER, published by release-go.yml's binary-channel step — NOT here.
+# The standalone binaries come from goreleaser (release-go.yml), not the old
+# Bun build. This workflow only ships the format + viewer libraries.
 on:
   push:
     tags: ["v*"]
@@ -18,16 +23,15 @@ jobs:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
-      # format before viewer (viewer depends on it); cli last. Publish each
-      # only if its version isn't already on the registry, so bumping one
-      # package doesn't force re-publishing the others. cli's prepack bundles
-      # the CLI via the root toolchain; format/viewer ship source, no build.
-      - name: publish changed packages
+      # format before viewer (viewer depends on it). Publish each only if its
+      # version isn't already on the registry. session.link is deliberately
+      # NOT here — the Go launcher owns that name now (release-go.yml).
+      - name: publish changed libraries
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           published=0
-          for dir in packages/format packages/viewer packages/cli; do
+          for dir in packages/format packages/viewer; do
             name=$(node -p "require('./$dir/package.json').name")
             ver=$(node -p "require('./$dir/package.json').version")
             if [ -n "$(npm view "$name@$ver" version 2>/dev/null)" ]; then
@@ -39,23 +43,3 @@ jobs:
             fi
           done
           echo "published $published package(s)"
-
-  binaries:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # upload release assets
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: oven-sh/setup-bun@v2
-      - run: npm ci
-      # bun cross-compiles every target from this one runner.
-      - run: node scripts/build-binary.mjs
-      - name: checksums
-        working-directory: packages/cli/binaries
-        run: sha256sum * > SHA256SUMS.txt
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: packages/cli/binaries/*
