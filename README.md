@@ -46,7 +46,7 @@ slink login && slink push
 That's it — no code changes, no SDK. Capturing needs no account at all; `login` (free, GitHub) is only for publishing, so sessions are attributed and deletable by you. `slink dev` points `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` at a local recording proxy, runs your command, and writes each call to `~/.slink` as it happens — streaming passed through untouched and reassembled.
 
 - **Node agent?** `slink dev -- node agent.js` — anything that speaks the Anthropic or OpenAI API.
-- **Local models?** The proxy can point at any compatible upstream: `SLINK_UPSTREAM_OPENAI=http://localhost:11434/v1 slink dev -- …` records Ollama sessions too.
+- **Local models?** The proxy can point at any compatible upstream: `SLINK_UPSTREAM_OPENAI=http://localhost:11434 slink dev -- …` records Ollama sessions too. And if your shell already has `OPENAI_BASE_URL` pointed somewhere custom, `slink on` keeps forwarding there — your traffic is never silently rerouted.
 - **Already ran it in Claude Code, Codex, opencode, pi, or Hermes?** `slink import` — [see below](#works-with-the-agent-you-already-use).
 - **Review before sharing?** `slink open` browses your captures locally in the exact viewer the hosted site renders, Publish button included.
 
@@ -59,7 +59,7 @@ slink tap --install    # persistent recorder as a login service — survives reb
 eval "$(slink on)"     # route this shell's agents through it
 ```
 
-Now every session flowing through is segmented into its own local capture, so recording is a background fact you never have to start. Publish any one later with `slink share` (import-or-pick the newest capture and `push` it, in one step). Captures are plaintext on your disk and auto-pruned after 30 days (`SLINK_RETAIN_DAYS`); `slink prune` trims the buffer on demand. Stop routing a shell with `eval "$(slink off)"`, or remove the service entirely with `slink tap --uninstall`.
+Now everything flowing through is recorded in the background, grouped into **activity windows**: traffic separated by an idle gap (15 minutes by default) becomes its own local capture, and a client can tag its calls into a named window of its own with the `x-slink-session` / `x-slink-label` headers (the idle gap still closes a window that goes quiet). Two untagged agents talking at the same moment share a window — true per-process segmentation is on the roadmap. Publish any one later with `slink push --pick`; `slink share` imports your coding agent's newest session and publishes it in one step. Publish any one later with `slink share` (import-or-pick the newest capture and `push` it, in one step). Captures are plaintext on your disk and auto-pruned after 30 days (`SLINK_RETAIN_DAYS`); `slink prune` trims the buffer on demand. Stop routing a shell with `eval "$(slink off)"`, or remove the service entirely with `slink tap --uninstall`.
 
 ## Works with the agent you already use
 

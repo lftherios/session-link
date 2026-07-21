@@ -54,6 +54,14 @@ const css = `
   .card:hover .t{color:var(--signal)}
   .card .t{font-family:var(--serif);font-size:18px;margin-bottom:3px}
   .card .m{font-family:var(--mono);font-size:12px;color:var(--faint)}
+  dialog{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;
+    padding:20px 22px;max-width:460px;width:calc(100% - 48px)}
+  dialog::backdrop{background:rgba(23,32,28,.35)}
+  .kv{display:flex;gap:12px;font-family:var(--mono);font-size:12px;margin:4px 0}
+  .kv .k{color:var(--faint);flex:none;width:52px}
+  .kv .v{word-break:break-all}
+  .dlg-warn{font-family:var(--mono);font-size:12px;color:var(--error);margin:14px 0 0}
+  .dlg-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
 `
 
 const favicon = `<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="22" fill="%230e6f5c"/><circle cx="50" cy="50" r="16" fill="%23fdfdfb"/></svg>'>`
@@ -113,44 +121,113 @@ func (s *Server) runPage(id string) (string, error) {
 	if name == "" {
 		name = id
 	}
+	spans, _ := run["spans"].([]any)
+	meta, _ := run["metadata"].(map[string]any)
+	inProgress, _ := meta["in_progress"].(bool)
+	recNote := ""
+	if inProgress {
+		recNote = `<div class="kv"><span class="k">status</span><span class="v">still recording — a snapshot as of now will be published</span></div>`
+	}
+	absFile, err := filepath.Abs(file)
+	if err != nil {
+		absFile = file
+	}
 	// <-escaping keeps attacker-controlled trace text inert inside the tag.
 	runJSON := strings.ReplaceAll(string(mustCompact(raw)), "<", `\u003c`)
-	keyNote := ""
+	// json.Marshal escapes < > & by default, so this is script-safe as-is.
+	pubJSON, _ := json.Marshal(map[string]any{"hasKey": s.APIKey != "", "file": absFile})
+	keyNote, btnLabel := "", "Publish"
 	if s.APIKey == "" {
 		keyNote = " · no API key (slink login)"
+		btnLabel = "Sign in to publish"
 	}
 	return page(name,
 		`<div class="top">
        <p class="eyebrow" style="margin:0"><a href="/">← captures</a> · local preview</p>
        <div class="pub">
          <span class="note">unlisted → `+html.EscapeString(s.Target)+keyNote+`</span>
-         <button class="btn primary" id="pub">Publish</button>
+         <button class="btn primary" id="pub">`+btnLabel+`</button>
        </div>
      </div>
      <div class="result-row"><span class="result" id="out"></span></div>
+     <dialog id="confirm">
+       <p class="eyebrow" style="margin:0 0 12px">Publish this capture?</p>
+       <div class="kv"><span class="k">server</span><span class="v">`+html.EscapeString(s.Target)+`</span></div>
+       <div class="kv"><span class="k">title</span><span class="v">`+html.EscapeString(name)+`</span></div>
+       <div class="kv"><span class="k">spans</span><span class="v">`+fmt.Sprintf("%d", len(spans))+`</span></div>
+       <div class="kv"><span class="k">size</span><span class="v">~`+approxSize(len(raw))+`</span></div>`+recNote+`
+       <p class="dlg-warn">Unlisted is not private — anyone with the link can view it.</p>
+       <div class="dlg-actions">
+         <button class="btn" id="cancel">Cancel</button>
+         <button class="btn primary" id="go">Publish</button>
+       </div>
+     </dialog>
      <div id="root"></div>
      <script>window.__RUN__=`+runJSON+`</script>
+     <script>window.__PUB__=`+string(pubJSON)+`</script>
      <script src="/assets/viewer.js"></script>
      <script>
-       const btn=document.getElementById("pub"),out=document.getElementById("out");
-       btn.onclick=async()=>{
-         btn.disabled=true;btn.textContent="Publishing…";out.className="result";out.textContent="";
-         const res=await fetch("/api/publish/`+id+`",{method:"POST",headers:{"x-slink":"1"}});
-         const d=await res.json();
-         if(d.url){
-           const url=d.url+(location.hash||"");
-           try{await navigator.clipboard.writeText(url)}catch{}
-           out.innerHTML='<a href="'+url+'" target="_blank" rel="noopener"></a>';
-           out.firstChild.textContent=url;
-           out.append(d.deduplicated?"  (already published, copied)":"  (copied)");
-           btn.textContent="Published";
-         }else{
-           out.className="result err";
-           out.textContent="✗ "+(d.error?.message??"failed")+(d.error?.details?"\n"+d.error.details.map(h=>"  "+(h.pattern??h)+"  "+(h.preview??"")).join("\n"):"");
-           btn.disabled=false;btn.textContent="Publish";
-         }
-       };
+       const PUB=window.__PUB__,btn=document.getElementById("pub"),out=document.getElementById("out"),
+             dlg=document.getElementById("confirm");
+       const LOGIN="Not signed in — run `+"`slink login`"+` in a terminal, then reload this page.";
+       const hits=d=>d.error?.details?"\n"+d.error.details.map(h=>"  "+(h.pattern??h)+"  "+(h.preview??"")).join("\n"):"";
+       if(!PUB.hasKey){
+         btn.onclick=()=>{out.className="result err";out.textContent=LOGIN};
+       }else{
+         btn.onclick=()=>{out.className="result";out.textContent="";dlg.showModal()};
+         document.getElementById("cancel").onclick=()=>dlg.close();
+         document.getElementById("go").onclick=async()=>{
+           dlg.close();
+           btn.disabled=true;btn.textContent="Publishing…";
+           let res;
+           try{
+             res=await fetch("/api/publish/`+id+`",{method:"POST",headers:{"x-slink":"1"}});
+           }catch(e){
+             out.className="result err";
+             out.textContent="✗ could not reach the local slink server — is `+"`slink open`"+` still running?";
+             btn.disabled=false;btn.textContent="Publish";
+             return;
+           }
+           const d=await res.json().catch(()=>({}));
+           if(d.url){
+             const url=d.url+(location.hash||"");
+             try{await navigator.clipboard.writeText(url)}catch{}
+             // DOM APIs, not innerHTML: the URL is server-provided bytes and
+             // must never be parsed as markup — nor linked unless it is http(s).
+             let link=document.createTextNode(url);
+             if(/^https?:\/\//i.test(url)){
+               link=document.createElement("a");
+               link.href=url;link.target="_blank";link.rel="noopener";link.textContent=url;
+             }
+             out.replaceChildren(link,(d.deduplicated?"  (already published, copied)":"  (copied)")+" — Anyone with this link can view it.");
+             btn.textContent="Published";
+           }else{
+             out.className="result err";
+             if(res.status===401){
+               out.textContent=LOGIN;
+             }else if(d.error?.code==="secrets_detected"){
+               out.textContent="✗ "+(d.error?.message??"publish blocked — credentials detected")+
+                 "\nredact the local file: "+(d.error?.path??PUB.file)+hits(d);
+             }else{
+               out.textContent="✗ "+(d.error?.message??"failed")+hits(d);
+             }
+             btn.disabled=false;btn.textContent="Publish";
+           }
+         };
+       }
      </script>`), nil
+}
+
+// approxSize renders a byte count the way the dialog wants it: rough, human.
+func approxSize(n int) string {
+	switch {
+	case n < 1024:
+		return fmt.Sprintf("%d B", n)
+	case n < 1024*1024:
+		return fmt.Sprintf("%.1f KB", float64(n)/1024)
+	default:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
+	}
 }
 
 func mustCompact(raw []byte) []byte {
@@ -178,8 +255,14 @@ func (s *Server) publish(id string) publishResult {
 		}}}
 	}
 	if len(ins.Secrets) > 0 {
+		abs, aerr := filepath.Abs(file)
+		if aerr != nil {
+			abs = file
+		}
 		return publishResult{422, map[string]any{"error": map[string]any{
+			"code":    "secrets_detected",
 			"message": "publish blocked — credentials detected; redact the local file first",
+			"path":    abs,
 			"details": ins.Secrets,
 		}}}
 	}

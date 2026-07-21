@@ -132,15 +132,18 @@ func (s *Session) drainWrites(d time.Duration) bool {
 }
 
 // Finalize closes the session and assembles its capture, with the
-// protocol's retry-then-release behavior for a long-lived daemon.
-func (s *Session) Finalize() {
+// protocol's retry-then-release behavior for a long-lived daemon. It
+// returns the recorded call count and the terminal error so wrapper mode
+// can print an honest summary; (0, nil) means nothing was ever recorded
+// and no file exists. Callers that only tend the spool may ignore both.
+func (s *Session) Finalize() (int, error) {
 	s.mu.Lock()
 	s.closed = true
 	seq := s.seq
 	endedAt := s.lastEndedAt
 	s.mu.Unlock()
 	if seq == 0 {
-		return // never recorded anything — nothing to save
+		return 0, nil // never recorded anything — nothing to save
 	}
 	s.drainWrites(3 * time.Second)
 	if endedAt == "" {
@@ -149,18 +152,17 @@ func (s *Session) Finalize() {
 	for attempt := 1; ; attempt++ {
 		n, err := spool.Assemble(s.File, spool.AssembleOptions{Finalize: true, EndedAt: endedAt})
 		if err == nil {
-			log.Printf("session ended · %d call(s) → %s", n, s.File)
-			return
+			return n, nil
 		}
 		if err != spool.ErrCommitRetry {
 			_ = spool.ReleaseOwnership(s.File)
 			log.Printf("failed to save capture: %v (ownership released)", err)
-			return
+			return seq, err
 		}
 		if attempt >= 5 {
 			_ = spool.ReleaseOwnership(s.File)
 			log.Printf("%v (ownership released — any slink run can finish it)", err)
-			return
+			return seq, err
 		}
 		time.Sleep(2 * time.Second)
 	}

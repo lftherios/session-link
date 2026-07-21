@@ -1,6 +1,5 @@
-// The Go slink CLI — being ported per docs/go-migration.md. Until parity
-// holds across the CLI surface, the JS CLI remains the shipped default;
-// the tap daemon (P1) lands here first.
+// The slink CLI — record LLM sessions locally (dev/tap), review them
+// (list/open), and publish the ones worth sharing (login/push/share).
 package main
 
 import (
@@ -17,54 +16,70 @@ import (
 	"github.com/lftherios/session-link/internal/tap"
 )
 
-var version = "0.0.0-dev" // stamped by goreleaser at P4
+var version = "0.0.0-dev" // stamped by goreleaser
 
 func main() {
 	if len(os.Args) < 2 {
-		usage()
+		printUsage(os.Stderr)
+		os.Exit(1)
 	}
-	switch os.Args[1] {
-	case "version":
-		fmt.Printf("slink %s (go)\n", version)
-	case "tap":
-		runTap(os.Args[2:])
-	case "list", "ls":
-		runList(os.Args[2:])
-	case "push":
-		runPush(os.Args[2:])
-	case "prune":
-		runPrune(os.Args[2:])
-	case "login":
-		runLogin(os.Args[2:])
-	case "on":
-		runOn(os.Args[2:])
-	case "off":
-		runOff()
-	case "open":
-		runOpen(os.Args[2:])
-	case "dev":
-		runDev(os.Args[2:])
-	case "import":
-		runImport(os.Args[2:])
-	case "share":
-		runShare(os.Args[2:])
+	cmd, rest := os.Args[1], os.Args[2:]
+	switch cmd {
+	case "help", "--help", "-h", "-help":
+		if len(rest) > 0 && dispatch(rest[0], []string{"-h"}) {
+			return
+		}
+		printUsage(os.Stdout)
+	case "version", "--version", "-v", "-version":
+		fmt.Printf("slink %s\n", version)
 	default:
-		usage()
+		if !dispatch(cmd, rest) {
+			unknownCommand(cmd)
+		}
 	}
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, "slink(go): port in progress — tap [--install], dev, list, push, prune, login, on/off, open, import, share, version")
-	os.Exit(1)
+// dispatch runs a named subcommand; false means the name is unknown.
+func dispatch(cmd string, args []string) bool {
+	switch cmd {
+	case "tap":
+		runTap(args)
+	case "list", "ls":
+		runList(args)
+	case "push":
+		runPush(args)
+	case "prune":
+		runPrune(args)
+	case "login":
+		runLogin(args)
+	case "on":
+		runOn(args)
+	case "off":
+		runOff(args)
+	case "open":
+		runOpen(args)
+	case "dev":
+		runDev(args)
+	case "import":
+		runImport(args)
+	case "share":
+		runShare(args)
+	default:
+		return false
+	}
+	return true
 }
 
 func runTap(args []string) {
 	fs := flag.NewFlagSet("tap", flag.ExitOnError)
 	port := fs.Int("port", 4141, "listen port")
-	idleMin := fs.Int("idle", 15, "ambient session idle gap, minutes")
+	idleMin := fs.Int("idle", 15, "minutes of quiet before any session rolls into a new activity window")
 	install := fs.Bool("install", false, "install as a login service (launchd/systemd)")
 	uninstall := fs.Bool("uninstall", false, "remove the login service")
-	fs.Parse(args)
+	setUsage(fs, "slink tap [flags]",
+		"Run the always-on recorder in the foreground. Shells route through it\n  via `eval \"$(slink on)\"`; each burst of traffic becomes its own session.",
+		"slink tap --port 4141")
+	parseReordered(fs, args)
 
 	if *install || *uninstall {
 		var r cli.ServiceResult

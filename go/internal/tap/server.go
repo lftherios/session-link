@@ -80,8 +80,8 @@ func NewServer(captureDir string, idle time.Duration) *Server {
 		CaptureDir: captureDir,
 		Idle:       idle,
 		Upstreams: map[string]string{
-			"anthropic": envOr("SLINK_UPSTREAM_ANTHROPIC", "https://api.anthropic.com"),
-			"openai":    envOr("SLINK_UPSTREAM_OPENAI", "https://api.openai.com"),
+			"anthropic": normalizeUpstream(envOr("SLINK_UPSTREAM_ANTHROPIC", "https://api.anthropic.com")),
+			"openai":    normalizeUpstream(envOr("SLINK_UPSTREAM_OPENAI", "https://api.openai.com")),
 		},
 		// No overall timeout: LLM streams run long; cancellation rides the
 		// request context (client disconnect aborts upstream).
@@ -94,7 +94,11 @@ func NewServer(captureDir string, idle time.Duration) *Server {
 			}
 			return NewSession(captureDir, name, time.Now())
 		},
-		func(sess *Session) { sess.Finalize() },
+		func(sess *Session) {
+			if n, err := sess.Finalize(); err == nil && n > 0 {
+				log.Printf("session ended · %d call(s) → %s", n, sess.File)
+			}
+		},
 	)
 	return s
 }
@@ -104,6 +108,16 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// normalizeUpstream strips a trailing /v1 from an upstream base URL. The
+// proxy's forwarded subpath already carries /v1 (clients append it to
+// BASE_URL), so an Ollama-style SLINK_UPSTREAM_OPENAI=http://host:11434/v1
+// would otherwise request /v1/v1/….
+func normalizeUpstream(u string) string {
+	u = strings.TrimRight(u, "/")
+	u = strings.TrimSuffix(u, "/v1")
+	return strings.TrimRight(u, "/")
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -14,17 +15,29 @@ import (
 	"golang.org/x/term"
 )
 
+// emptyState is the shared "no sessions yet" message — every surface that
+// can hit an empty store points at the same three ways in.
+const emptyState = "no sessions yet — record one (slink dev -- <cmd>), import one (slink import), or go always-on (slink tap)"
+
 func runList(args []string) {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	limit := fs.Int("limit", 10, "rows to show")
-	fs.Parse(args)
+	setUsage(fs, "slink list [flags]",
+		"List local sessions, newest first. Nothing here has been published.",
+		"slink list --limit 25")
+	parseReordered(fs, args)
+	if *limit < 1 {
+		*limit = 1
+	}
 	captures := cli.ListCaptures(cli.CaptureDir())
 	if len(captures) == 0 {
-		fmt.Fprintln(os.Stderr, "nothing captured yet — run the tap or `slink dev`")
+		fmt.Fprintln(os.Stderr, emptyState)
 		return
 	}
 	for i, c := range captures {
 		if i >= *limit {
+			// stderr: piped stdout must stay one row per session
+			fmt.Fprintf(os.Stderr, "      … and %d more — slink list --limit %d\n", len(captures)-*limit, len(captures))
 			break
 		}
 		marker := ""
@@ -34,22 +47,25 @@ func runList(args []string) {
 		fmt.Printf("%4d  %-9s %-38s %d spans  %s%s\n",
 			i+1, ago(c.CreatedAt), clip(c.Name, 38), c.Spans, strings.Join(c.Models, ", "), marker)
 	}
-	fmt.Fprintln(os.Stderr, "\n  publish: slink push")
+	fmt.Fprintln(os.Stderr, "\n  review: slink open · publish: slink push")
 }
 
 func runPush(args []string) {
 	fs := flag.NewFlagSet("push", flag.ExitOnError)
 	yes := fs.Bool("yes", false, "publish without confirmation")
-	pick := fs.Bool("pick", false, "choose from recent captures")
+	pick := fs.Bool("pick", false, "choose from recent sessions")
 	server := fs.String("server", "", "override the publish target")
 	key := fs.String("key", "", "override the API key")
-	fs.Parse(args)
+	setUsage(fs, "slink push [flags] [session.json]",
+		"Publish a session: validate, secret-scan locally, confirm, get a link.\n  With no path, pushes the newest local session.",
+		"slink push --pick")
+	parseReordered(fs, args)
 
 	file := fs.Arg(0)
 	if file == "" {
 		captures := cli.ListCaptures(cli.CaptureDir())
 		if len(captures) == 0 {
-			die("nothing captured yet — run the tap first, or pass a session/v0 .json path")
+			die(emptyState + "\n  (or pass a session/v0 .json path)")
 		}
 		if *pick {
 			if !term.IsTerminal(int(os.Stdin.Fd())) {
@@ -101,7 +117,11 @@ func runPush(args []string) {
 		for _, h := range ins.Secrets {
 			fmt.Fprintf(os.Stderr, "    %s  %s\n", h.Pattern, h.Preview)
 		}
-		fmt.Fprintln(os.Stderr, "  redact them (the capture file is local) and push again")
+		abs, err := filepath.Abs(file)
+		if err != nil {
+			abs = file
+		}
+		fmt.Fprintf(os.Stderr, "  redact the local file and push again:\n    %s\n", abs)
 		os.Exit(1)
 	}
 	fmt.Fprintln(os.Stderr, "✓ no credentials detected")
@@ -121,7 +141,7 @@ func runPush(args []string) {
 		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 		if l := strings.ToLower(strings.TrimSpace(line)); l != "y" && l != "yes" {
 			fmt.Fprintln(os.Stderr, "aborted — nothing was uploaded")
-			return
+			os.Exit(1) // scripts must be able to tell a decline from a publish
 		}
 	}
 
@@ -134,7 +154,7 @@ func runPush(args []string) {
 			}
 		}
 		if res.Status == 401 {
-			msg += " — try `slink login` (JS CLI) or pass --key"
+			msg += " — run `slink login` (publishing needs an account; capture doesn't), or pass --key"
 		}
 		die(fmt.Sprintf("✗ %s (HTTP %d)", msg, res.Status))
 	}
@@ -149,16 +169,20 @@ func runPush(args []string) {
 	}
 	fmt.Fprintf(os.Stderr, "✓ %s%s\n", verb, copied)
 	fmt.Println(url)
+	fmt.Fprintln(os.Stderr, "  anyone with this link can view it")
 }
 
 func runPrune(args []string) {
 	fs := flag.NewFlagSet("prune", flag.ExitOnError)
-	olderThan := fs.Int("older-than", -1, "days; captures older are pruned")
+	olderThan := fs.Int("older-than", -1, "days; sessions older are pruned")
 	keep := fs.Int("keep", -1, "keep only the newest N")
-	empty := fs.Bool("empty", false, "prune captures with no recorded calls")
+	empty := fs.Bool("empty", false, "prune sessions with no recorded calls")
 	yes := fs.Bool("yes", false, "prune without confirmation")
 	dryRun := fs.Bool("dry-run", false, "show what would be pruned")
-	fs.Parse(args)
+	setUsage(fs, "slink prune [flags]",
+		"Delete old local sessions. Bare `slink prune` uses a 30-day window.",
+		"slink prune --keep 50 --dry-run")
+	parseReordered(fs, args)
 
 	// Bare `slink prune` defaults to a 30-day window; --keep/--empty alone
 	// don't impose an age cut (parity with the JS command).
@@ -181,7 +205,7 @@ func runPrune(args []string) {
 			bytes += st.Size()
 		}
 		if i < 8 { // cap the listing like the JS command
-			fmt.Fprintf(os.Stderr, "  %s  %s (%d spans)\n", ago(c.CreatedAt), clip(c.Name, 48), c.Spans)
+			fmt.Fprintf(os.Stderr, "  %-9s %s (%d spans)\n", ago(c.CreatedAt), clip(c.Name, 48), c.Spans)
 		} else if i == 8 {
 			fmt.Fprintf(os.Stderr, "  … and %d more\n", len(remove)-8)
 		}

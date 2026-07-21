@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -73,6 +74,9 @@ func resolveImport(f importFlags) (string, importers.Input, error) {
 // importToFile reconstructs a session/v0 capture and writes it to
 // ~/.slink/runs, returning the path.
 func importToFile(f importFlags) string {
+	if f.from != "" && importers.Registry[f.from] == nil {
+		die(fmt.Sprintf("unknown agent %q — known: %s", f.from, strings.Join(knownHarnesses(), ", ")))
+	}
 	harness, in, err := resolveImport(f)
 	if err != nil {
 		die(err.Error())
@@ -88,6 +92,15 @@ func importToFile(f importFlags) string {
 	if err != nil {
 		die(fmt.Sprintf("import failed: %v", err))
 	}
+	spans, _ := run["spans"].([]any)
+	if len(spans) == 0 {
+		// An empty build must fail loudly, not write a `null`/hollow capture
+		// that list skips and push rejects.
+		if src := firstNonEmptyStr(f.arg, f.session); src != "" {
+			die(fmt.Sprintf("nothing to import from %s — the transcript has no messages", src))
+		}
+		die(fmt.Sprintf("nothing to import — the newest %s session has no messages", harness))
+	}
 	file := spool.NewCapturePath(cli.CaptureDir(), time.Now())
 	os.MkdirAll(filepath.Dir(file), 0o755)
 	b, err := json.Marshal(run)
@@ -97,17 +110,37 @@ func importToFile(f importFlags) string {
 	if err := os.WriteFile(file, b, 0o644); err != nil {
 		die(fmt.Sprintf("write: %v", err))
 	}
-	spans, _ := run["spans"].([]any)
 	name, _ := run["name"].(string)
 	fmt.Fprintf(os.Stderr, "✓ imported %q from %s · %d spans (reconstructed) → %s\n", name, harness, len(spans), file)
 	return file
 }
 
+func knownHarnesses() []string {
+	var names []string
+	for k := range importers.Registry {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func firstNonEmptyStr(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func runImport(args []string) {
 	fs := flag.NewFlagSet("import", flag.ExitOnError)
-	from := fs.String("from", "", "harness: claude-code|codex|pi|opencode|hermes")
+	from := fs.String("from", "", "agent: claude-code|codex|pi|opencode|hermes")
 	session := fs.String("session", "", "session id (opencode/hermes)")
-	fs.Parse(reorderFlags(args))
+	setUsage(fs, "slink import [flags] [transcript]",
+		"Convert your coding agent's newest session for this project into a\n  local session — no re-run needed. Marked fidelity: reconstructed.",
+		"slink import --from claude-code")
+	parseReordered(fs, args)
 	file := importToFile(importFlags{from: *from, session: *session, arg: fs.Arg(0)})
 	fmt.Println(file) // pipeable
 }
@@ -116,12 +149,15 @@ func runImport(args []string) {
 // flags select the session; push flags (--server/--key/--yes) forward.
 func runShare(args []string) {
 	fs := flag.NewFlagSet("share", flag.ExitOnError)
-	from := fs.String("from", "", "harness")
+	from := fs.String("from", "", "agent: claude-code|codex|pi|opencode|hermes")
 	session := fs.String("session", "", "session id (opencode/hermes)")
 	yes := fs.Bool("yes", false, "publish without confirmation")
 	server := fs.String("server", "", "override the publish target")
 	key := fs.String("key", "", "override the API key")
-	fs.Parse(reorderFlags(args))
+	setUsage(fs, "slink share [flags] [transcript]",
+		"Import your agent's newest session and publish it — both steps in one.",
+		"slink share")
+	parseReordered(fs, args)
 
 	file := importToFile(importFlags{from: *from, session: *session, arg: fs.Arg(0)})
 	pushArgs := []string{}
@@ -140,25 +176,4 @@ func runShare(args []string) {
 func fileExists(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && !st.IsDir()
-}
-
-// reorderFlags moves positional args after flags — Go's flag package stops
-// at the first non-flag token, so `import x.jsonl --from pi` would drop
-// --from. Known value-flags consume the next token.
-func reorderFlags(args []string) []string {
-	valueFlags := map[string]bool{"--from": true, "-from": true, "--session": true, "-session": true, "--server": true, "-server": true, "--key": true, "-key": true}
-	var flags, pos []string
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if strings.HasPrefix(a, "-") {
-			flags = append(flags, a)
-			if valueFlags[a] && !strings.Contains(a, "=") && i+1 < len(args) {
-				flags = append(flags, args[i+1])
-				i++
-			}
-		} else {
-			pos = append(pos, a)
-		}
-	}
-	return append(flags, pos...)
 }
