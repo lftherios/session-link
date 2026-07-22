@@ -23,10 +23,11 @@ func printUsage(w io.Writer) {
 Usage:
   slink <command> [flags]
 
-Share
-  share              publish the session you mean — newest local or your
-                     coding agent's newest — review, confirm, get a link
-  delete             take a published session offline
+Quickstart:
+  slink import                      # 1. your coding agent's newest session
+  slink view                        # 2. review it locally
+  slink share                       # 3. publish → https://session.link/r/…
+  (nothing to import? record fresh: slink record -- python agent.py)
 
 Record (local — nothing leaves your machine)
   record -- <cmd>    run a command with its LLM calls recorded  (alias: dev)
@@ -40,21 +41,19 @@ Review
   view               browse them in the local viewer  (alias: open)
   status             recorder, routing, upstreams, account, sessions
 
-Publish plumbing (share does all of this for you)
-  login / logout     account for publishing; capture never needs one
-  push               validate, secret-scan, confirm → link (scriptable)
+Share
+  share              publish the session you mean — newest local or your
+                     coding agent's newest — review, confirm, get a link
+  delete             take a published session offline
+  login / logout     the free account publishing needs; capture never does
+  push               the scriptable core of share: validate, scan, confirm
 
-Maintain
+Housekeeping
   tap                the always-on recorder (foreground; --stop, --install)
   prune              delete old local sessions
   doctor             check the recording setup end to end
   completion         shell tab-completion (bash, zsh, fish)
   version            print the slink version
-
-Quickstart:
-  slink record -- python agent.py   # 1. record a run   (or: slink import)
-  slink view                        # 2. review it locally
-  slink share                       # 3. publish → https://session.link/r/…
 
 Flags for a command: slink <command> -h
 Sessions stay local in ~/.slink until you publish them (the always-on tap
@@ -68,8 +67,12 @@ func setUsage(fs *flag.FlagSet, synopsis, blurb, example string) {
 	fs.Usage = func() {
 		w := fs.Output()
 		fmt.Fprintf(w, "Usage:\n  %s\n\n  %s\n", synopsis, blurb)
-		fmt.Fprintln(w, "\nFlags:")
-		fs.PrintDefaults()
+		hasFlags := false
+		fs.VisitAll(func(*flag.Flag) { hasFlags = true })
+		if hasFlags {
+			fmt.Fprintln(w, "\nFlags:")
+			fs.PrintDefaults()
+		}
 		if example != "" {
 			fmt.Fprintf(w, "\nExample:\n  %s\n", example)
 		}

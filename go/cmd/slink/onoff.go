@@ -137,7 +137,8 @@ func runOn(args []string) {
 			time.Sleep(100 * time.Millisecond)
 		}
 		if !up {
-			fmt.Fprintf(os.Stderr, "# tap didn't come up on :%d — nothing exported. check %s\n", *port, cli.TapLogPath())
+			fmt.Fprintf(os.Stderr, "# tap didn't come up on :%d — nothing exported\n", *port)
+			fmt.Fprintf(os.Stderr, "#   check the log:  %s\n", displayPath(cli.TapLogPath()))
 			os.Exit(1)
 		}
 		startedHere = true
@@ -184,10 +185,14 @@ func runOn(args []string) {
 		// Printed to a terminal, not eval'd — the exports above changed nothing.
 		fmt.Fprintln(os.Stderr, `# nothing changed yet — run: eval "$(slink on)"`)
 	case len(skipped) > 0:
-		fmt.Fprintf(os.Stderr, "# capture is on for %s calls in this shell (%s left untouched) — review: slink view · publish: slink share\n",
+		fmt.Fprintf(os.Stderr, "# capture is on for %s calls in this shell (%s left untouched)\n",
 			strings.Join(routed, "+"), strings.Join(skipped, "+"))
+		fmt.Fprintln(os.Stderr, "#   review:   slink view")
+		fmt.Fprintln(os.Stderr, "#   publish:  slink share")
 	default:
-		fmt.Fprintln(os.Stderr, "# capture is on for this shell — review: slink view · publish: slink share")
+		fmt.Fprintln(os.Stderr, "# capture is on for this shell")
+		fmt.Fprintln(os.Stderr, "#   review:   slink view")
+		fmt.Fprintln(os.Stderr, "#   publish:  slink share")
 	}
 }
 

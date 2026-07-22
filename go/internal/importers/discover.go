@@ -357,6 +357,172 @@ func safeParse(v any) any {
 	return out
 }
 
+/* ------------------------------------------- newest-anywhere discovery */
+
+// Elsewhere is the newest session on the machine regardless of project —
+// what `slink import`'s empty state points at so "nothing here" never
+// reads as "nothing anywhere".
+type Elsewhere struct {
+	Harness string
+	Dir     string // project directory the session belongs to ("" if unknown)
+	File    string // transcript path for file-based harnesses ("" for DBs)
+	Title   string // best-effort; "" when the harness can't say cheaply
+	Recency int64  // ns since epoch
+}
+
+// NewestAnywhere finds the machine's most recent session for one harness
+// ("" = across all). Bounded work: one readdir per project dir for the
+// file-based harnesses, one LIMIT 1 query for the DB-backed ones.
+func NewestAnywhere(harness string) (*Elsewhere, bool) {
+	finders := map[string]func() (*Elsewhere, bool){
+		"claude-code": anywhereClaude,
+		"pi":          anywherePi,
+		"codex":       anywhereCodex,
+		"opencode":    anywhereOpencode,
+		"hermes":      anywhereHermes,
+	}
+	if harness != "" {
+		if fn := finders[harness]; fn != nil {
+			return fn()
+		}
+		return nil, false
+	}
+	var best *Elsewhere
+	for _, h := range []string{"claude-code", "pi", "codex", "opencode", "hermes"} {
+		if e, ok := finders[h](); ok && (best == nil || e.Recency > best.Recency) {
+			best = e
+		}
+	}
+	return best, best != nil
+}
+
+// newestUnderProjects scans base/*/ for the newest transcript across every
+// project directory.
+func newestUnderProjects(base string) (string, int64) {
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return "", 0
+	}
+	best, bestT := "", int64(-1)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if f, t := newestFile(filepath.Join(base, e.Name())); f != "" && t > bestT {
+			best, bestT = f, t
+		}
+	}
+	return best, bestT
+}
+
+// peekTranscript reads the first lines of a transcript for a cwd and a
+// best-effort title without loading the whole file.
+func peekTranscript(file string, maxLines int) (cwd, title string) {
+	f, err := os.Open(file)
+	if err != nil {
+		return "", ""
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	var users []map[string]any
+	for n := 0; sc.Scan() && n < maxLines; n++ {
+		var e map[string]any
+		if json.Unmarshal(sc.Bytes(), &e) != nil {
+			continue
+		}
+		if cwd == "" {
+			if c := strOr(e["cwd"], ""); c != "" {
+				cwd = c
+			} else if p := m(e["payload"]); p != nil { // codex session_meta
+				cwd = strOr(p["cwd"], "")
+			}
+		}
+		if t := strOr(e["type"], ""); t == "summary" && title == "" {
+			title = strOr(e["summary"], "")
+		} else if t == "user" {
+			users = append(users, e)
+		}
+	}
+	if title == "" {
+		title = ccFirstUserText(users)
+	}
+	return cwd, title
+}
+
+func anywhereClaude() (*Elsewhere, bool) {
+	f, t := newestUnderProjects(filepath.Join(home(), ".claude", "projects"))
+	if f == "" {
+		return nil, false
+	}
+	cwd, title := peekTranscript(f, 40)
+	return &Elsewhere{Harness: "claude-code", Dir: cwd, File: f, Title: title, Recency: t}, true
+}
+
+func anywherePi() (*Elsewhere, bool) {
+	f, t := newestUnderProjects(filepath.Join(home(), ".pi", "agent", "sessions"))
+	if f == "" {
+		return nil, false
+	}
+	cwd, title := peekTranscript(f, 40)
+	return &Elsewhere{Harness: "pi", Dir: cwd, File: f, Title: title, Recency: t}, true
+}
+
+func anywhereCodex() (*Elsewhere, bool) {
+	dir := codexSessionsDir()
+	best, bestT := "", int64(-1)
+	filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".jsonl") {
+			return nil
+		}
+		if info, err := d.Info(); err == nil && info.ModTime().UnixNano() > bestT {
+			best, bestT = p, info.ModTime().UnixNano()
+		}
+		return nil
+	})
+	if best == "" {
+		return nil, false
+	}
+	cwd, title := peekTranscript(best, 40)
+	return &Elsewhere{Harness: "codex", Dir: cwd, File: best, Title: title, Recency: bestT}, true
+}
+
+func anywhereOpencode() (*Elsewhere, bool) {
+	db, err := openDB(opencodeDBPath())
+	if err != nil {
+		return nil, false
+	}
+	rows, err := queryRows(db, "SELECT directory, title, time_created FROM session ORDER BY time_created DESC LIMIT 1")
+	db.Close()
+	if err != nil || len(rows) == 0 {
+		return nil, false
+	}
+	return &Elsewhere{
+		Harness: "opencode",
+		Dir:     strOr(rows[0]["directory"], ""),
+		Title:   strOr(rows[0]["title"], ""),
+		Recency: int64(numOr(rows[0]["time_created"], 0)) * 1e6,
+	}, true
+}
+
+func anywhereHermes() (*Elsewhere, bool) {
+	db, err := openDB(hermesDBPath())
+	if err != nil {
+		return nil, false
+	}
+	rows, err := queryRows(db, "SELECT cwd, title, started_at FROM sessions ORDER BY started_at DESC LIMIT 1")
+	db.Close()
+	if err != nil || len(rows) == 0 {
+		return nil, false
+	}
+	return &Elsewhere{
+		Harness: "hermes",
+		Dir:     strOr(rows[0]["cwd"], ""),
+		Title:   strOr(rows[0]["title"], ""),
+		Recency: int64(numOr(rows[0]["started_at"], 0)) * 1e9,
+	}, true
+}
+
 // LatestByID loads a specific DB-backed session by id.
 func LatestByID(harness, id string) (*Found, bool) {
 	switch harness {

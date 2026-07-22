@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -62,6 +64,10 @@ func resolveImport(f importFlags) (string, importers.Input, *importers.Found, st
 				return "", importers.Input{}, nil, "", fmt.Errorf("%s session %q not found", f.from, target)
 			}
 			in, err := found.Load()
+			if err != nil && errors.Is(err, fs.ErrNotExist) {
+				// The agent's database isn't there — say that, not a raw stat error.
+				return "", importers.Input{}, nil, "", fmt.Errorf("✗ no %s database found on this machine\n\n  is %s installed here? its sessions can only be imported where it runs", f.from, f.from)
+			}
 			return f.from, in, found, "", err
 		}
 		// Not a file on disk? A pasted session id (Claude Code names its
@@ -86,13 +92,74 @@ func resolveImport(f importFlags) (string, importers.Input, *importers.Found, st
 	cwd, _ := os.Getwd()
 	found, matched, ok := latestWithWalkUp(f.from, cwd)
 	if !ok {
-		if f.from != "" {
-			return "", importers.Input{}, nil, "", fmt.Errorf("no %s session found for %s (or any parent directory)\n  pass one explicitly: slink import --session <file.jsonl|id>", f.from, cwd)
-		}
-		return "", importers.Input{}, nil, "", fmt.Errorf("no importable session found for %s (or any parent directory) — is a supported agent's history here?", cwd)
+		return "", importers.Input{}, nil, "", fmt.Errorf("%s", noSessionHint(f.from, cwd))
 	}
 	in, err := found.Load()
 	return found.Harness, in, found, matched, err
+}
+
+// noSessionHint renders import's empty state. "Nothing to import here" is
+// three different situations, and the binary can tell which one the user
+// is in — so it says so, with one next step each, instead of asking the
+// user a question it can answer itself.
+func noSessionHint(from, cwd string) string {
+	record := "  or record fresh here:  slink record -- <your agent command>"
+	if e, ok := importers.NewestAnywhere(from); ok {
+		// Situation 1: history exists — just not for this project. Point at
+		// the newest session elsewhere, with a copy-pasteable way to it.
+		head := fmt.Sprintf("✗ no agent session for this project (%s or its parents)", displayPath(cwd))
+		if from != "" {
+			head = fmt.Sprintf("✗ no %s session for this project (%s or its parents)", from, displayPath(cwd))
+		}
+		desc := e.Harness
+		if e.Title != "" {
+			desc = fmt.Sprintf("%q · %s", clip(e.Title, 48), e.Harness)
+		}
+		when := ""
+		if e.Recency > 0 {
+			when = " · " + ago(time.Unix(0, e.Recency).UTC().Format(time.RFC3339))
+		}
+		var where, next string
+		switch {
+		case e.Dir != "":
+			where = " · " + displayPath(e.Dir)
+			fromFlag := ""
+			if from != "" {
+				fromFlag = " --from " + from
+			}
+			next = fmt.Sprintf("    → cd %s && slink import%s", shellPath(e.Dir), fromFlag)
+		case e.File != "":
+			where = ""
+			next = fmt.Sprintf("    → slink import %s", shellPath(e.File))
+		}
+		return fmt.Sprintf("%s\n\n  your newest session elsewhere:\n    %s%s%s\n%s\n\n%s",
+			head, desc, where, when, next, record)
+	}
+	// Situation 2: no history for this agent — or any agent — at all.
+	if from != "" {
+		return fmt.Sprintf("✗ no %s history found on this machine\n  (known agents: %s)\n\n  record a session instead:  slink record -- <your agent command>",
+			from, strings.Join(knownHarnesses(), ", "))
+	}
+	return fmt.Sprintf("✗ no coding-agent history found on this machine\n  (looked for: %s)\n\n  record a session instead:  slink record -- <your agent command>",
+		strings.Join(knownHarnesses(), ", "))
+}
+
+// displayPath abbreviates the home directory to ~ for reading.
+func displayPath(p string) string {
+	if h, err := os.UserHomeDir(); err == nil && strings.HasPrefix(p, h+string(os.PathSeparator)) {
+		return "~" + p[len(h):]
+	}
+	return p
+}
+
+// shellPath renders a path for copy-pasting into a shell: ~-abbreviated
+// when clean, double-quoted (full path, so ~ expansion isn't needed)
+// when it contains spaces or quotes.
+func shellPath(p string) string {
+	if strings.ContainsAny(p, " '\"\\$`") {
+		return `"` + strings.ReplaceAll(p, `"`, `\"`) + `"`
+	}
+	return displayPath(p)
 }
 
 // transcriptByID resolves a bare Claude Code session id to its transcript
@@ -165,7 +232,8 @@ func importToFile(f importFlags) imported {
 	// running share twice) — reuse the byte-identical capture instead of
 	// littering the store with duplicates.
 	if prev := findIdenticalCapture(b); prev != "" {
-		fmt.Fprintf(os.Stderr, "already imported, unchanged — reusing %s (%s)\n", captureID(prev), prev)
+		fmt.Fprintf(os.Stderr, "✓ already imported, unchanged — reusing %s\n", captureID(prev))
+		fmt.Fprintf(os.Stderr, "    stored:  %s\n", displayPath(prev))
 		spans, _ := run["spans"].([]any)
 		return imported{file: prev, name: name, harness: harness, spans: len(spans), created: created}
 	}
@@ -183,10 +251,14 @@ func importToFile(f importFlags) imported {
 	}
 	from := ""
 	if cwd, _ := os.Getwd(); matched != "" && matched != cwd {
-		from = fmt.Sprintf(" (matched from %s)", matched)
+		from = " · " + displayPath(matched)
 	}
-	fmt.Fprintf(os.Stderr, "✓ imported %q from %s%s · %s%s (reconstructed) → %s\n",
-		name, harness, from, plural(len(spans), "span"), age, file)
+	// One meaning per line — what happened, what it is, what it holds,
+	// where it lives — instead of a single wrap-where-it-may banner.
+	fmt.Fprintf(os.Stderr, "✓ imported from %s%s (reconstructed)\n", harness, from)
+	fmt.Fprintf(os.Stderr, "    %q\n", clip(name, 76))
+	fmt.Fprintf(os.Stderr, "    %s%s\n", plural(len(spans), "span"), age)
+	fmt.Fprintf(os.Stderr, "    stored:  %s\n", displayPath(file))
 	return imported{file: file, name: name, harness: harness, spans: len(spans), created: created}
 }
 
@@ -235,8 +307,10 @@ func runImport(args []string) {
 		"slink import --from claude-code")
 	parseReordered(fs, args)
 	imp := importToFile(importFlags{from: *from, session: *session, arg: fs.Arg(0)})
-	fmt.Fprintf(os.Stderr, "  review: slink view %s · publish: slink share %s\n", captureID(imp.file), captureID(imp.file))
-	fmt.Println(imp.file) // pipeable
+	id := captureID(imp.file)
+	fmt.Fprintf(os.Stderr, "\n  review:  slink view %s\n  publish: slink share %s\n", id, id)
+	// No bare path on stdout — the stored: line covers humans, and scripts
+	// get structured paths from `slink list --json`.
 }
 
 // runShare is the golden path: find the session you mean — your newest
@@ -294,7 +368,7 @@ func shareNewest(from string) string {
 	found, matched, haveAgent := latestWithWalkUp(from, cwd)
 	if from != "" {
 		if !haveAgent {
-			die(fmt.Sprintf("no %s session found for %s (or any parent directory)", from, cwd))
+			die(noSessionHint(from, cwd))
 		}
 		fmt.Fprintf(os.Stderr, "Found the latest %s session in this project:\n", found.Harness)
 		return importToFile(importFlags{from: from}).file

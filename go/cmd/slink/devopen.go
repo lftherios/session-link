@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -44,9 +45,19 @@ func runOpen(args []string) {
 	srv := &open.Server{CaptureDir: cli.CaptureDir(), Target: target, APIKey: apiKey}
 	addr, _, err := srv.Serve(*port)
 	if err != nil {
+		if strings.Contains(err.Error(), "address already in use") {
+			die(fmt.Sprintf("✗ can't listen on 127.0.0.1:%d — that port is in use\n\n  another viewer may already be open — reuse it, or: slink view --port <port>", *port))
+		}
 		die(err.Error())
 	}
-	fmt.Fprintf(os.Stderr, "session.link local viewer · %s%s · publishes to %s · Ctrl-C to stop\n", addr, focus, target)
+	fmt.Fprintln(os.Stderr, "local viewer running")
+	if focus != "" {
+		fmt.Fprintf(os.Stderr, "    session:    %s%s\n", addr, focus)
+	} else {
+		fmt.Fprintf(os.Stderr, "    browse:     %s\n", addr)
+	}
+	fmt.Fprintf(os.Stderr, "    publishes:  %s\n", target)
+	fmt.Fprintln(os.Stderr, "\n  Ctrl-C to stop")
 	if !*noBrowser {
 		cli.OpenBrowser(addr + focus)
 	}
@@ -56,12 +67,12 @@ func runOpen(args []string) {
 // runDev is wrapper mode: record one session around a command (or until
 // Ctrl-C without one), then finalize and summarize.
 func runDev(args []string) {
-	fs := flag.NewFlagSet("dev", flag.ExitOnError)
+	fs := flag.NewFlagSet("record", flag.ExitOnError)
 	port := fs.Int("port", -1, "listen port (default: ephemeral when wrapping, 4141 otherwise)")
 	name := fs.String("name", "", "session name")
-	setUsage(fs, "slink dev [flags] -- <command …>",
+	setUsage(fs, "slink record [flags] -- <command …>   (alias: dev)",
 		"Run a command with its LLM calls recorded to a local session. Without\n  a command, prints proxy exports for this shell instead (Ctrl-C to finish).",
-		"slink dev -- python agent.py")
+		"slink record -- python agent.py")
 
 	// Everything after "--" is the child command, verbatim — only slink's
 	// own flags are reordered. Without "--", legacy `slink dev cmd …` still
@@ -77,7 +88,7 @@ func runDev(args []string) {
 	if dashdash >= 0 {
 		parseReordered(fs, args[:dashdash])
 		if stray := fs.Args(); len(stray) > 0 {
-			die(fmt.Sprintf("unexpected argument before --: %q\n  the command to record goes after --: slink dev [flags] -- <command …>", stray[0]))
+			die(fmt.Sprintf("unexpected argument before --: %q\n  the command to record goes after --: slink record [flags] -- <command …>", stray[0]))
 		}
 		cmdArgs = args[dashdash+1:]
 	} else {
@@ -105,6 +116,9 @@ func runDev(args []string) {
 	}
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", listenPort))
 	if err != nil {
+		if strings.Contains(err.Error(), "address already in use") {
+			die(fmt.Sprintf("✗ can't listen on 127.0.0.1:%d — that port is in use\n\n  pick another:  slink record --port <port> -- <cmd>\n  or drop --port to use a random free one", listenPort))
+		}
 		die(err.Error())
 	}
 	httpSrv := &http.Server{Handler: srv}
@@ -114,9 +128,12 @@ func runDev(args []string) {
 		fmt.Sprintf("ANTHROPIC_BASE_URL=http://127.0.0.1:%d/anthropic", p),
 		fmt.Sprintf("OPENAI_BASE_URL=http://127.0.0.1:%d/openai/v1", p),
 	}
-	fmt.Fprintf(os.Stderr, "session.link proxy · http://127.0.0.1:%d · will save to %s\n", p, session.File)
+	fmt.Fprintln(os.Stderr, "recording")
+	fmt.Fprintf(os.Stderr, "    proxy:  http://127.0.0.1:%d\n", p)
+	fmt.Fprintf(os.Stderr, "    saves:  %s\n", displayPath(session.File))
 
 	exitCode := 0
+	startFailed := false
 	if len(cmdArgs) > 0 {
 		child := exec.Command(cmdArgs[0], cmdArgs[1:]...)
 		child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -132,8 +149,14 @@ func runDev(args []string) {
 		signal.Notify(sigc, os.Interrupt, syscall.SIGTERM)
 		defer signal.Stop(sigc)
 		if err := child.Start(); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to start %s: %v\n", cmdArgs[0], err)
-			exitCode = 1
+			startFailed = true
+			if errors.Is(err, exec.ErrNotFound) {
+				fmt.Fprintf(os.Stderr, "✗ could not start %s — not found in PATH\n", cmdArgs[0])
+				exitCode = 127
+			} else {
+				fmt.Fprintf(os.Stderr, "✗ could not start %s — %v\n", cmdArgs[0], err)
+				exitCode = 126
+			}
 		} else {
 			done := make(chan struct{})
 			go func() {
@@ -185,6 +208,8 @@ func runDev(args []string) {
 	httpSrv.Close()
 	n, ferr := session.Finalize()
 	switch {
+	case n == 0 && startFailed:
+		fmt.Fprintln(os.Stderr, "  nothing was recorded")
 	case n == 0:
 		fmt.Fprintln(os.Stderr, "captured 0 LLM calls — nothing was saved")
 		fmt.Fprintln(os.Stderr, "  if your tool called a model, it may not honor ANTHROPIC_BASE_URL / OPENAI_BASE_URL")
@@ -192,8 +217,10 @@ func runDev(args []string) {
 		fmt.Fprintf(os.Stderr, "✗ recorded %s but couldn't finalize: %v\n", plural(n, "call"), ferr)
 		fmt.Fprintf(os.Stderr, "  the partial spool is kept at %s.spool\n", session.File)
 	default:
-		fmt.Fprintf(os.Stderr, "✓ captured %s → %s\n", plural(n, "call"), session.File)
-		fmt.Fprintln(os.Stderr, "  review: slink view · publish: slink share")
+		id := captureID(session.File)
+		fmt.Fprintf(os.Stderr, "✓ captured %s\n", plural(n, "call"))
+		fmt.Fprintf(os.Stderr, "    stored:  %s\n", displayPath(session.File))
+		fmt.Fprintf(os.Stderr, "\n  review:  slink view %s\n  publish: slink share %s\n", id, id)
 	}
 	os.Exit(exitCode)
 }

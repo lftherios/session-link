@@ -178,7 +178,8 @@ func runSetup(args []string) {
 	var line string
 	fmt.Fscanln(os.Stdin, &line)
 	if l := strings.ToLower(strings.TrimSpace(line)); l != "y" && l != "yes" {
-		fmt.Fprintln(os.Stderr, "aborted — nothing installed. One-off recording works anytime: slink record -- <cmd>")
+		fmt.Fprintln(os.Stderr, "aborted — nothing installed")
+		fmt.Fprintln(os.Stderr, "\n  one-off recording works anytime:  slink record -- <cmd>")
 		os.Exit(1)
 	}
 	r := cli.InstallService(*port)

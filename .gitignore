@@ -9,3 +9,4 @@ node_modules
 # goreleaser snapshot output
 /go/dist/
 /go/dist-npm/
+slink-dev

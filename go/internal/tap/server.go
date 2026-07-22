@@ -96,7 +96,11 @@ func NewServer(captureDir string, idle time.Duration) *Server {
 		},
 		func(sess *Session) {
 			if n, err := sess.Finalize(); err == nil && n > 0 {
-				log.Printf("session ended · %d call(s) → %s", n, sess.File)
+				calls := fmt.Sprintf("%d calls", n)
+				if n == 1 {
+					calls = "1 call"
+				}
+				log.Printf("session ended: %s → %s", calls, sess.File)
 			}
 		},
 	)
@@ -409,10 +413,14 @@ func (s *Server) Serve(ctx context.Context, addr string) error {
 		}
 	}()
 
+	// The startup banner is for the human at the terminal (or skimming
+	// tap.log) — plain lines, one meaning each, no log timestamps. Runtime
+	// events below stay on log.Printf, where timestamps earn their keep.
 	port := ln.Addr().(*net.TCPAddr).Port
-	log.Printf("session.link tap · http://127.0.0.1:%d · capturing to %s", port, s.CaptureDir)
-	log.Printf("export ANTHROPIC_BASE_URL=http://127.0.0.1:%d/anthropic", port)
-	log.Printf("export OPENAI_BASE_URL=http://127.0.0.1:%d/openai/v1", port)
+	fmt.Fprintln(os.Stderr, "tap running")
+	fmt.Fprintf(os.Stderr, "    listens:  http://127.0.0.1:%d\n", port)
+	fmt.Fprintf(os.Stderr, "    stores:   %s\n", s.CaptureDir)
+	fmt.Fprintf(os.Stderr, "\n  route a shell through it:  eval \"$(slink on)\"\n")
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()

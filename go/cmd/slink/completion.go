@@ -12,8 +12,8 @@ import (
 func runCompletion(args []string) {
 	fs := flag.NewFlagSet("completion", flag.ExitOnError)
 	setUsage(fs, "slink completion <bash|zsh|fish>",
-		"Print a tab-completion script. Add the line it suggests to your\n  shell profile.",
-		"slink completion zsh >> ~/.zshrc   # or see per-shell hints below")
+		"Print a tab-completion script. Each script's header says where to\n  put it for that shell.",
+		`eval "$(slink completion zsh)"   # or add that line to ~/.zshrc`)
 	parseReordered(fs, args)
 
 	names := strings.Join(commands, " ")

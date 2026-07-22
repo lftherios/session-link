@@ -16,9 +16,13 @@ import (
 	"golang.org/x/term"
 )
 
-// emptyState is the shared "no sessions yet" message — every surface that
-// can hit an empty store points at the same three ways in.
-const emptyState = "no sessions yet — record one (slink record -- <cmd>), import one (slink import), or go always-on (slink setup)"
+// emptyState is the shared "no sessions yet" block — every surface that
+// can hit an empty store points at the same three ways in, one per line.
+const emptyState = `no sessions yet
+
+  record:  slink record -- <your agent command>
+  import:  slink import
+  ambient: slink setup`
 
 func runList(args []string) {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
@@ -64,7 +68,7 @@ func runList(args []string) {
 		}
 		printSessionRow(os.Stdout, c, "")
 	}
-	fmt.Fprintln(os.Stderr, "\n  review: slink view · publish: slink share")
+	fmt.Fprintln(os.Stderr, "\n  review:  slink view <id>\n  publish: slink share <id>")
 }
 
 func runPush(args []string) {
@@ -93,8 +97,8 @@ func runPush(args []string) {
 			file = pickSession(captures, "publish which?")
 		} else {
 			file = captures[0].File
-			fmt.Fprintf(os.Stderr, "publishing your newest session — %s (captured %s)\n",
-				filepath.Base(file), ago(captures[0].CreatedAt))
+			fmt.Fprintln(os.Stderr, "publishing your newest session:")
+			printSessionRow(os.Stderr, captures[0], "")
 		}
 	}
 
@@ -146,7 +150,8 @@ func publishFile(file, target, apiKey string, yes bool) {
 		die(err.Error())
 	}
 	if len(ins.Errors) > 0 {
-		fmt.Fprintf(os.Stderr, "✗ %s is not a valid session/v0 document:\n", file)
+		fmt.Fprintln(os.Stderr, "✗ not a valid session/v0 document")
+		fmt.Fprintf(os.Stderr, "    file:  %s\n", displayPath(file))
 		for _, e := range ins.Errors {
 			fmt.Fprintln(os.Stderr, "    "+e)
 		}
@@ -156,7 +161,8 @@ func publishFile(file, target, apiKey string, yes bool) {
 	if name == "" {
 		name = file
 	}
-	fmt.Fprintln(os.Stderr, gateSummary(name, ins))
+	fmt.Fprintf(os.Stderr, "%q\n", clip(name, 76))
+	fmt.Fprintln(os.Stderr, "  "+gateSummary(ins))
 	if len(ins.Secrets) > 0 {
 		fmt.Fprintln(os.Stderr, "✗ publish blocked — the session appears to contain credentials:")
 		for _, h := range ins.Secrets {
@@ -185,7 +191,9 @@ func publishFile(file, target, apiKey string, yes bool) {
 		if login := cli.ReadConfig().Login; login != "" {
 			as = " as @" + login
 		}
-		fmt.Fprintf(os.Stderr, "Publish unlisted to %s%s? Anyone with the link can view it. [y/N] ", target, as)
+		fmt.Fprintf(os.Stderr, "\nready to publish to %s%s\n", target, as)
+		fmt.Fprintln(os.Stderr, "  unlisted — anyone with the link can view it")
+		fmt.Fprint(os.Stderr, "\nPublish? [y/N] ")
 		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 		if l := strings.ToLower(strings.TrimSpace(line)); l != "y" && l != "yes" {
 			fmt.Fprintln(os.Stderr, "aborted — nothing was uploaded")
@@ -201,13 +209,14 @@ func publishFile(file, target, apiKey string, yes bool) {
 				msg = m
 			}
 		}
-		if res.Status == 0 { // transport failure — no HTTP happened at all
-			die(fmt.Sprintf("✗ %s — nothing was uploaded", msg))
+		switch {
+		case res.Status == 0: // transport failure — no HTTP happened at all
+			die(fmt.Sprintf("✗ can't reach %s (%s)\n    nothing was uploaded", target, transportCause(msg)))
+		case res.Status == 401:
+			die(fmt.Sprintf("✗ the server refused the upload — not signed in (HTTP 401)\n\n  sign in:  slink login\n  or pass:  --key rk_…"))
+		default:
+			die(fmt.Sprintf("✗ %s (HTTP %d)", msg, res.Status))
 		}
-		if res.Status == 401 {
-			msg += " — run `slink login` (publishing needs an account; capture doesn't), or pass --key"
-		}
-		die(fmt.Sprintf("✗ %s (HTTP %d)", msg, res.Status))
 	}
 	url, _ := res.Body["url"].(string)
 	verb := "published"
@@ -222,15 +231,23 @@ func publishFile(file, target, apiKey string, yes bool) {
 	fmt.Println(url)
 	fmt.Fprintln(os.Stderr, "  anyone with this link can view it")
 	if id := publishedID(url); id != "" {
-		fmt.Fprintf(os.Stderr, "  take it offline: slink delete %s\n", id)
+		fmt.Fprintf(os.Stderr, "\n  take offline:  slink delete %s\n", id)
 	}
 }
 
-// gateSummary is the one-line what-am-I-publishing header: title, spans,
-// models, size, fidelity, capture age — everything the point of no return
-// should show.
-func gateSummary(name string, ins *cli.Inspection) string {
-	parts := []string{name, plural(ins.Spans, "span")}
+// transportCause trims a wrapped Go transport error to its terminal cause
+// ("connection refused", "no such host") — the URL is already on the line.
+func transportCause(msg string) string {
+	if i := strings.LastIndex(msg, ": "); i >= 0 {
+		return msg[i+2:]
+	}
+	return msg
+}
+
+// gateSummary is the what-am-I-publishing facts line: spans, models, size,
+// fidelity, capture age — shown under the title at the point of no return.
+func gateSummary(ins *cli.Inspection) string {
+	parts := []string{plural(ins.Spans, "span")}
 	if len(ins.Models) > 0 {
 		parts = append(parts, strings.Join(ins.Models, ", "))
 	}
@@ -285,21 +302,21 @@ func runPrune(args []string) {
 			bytes += st.Size()
 		}
 		if i < 8 { // cap the listing like the JS command
-			fmt.Fprintf(os.Stderr, "  %-9s %s (%d spans)\n", ago(c.CreatedAt), clip(c.Name, 48), c.Spans)
+			printSessionRow(os.Stderr, c, "")
 		} else if i == 8 {
 			fmt.Fprintf(os.Stderr, "  … and %d more\n", len(remove)-8)
 		}
 	}
-	fmt.Fprintf(os.Stderr, "  reclaims %s\n", fmtBytes(int(bytes)))
+	fmt.Fprintf(os.Stderr, "\n  reclaims:  %s\n", fmtBytes(int(bytes)))
 	if *dryRun {
-		fmt.Fprintf(os.Stderr, "dry run — %d capture(s) would be pruned\n", len(remove))
+		fmt.Fprintf(os.Stderr, "dry run — %s would be pruned\n", plural(len(remove), "session"))
 		return
 	}
 	if !*yes {
 		if !term.IsTerminal(int(os.Stdin.Fd())) {
 			die("not a TTY — pass --yes to prune from scripts")
 		}
-		fmt.Fprintf(os.Stderr, "Prune %d capture(s)? [y/N] ", len(remove))
+		fmt.Fprintf(os.Stderr, "\nPrune %s? [y/N] ", plural(len(remove), "session"))
 		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 		if l := strings.ToLower(strings.TrimSpace(line)); l != "y" && l != "yes" {
 			fmt.Fprintln(os.Stderr, "aborted")
@@ -309,7 +326,7 @@ func runPrune(args []string) {
 	for _, c := range remove {
 		cli.RemoveCapture(c.File)
 	}
-	fmt.Fprintf(os.Stderr, "pruned %d capture(s)\n", len(remove))
+	fmt.Fprintf(os.Stderr, "pruned %s\n", plural(len(remove), "session"))
 }
 
 /* -------------------------------------------------------------- helpers */

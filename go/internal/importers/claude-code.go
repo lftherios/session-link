@@ -46,8 +46,11 @@ func ccFirstUserText(entries []map[string]any) string {
 		if text == "" || strings.HasPrefix(text, "<") || strings.HasPrefix(text, "Caveat:") {
 			continue // tool results / injected caveats — not a title
 		}
-		if r := []rune(text); len(r) > 60 {
-			return string(r[:59]) + "…"
+		// Clip only as a safety net against pasted walls of text — narrow
+		// surfaces (list, gate) apply their own tighter budgets, and the
+		// viewer gets the whole thing.
+		if r := []rune(text); len(r) > 200 {
+			return string(r[:199]) + "…"
 		}
 		return text
 	}

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lftherios/session-link/internal/cli"
+	"golang.org/x/term"
 )
 
 /* ---------------------------------------------------- tap port/pid files */
@@ -133,7 +134,9 @@ func runStatus(args []string) {
 	case routed && routedLive:
 		row("Routing", "on in this shell")
 	case routed:
-		row("Routing", "BROKEN — this shell routes to a tap that isn't running; agents will see connection refused. fix: slink tap, or eval \"$(slink off)\"")
+		row("Routing", "BROKEN — this shell routes to a tap that isn't running")
+		fmt.Printf("%-10s agents will see: connection refused\n", "")
+		fmt.Printf("%-10s fix: slink tap   (or: eval \"$(slink off)\")\n", "")
 	default:
 		row("Routing", `off in this shell — eval "$(slink on)"`)
 	}
@@ -210,7 +213,7 @@ func stopTap() {
 		return
 	}
 	if pidErr != nil {
-		die(fmt.Sprintf("a tap is listening on :%d but left no pidfile (older slink?) — stop it manually", port))
+		die(fmt.Sprintf("✗ a tap is listening on :%d but left no pidfile (older slink?)\n\n  stop it manually:  pkill -f \"slink tap\"", port))
 	}
 	pid, _ := strconv.Atoi(strings.TrimSpace(string(pidB)))
 	if pid <= 1 {
@@ -276,10 +279,14 @@ func runDelete(args []string) {
 		die("not signed in — run: slink login  (deleting needs the account that published it)")
 	}
 	if !*yes {
-		if !termIsTTY() {
+		// term.IsTerminal, not a char-device stat: /dev/null is a char
+		// device, and a script must never hang on an invisible prompt.
+		if !term.IsTerminal(int(os.Stdin.Fd())) {
 			die("not a TTY — pass --yes to delete from scripts")
 		}
-		fmt.Fprintf(os.Stderr, "Take %s/r/%s offline? The link stops working immediately. [y/N] ", target, id)
+		fmt.Fprintf(os.Stderr, "about to take %s/r/%s offline\n", target, id)
+		fmt.Fprintln(os.Stderr, "  the link stops working immediately")
+		fmt.Fprint(os.Stderr, "\nTake it offline? [y/N] ")
 		var line string
 		fmt.Fscanln(os.Stdin, &line)
 		if l := strings.ToLower(strings.TrimSpace(line)); l != "y" && l != "yes" {
@@ -290,8 +297,11 @@ func runDelete(args []string) {
 	status, body := cli.DeleteRun(target, apiKey, id)
 	switch {
 	case status >= 200 && status < 300 || status == 410:
-		fmt.Fprintf(os.Stderr, "✓ offline — anyone opening %s/r/%s now sees it's gone (the API answers 410)\n", target, id)
-		fmt.Fprintln(os.Stderr, "  (re-publishing the identical session from your account would revive the same URL)")
+		fmt.Fprintln(os.Stderr, "✓ taken offline — the page now shows a deletion notice")
+		fmt.Fprintf(os.Stderr, "    url:  %s/r/%s\n", target, id)
+		fmt.Fprintln(os.Stderr, "\n  note: publishing the identical session again would revive this URL")
+	case status == 0:
+		die(fmt.Sprintf("✗ can't reach %s (%s)\n    nothing was deleted", target, transportCause(body)))
 	case status == 401:
 		die("✗ not signed in — run: slink login")
 	case status == 403:
@@ -301,11 +311,6 @@ func runDelete(args []string) {
 	default:
 		die(fmt.Sprintf("✗ delete failed (HTTP %d): %s", status, body))
 	}
-}
-
-func termIsTTY() bool {
-	st, err := os.Stdin.Stat()
-	return err == nil && st.Mode()&os.ModeCharDevice != 0
 }
 
 /* ---------------------------------------------------------------- logout */

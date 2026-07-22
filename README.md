@@ -35,35 +35,34 @@ npm i -g session.link                              # or `npx session.link`
 ## Quickstart
 
 ```bash
-# 1. Record — wrap your agent. Nothing leaves your machine.
-slink record -- python agent.py
+# 1. Import — your coding agent's newest session for this repo. No re-run.
+slink import
 
 # 2. Share — review the selection, confirm, sign in (GitHub) when asked.
 slink share
 # → https://session.link/r/9f3kx2mvq7wtd4   (copied to your clipboard)
 ```
 
-That's it — no code changes, no SDK. Capturing needs no account at all; `login` (free, GitHub) is only for publishing, so sessions are attributed and deletable by you. `slink dev` points `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` at a local recording proxy, runs your command, and writes each call to `~/.slink` as it happens — streaming passed through untouched and reassembled.
+That's it — no code changes, no SDK, nothing to re-run. `import` reconstructs the session straight from Claude Code, Codex, opencode, pi, or Hermes history ([details below](#works-with-the-agent-you-already-use)). Capturing needs no account at all; `login` (free, GitHub) is only for publishing, so sessions are attributed and deletable by you.
 
-- **Node agent?** `slink dev -- node agent.js` — anything that speaks the Anthropic or OpenAI API.
-- **Local models?** The proxy can point at any compatible upstream: `SLINK_UPSTREAM_OPENAI=http://localhost:11434 slink dev -- …` records Ollama sessions too. And if your shell already has `OPENAI_BASE_URL` pointed somewhere custom, `slink on` keeps forwarding there — your traffic is never silently rerouted.
-- **Already ran it in Claude Code, Codex, opencode, pi, or Hermes?** `slink import` — [see below](#works-with-the-agent-you-already-use).
-- **Review before sharing?** `slink open` browses your captures locally in the exact viewer the hosted site renders, Publish button included.
+- **Recording fresh instead?** `slink record -- python agent.py` — or `-- node agent.js`, anything that speaks the Anthropic or OpenAI API. It points `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` at a local recording proxy, runs your command, and writes each call to `~/.slink` as it happens — streaming passed through untouched and reassembled, wire-exact.
+- **Local models?** The proxy can point at any compatible upstream: `SLINK_UPSTREAM_OPENAI=http://localhost:11434 slink record -- …` records Ollama sessions too. And if your shell already has `OPENAI_BASE_URL` pointed somewhere custom, `slink on` keeps forwarding there — your traffic is never silently rerouted.
+- **Review before sharing?** `slink view` browses your sessions locally in the exact viewer the hosted site renders, Publish button included.
 
 ## Always on (optional)
 
-Wrapping each run with `slink dev` is the simplest way in, and all you need. If you'd rather not think about it, you can instead leave a recorder running in the background — a convenience, not a requirement:
+Wrapping each run with `slink record` is the simplest way in, and all you need. If you'd rather not think about it, you can instead leave a recorder running in the background — a convenience, not a requirement:
 
 ```bash
 slink tap --install    # persistent recorder as a login service — survives reboots
 eval "$(slink on)"     # route this shell's agents through it
 ```
 
-Now everything flowing through is recorded in the background, grouped into **activity windows**: traffic separated by an idle gap (15 minutes by default) becomes its own local capture, and a client can tag its calls into a named window of its own with the `x-slink-session` / `x-slink-label` headers (the idle gap still closes a window that goes quiet). Two untagged agents talking at the same moment share a window — true per-process segmentation is on the roadmap. Publish any one later with `slink push --pick`; `slink share` imports your coding agent's newest session and publishes it in one step. Publish any one later with `slink share` (import-or-pick the newest capture and `push` it, in one step). Captures are plaintext on your disk and auto-pruned after 30 days (`SLINK_RETAIN_DAYS`); `slink prune` trims the buffer on demand. Stop routing a shell with `eval "$(slink off)"`, or remove the service entirely with `slink tap --uninstall`.
+Now everything flowing through is recorded in the background, grouped into **activity windows**: traffic separated by an idle gap (15 minutes by default) becomes its own local capture, and a client can tag its calls into a named window of its own with the `x-slink-session` / `x-slink-label` headers (the idle gap still closes a window that goes quiet). Two untagged agents talking at the same moment share a window — true per-process segmentation is on the roadmap. Publish any one later with `slink share --pick` — or just `slink share`, which offers whichever session is freshest. Captures are plaintext on your disk and auto-pruned after 30 days (`SLINK_RETAIN_DAYS`); `slink prune` trims the buffer on demand. Stop routing a shell with `eval "$(slink off)"`, or remove the service entirely with `slink tap --uninstall`.
 
 ## Works with the agent you already use
 
-Didn't wrap it in `slink dev`? Import it after the fact. `slink import` reconstructs a `session/v0` capture straight from your coding agent's own on-disk history — no proxy, no re-run. With no arguments it grabs the newest session for the current project, whichever agent produced it; `--from` pins one:
+Didn’t wrap it in `slink record`? Import it after the fact. `slink import` reconstructs a `session/v0` capture straight from your coding agent's own on-disk history — no proxy, no re-run. With no arguments it grabs the newest session for the current project, whichever agent produced it; `--from` pins one:
 
 | Agent | Where its sessions live | Import |
 | --- | --- | --- |
@@ -78,7 +77,7 @@ slink import   # newest session in this repo, whichever agent produced it
 slink push     # → a link   (or `slink share`: both steps in one)
 ```
 
-Imports are marked **`fidelity: reconstructed`** — the transcript carries the messages, tool calls, models, and token usage, but not the raw wire request bodies (a capture from `slink dev` is `exact`). The SQLite-backed stores (opencode, Hermes) are read directly by the binary — no extra dependencies. Hermes is **experimental** — its `tool_calls` shape is inferred, not yet verified against a live session.
+Imports are marked **`fidelity: reconstructed`** — the transcript carries the messages, tool calls, models, and token usage, but not the raw wire request bodies (a capture from `slink record` is `exact`). The SQLite-backed stores (opencode, Hermes) are read directly by the binary — no extra dependencies. Hermes is **experimental** — its `tool_calls` shape is inferred, not yet verified against a live session.
 
 **Using pi? Skip import entirely.** The [`@session-link/pi-extension`](https://github.com/lftherios/session-link/tree/main/packages/pi-extension) adds a `/slink` command to pi — publish the session you're in without leaving the TUI, at **`exact`** fidelity: it records each turn from pi's in-process SDK hooks, assembled system prompt and verbatim provider request included.
 
@@ -98,7 +97,7 @@ A published session isn't a screenshot — it's the real thing, rendered:
 
 - **Capture is 100% local.** A recording proxy tees the calls to disk; nothing is uploaded until you run `push`.
 - **API keys never touch the capture.** The proxy records request/response bodies only — auth headers are forwarded upstream and dropped, so they can't end up in a published session.
-- **Secrets are scanned twice** — client-side before a single byte leaves your machine, and again server-side before anything touches disk. The scan is deliberately high-precision, low-recall: [a short list of unambiguous key formats](https://github.com/lftherios/session-link/blob/main/packages/format/secret-patterns.mjs) (`sk-…`, `ghp_…`, `AKIA…`, Stripe, PEM blocks), not DLP. It catches a pasted key; it can't know which *content* is sensitive — that's what reviewing in `slink open` before publishing is for.
+- **Secrets are scanned twice** — client-side before a single byte leaves your machine, and again server-side before anything touches disk. The scan is deliberately high-precision, low-recall: [a short list of unambiguous key formats](https://github.com/lftherios/session-link/blob/main/packages/format/secret-patterns.mjs) (`sk-…`, `ghp_…`, `AKIA…`, Stripe, PEM blocks), not DLP. It catches a pasted key; it can't know which *content* is sensitive — that's what reviewing in `slink view` before publishing is for.
 - **Sessions are immutable and content-addressed** — the exact bytes are served back, so anyone can verify: `curl -s https://session.link/api/runs/<id>/raw | shasum -a 256`.
 - **Deletion is a tombstone, and publishes are owned.** Deleting (only your account can) takes the page, unfurls, and raw bytes offline immediately. The underlying blob is currently retained server-side — re-publishing identical bytes from your account revives the same URL — so treat publishing as hard to fully un-ring; a true purge path is on the roadmap.
 - **Unlisted is not access control.** ~69 bits of unguessable URL, no public index, crawlers excluded — the share-a-doc-link model. Anyone holding the link can read the session; keep genuinely sensitive runs local.
@@ -115,7 +114,7 @@ An open client and an open format, not a thin wrapper around a hosted API:
 | --- | --- |
 | [`slink`](https://github.com/lftherios/session-link/tree/main/go) | the CLI + always-on tap — recording proxy, importer, local viewer, publish flow. A single native Go binary (~7MB, no runtime). |
 | [`@session-link/format`](https://github.com/lftherios/session-link/tree/main/packages/format) | the open `session/v0` format — TypeScript types, JSON Schema, and `validateRun`. |
-| [`@session-link/viewer`](https://github.com/lftherios/session-link/tree/main/packages/viewer) | the React trace-tree component that renders a session — the same one the hosted site uses, embedded in the CLI for `slink open`. |
+| [`@session-link/viewer`](https://github.com/lftherios/session-link/tree/main/packages/viewer) | the React trace-tree component that renders a session — the same one the hosted site uses, embedded in the CLI for `slink view`. |
 
 The CLI is Go as of v0.3.0 (previously a Node bundle; the pre-Go source is tagged `js-cli-v0.2`). `@session-link/format` and `@session-link/viewer` stay on npm — the hosted server and any embedder consume them.
 

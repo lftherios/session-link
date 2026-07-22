@@ -35,7 +35,7 @@ func runDoctor(args []string) {
 	probe := dir + "/.doctor-probe"
 	werr := os.WriteFile(probe, []byte("ok"), 0o644)
 	os.Remove(probe)
-	pass(werr == nil, "state dir writable: "+dir, "cannot write "+dir+" — captures will be lost")
+	pass(werr == nil, "state dir writable: "+displayPath(dir), "cannot write "+displayPath(dir)+" — captures will be lost")
 
 	// Tap + routing.
 	port := persistedTapPort()
@@ -43,14 +43,17 @@ func runDoctor(args []string) {
 		port = 4141
 	}
 	info, up := tapInfo(port)
-	pass(up, fmt.Sprintf("tap running on :%d", port), fmt.Sprintf("no tap on :%d — always-on capture is off (slink tap, or slink setup); one-off recording still works: slink record -- <cmd>", port))
+	pass(up, fmt.Sprintf("tap running on :%d", port),
+		fmt.Sprintf("no tap on :%d — always-on capture is off\n      start it:  slink tap   (or guided: slink setup)\n      one-off recording still works:  slink record -- <cmd>", port))
 
 	routed, routedLive := shellRouting()
 	switch {
 	case routed:
-		pass(routedLive, "this shell routes through the tap", "this shell routes to a tap that isn't running — agents will see connection refused; fix: slink tap, or eval \"$(slink off)\"")
+		pass(routedLive, "this shell routes through the tap",
+			"this shell routes to a tap that isn't running\n      agents will see: connection refused\n      fix:  slink tap   (or: eval \"$(slink off)\")")
 	case customUpstream("ANTHROPIC_BASE_URL") != "" || customUpstream("OPENAI_BASE_URL") != "":
-		fmt.Println("  · this shell points at a custom endpoint — slink leaves it alone (eval \"$(slink on)\" to record it)")
+		fmt.Println("  · this shell points at a custom endpoint — slink leaves it alone")
+		fmt.Println("      record it too:  eval \"$(slink on)\"")
 	default:
 		fmt.Println("  · this shell is not routed — eval \"$(slink on)\" for ambient capture")
 	}
@@ -68,7 +71,8 @@ func runDoctor(args []string) {
 			if err == nil {
 				res.Body.Close()
 			}
-			pass(err == nil, fmt.Sprintf("%s upstream reachable: %s", prov, u), fmt.Sprintf("%s upstream unreachable: %s — calls through the tap will 502", prov, u))
+			pass(err == nil, fmt.Sprintf("%s upstream reachable: %s", prov, u),
+				fmt.Sprintf("%s upstream unreachable: %s\n      calls through the tap will fail with 502", prov, u))
 		}
 	}
 
