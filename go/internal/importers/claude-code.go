@@ -8,6 +8,7 @@ package importers
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/lftherios/session-link/internal/normalize"
 )
@@ -18,6 +19,39 @@ const ccImportLabel = "session-import@0.1.0"
 
 func claudeCodeImport(in Input) (map[string]any, error) {
 	return ccTranscriptToRun(in.Lines, in.Fallback), nil
+}
+
+// ccFirstUserText extracts the first real user message's text, clipped to
+// title length — the human name for an otherwise UUID-named session.
+func ccFirstUserText(entries []map[string]any) string {
+	for _, e := range entries {
+		if strOr(e["type"], "") != "user" || ccTruthy(e["isMeta"]) {
+			continue // isMeta rows are injected caveats/context, not the ask
+		}
+		msg := m(e["message"])
+		var text string
+		switch c := msg["content"].(type) {
+		case string:
+			text = c
+		case []any:
+			for _, p := range c {
+				part := m(p)
+				if strOr(part["type"], "") == "text" {
+					text = strOr(part["text"], "")
+					break
+				}
+			}
+		}
+		text = strings.Join(strings.Fields(text), " ") // collapse newlines/runs
+		if text == "" || strings.HasPrefix(text, "<") || strings.HasPrefix(text, "Caveat:") {
+			continue // tool results / injected caveats — not a title
+		}
+		if r := []rune(text); len(r) > 60 {
+			return string(r[:59]) + "…"
+		}
+		return text
+	}
+	return ""
 }
 
 // ccTruthy mirrors JS truthiness for the `if (x)` sites in the JS mapper.
@@ -89,6 +123,14 @@ func ccTranscriptToRun(lines []string, sessionName string) map[string]any {
 	}
 	if len(entries) == 0 {
 		return nil
+	}
+	// No summary in the transcript? A clipped first user message beats the
+	// raw session UUID everywhere a human sees the name (list, the publish
+	// gate, the published page title).
+	if s, _ := name.(string); s == sessionName {
+		if t := ccFirstUserText(entries); t != "" {
+			name = t
+		}
 	}
 
 	first := entries[0]

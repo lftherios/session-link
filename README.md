@@ -36,10 +36,10 @@ npm i -g session.link                              # or `npx session.link`
 
 ```bash
 # 1. Record — wrap your agent. Nothing leaves your machine.
-slink dev -- python agent.py
+slink record -- python agent.py
 
-# 2. Publish — one-time GitHub sign-in, then validate, secret-scan, confirm.
-slink login && slink push
+# 2. Share — review the selection, confirm, sign in (GitHub) when asked.
+slink share
 # → https://session.link/r/9f3kx2mvq7wtd4   (copied to your clipboard)
 ```
 

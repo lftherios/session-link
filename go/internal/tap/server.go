@@ -123,7 +123,10 @@ func normalizeUpstream(u string) string {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" && r.Method == http.MethodGet {
 		w.Header().Set("content-type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"service": "session.link", "sessions": s.router.Size()})
+		json.NewEncoder(w).Encode(map[string]any{
+			"service": "session.link", "sessions": s.router.Size(),
+			"upstreams": s.Upstreams, // slink status renders these
+		})
 		return
 	}
 	m := routeRe.FindStringSubmatch(r.URL.RequestURI())

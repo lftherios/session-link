@@ -11,11 +11,10 @@ import (
 // commands is the dispatch list usage and did-you-mean draw from; keep it
 // in sync with the switch in main().
 var commands = []string{
-	"dev", "tap", "on", "off",
-	"list", "ls", "open",
-	"import",
-	"login", "push", "share",
-	"prune", "version", "help",
+	"share", "record", "dev", "view", "open", "list", "ls",
+	"import", "tap", "setup", "on", "off", "status",
+	"login", "logout", "push", "delete",
+	"prune", "doctor", "completion", "version", "help",
 }
 
 func printUsage(w io.Writer) {
@@ -24,32 +23,38 @@ func printUsage(w io.Writer) {
 Usage:
   slink <command> [flags]
 
+Share
+  share              publish the session you mean — newest local or your
+                     coding agent's newest — review, confirm, get a link
+  delete             take a published session offline
+
 Record (local — nothing leaves your machine)
-  dev -- <command>   run a command with its LLM calls recorded
-  tap                always-on recorder (foreground; --install for a service)
+  record -- <cmd>    run a command with its LLM calls recorded  (alias: dev)
+  import             convert your coding agent's newest session — no re-run
+                     (claude-code, codex, opencode, pi, hermes)
+  setup              guided always-on capture (tap as a login service)
   on / off           route this shell through the tap:  eval "$(slink on)"
 
 Review
-  list               your local sessions, newest first
-  open               browse them in the local viewer
+  list               your local sessions, newest first (ids in column one)
+  view               browse them in the local viewer  (alias: open)
+  status             recorder, routing, upstreams, account, sessions
 
-Import (no re-run needed)
-  import             convert your coding agent's newest session
-                     (claude-code, codex, opencode, pi, hermes)
-
-Publish (deliberate — needs a free account)
-  login              one-time GitHub sign-in
-  push               validate, secret-scan, confirm → shareable link
-  share              import the newest session and push it, in one step
+Publish plumbing (share does all of this for you)
+  login / logout     account for publishing; capture never needs one
+  push               validate, secret-scan, confirm → link (scriptable)
 
 Maintain
+  tap                the always-on recorder (foreground; --stop, --install)
   prune              delete old local sessions
+  doctor             check the recording setup end to end
+  completion         shell tab-completion (bash, zsh, fish)
   version            print the slink version
 
 Quickstart:
-  slink dev -- python agent.py    # 1. record a run
-  slink open                      # 2. review it locally
-  slink login && slink push       # 3. publish → https://session.link/r/…
+  slink record -- python agent.py   # 1. record a run   (or: slink import)
+  slink view                        # 2. review it locally
+  slink share                       # 3. publish → https://session.link/r/…
 
 Flags for a command: slink <command> -h
 Sessions stay local in ~/.slink until you publish them (the always-on tap

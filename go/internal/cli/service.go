@@ -101,6 +101,17 @@ func systemdPath() string {
 
 func TapLogPath() string { return filepath.Join(Home(), "tap.log") }
 
+// ServiceInstalled reports whether the tap login service's unit file is
+// present on this platform.
+func ServiceInstalled() bool {
+	for _, p := range []string{launchdPath(), systemdPath()} {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func InstallService(port int) ServiceResult {
 	args := TapProgramArgs(port)
 	switch runtime.GOOS {

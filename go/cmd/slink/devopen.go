@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -19,22 +20,35 @@ import (
 )
 
 func runOpen(args []string) {
-	fs := flag.NewFlagSet("open", flag.ExitOnError)
+	fs := flag.NewFlagSet("view", flag.ExitOnError)
 	port := fs.Int("port", 4400, "listen port")
 	noBrowser := fs.Bool("no-browser", false, "don't open the browser")
-	setUsage(fs, "slink open [flags]",
-		"Browse local sessions at 127.0.0.1 in the same viewer the hosted site\n  uses. Its Publish button runs the same validate + secret-scan gate as push.",
-		"slink open --no-browser")
+	setUsage(fs, "slink view [flags] [session-id]",
+		"Browse local sessions at 127.0.0.1 in the same viewer the hosted site\n  uses. With an id, opens that session. The Publish button runs the same\n  validate + secret-scan gate as push.",
+		"slink view 2a9a48")
 	parseReordered(fs, args)
+
+	// `slink view <id>` — the instruction import prints — must actually
+	// land on that session, and an unknown id must say so, not silently
+	// serve the index.
+	focus := ""
+	if ref := fs.Arg(0); ref != "" {
+		file, err := resolveCapture(ref)
+		if err != nil {
+			die(err.Error())
+		}
+		focus = "/r/" + strings.TrimSuffix(filepath.Base(file), ".json")
+	}
+
 	target, apiKey := cli.ResolveTarget("", "")
 	srv := &open.Server{CaptureDir: cli.CaptureDir(), Target: target, APIKey: apiKey}
 	addr, _, err := srv.Serve(*port)
 	if err != nil {
 		die(err.Error())
 	}
-	fmt.Fprintf(os.Stderr, "session.link local viewer · %s · publishes to %s · Ctrl-C to stop\n", addr, target)
+	fmt.Fprintf(os.Stderr, "session.link local viewer · %s%s · publishes to %s · Ctrl-C to stop\n", addr, focus, target)
 	if !*noBrowser {
-		cli.OpenBrowser(addr)
+		cli.OpenBrowser(addr + focus)
 	}
 	select {} // serve until interrupted
 }
@@ -179,7 +193,7 @@ func runDev(args []string) {
 		fmt.Fprintf(os.Stderr, "  the partial spool is kept at %s.spool\n", session.File)
 	default:
 		fmt.Fprintf(os.Stderr, "✓ captured %s → %s\n", plural(n, "call"), session.File)
-		fmt.Fprintln(os.Stderr, "  review: slink open · publish: slink push")
+		fmt.Fprintln(os.Stderr, "  review: slink view · publish: slink share")
 	}
 	os.Exit(exitCode)
 }

@@ -109,3 +109,26 @@ func TestParseReorderedValueFlagBeforeDashDashErrors(t *testing.T) {
 		t.Fatalf("want exit 2 when a value flag would swallow --, got err=%v\n%s", err, out)
 	}
 }
+
+func TestCaptureID(t *testing.T) {
+	cases := map[string]string{
+		"/x/runs/20260722-091500-ab12cd.json": "ab12cd",
+		"20260722-091500-ffff01.json":         "ffff01",
+		"/x/runs/oddly-named.json":            "",
+		"/x/runs/20260722-091500-ab12cd.json.spool": "",
+	}
+	for in, want := range cases {
+		if got := captureID(in); got != want {
+			t.Errorf("captureID(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestPublishedID(t *testing.T) {
+	if got := publishedID("https://session.link/r/9f3kx2mvq7wtd4"); got != "9f3kx2mvq7wtd4" {
+		t.Errorf("publishedID = %q", got)
+	}
+	if got := publishedID("no-run-path"); got != "" {
+		t.Errorf("publishedID on junk = %q, want empty", got)
+	}
+}

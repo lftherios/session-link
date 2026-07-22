@@ -130,6 +130,7 @@ func BrowserLogin(server string, notify func(string)) (*LoginResult, error) {
 		prev := c.Server
 		c.APIKey = grant.Key
 		c.Server = server
+		c.Login = grant.Login // shown at the publish gate: "as @login"
 		file, err := WriteConfig(c)
 		if err != nil {
 			return nil, err

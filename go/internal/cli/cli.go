@@ -26,6 +26,7 @@ import (
 type Config struct {
 	APIKey string `json:"api_key"`
 	Server string `json:"server"`
+	Login  string `json:"login,omitempty"` // GitHub handle, when browser login minted the key
 }
 
 func Home() string {
@@ -174,6 +175,8 @@ func ListCaptures(dir string) []Capture {
 type Inspection struct {
 	Text       string
 	Name       string
+	CreatedAt  string
+	Fidelity   string // "exact" | "reconstructed" | ""
 	Spans      int
 	Models     []string
 	Bytes      int
@@ -198,6 +201,10 @@ func InspectRunFile(file string) (*Inspection, error) {
 	data, _ := anyData.(map[string]any)
 	ins := &Inspection{Text: string(raw), Bytes: len(raw)}
 	ins.Name, _ = data["name"].(string)
+	ins.CreatedAt, _ = data["created_at"].(string)
+	if source, ok := data["source"].(map[string]any); ok {
+		ins.Fidelity, _ = source["fidelity"].(string)
+	}
 	meta, _ := data["metadata"].(map[string]any)
 	ins.InProgress = meta != nil && meta["in_progress"] == true
 	spans, _ := data["spans"].([]any)
@@ -263,6 +270,30 @@ func UploadRun(text, server, apiKey string) UploadResult {
 
 func errBody(code, message string) map[string]any {
 	return map[string]any{"error": map[string]any{"code": code, "message": message}}
+}
+
+// DeleteRun tombstones a published session — the owner-only DELETE the
+// ingest API already supports. Returns the HTTP status and a short body
+// excerpt for error rendering (0 status = transport failure).
+func DeleteRun(server, apiKey, id string) (int, string) {
+	req, err := http.NewRequest(http.MethodDelete, server+"/api/runs/"+id, nil)
+	if err != nil {
+		return 0, err.Error()
+	}
+	req.Header.Set("authorization", "Bearer "+apiKey)
+	client := &http.Client{Timeout: 30 * time.Second}
+	res, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Sprintf("cannot reach %s: %v", server, err)
+	}
+	defer res.Body.Close()
+	var out map[string]any
+	json.NewDecoder(res.Body).Decode(&out)
+	msg := ""
+	if e, ok := out["error"].(map[string]any); ok {
+		msg, _ = e["message"].(string)
+	}
+	return res.StatusCode, msg
 }
 
 /* ------------------------------------------------------------- retention */

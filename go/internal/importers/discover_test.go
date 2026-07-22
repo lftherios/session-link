@@ -33,7 +33,7 @@ func TestAutoDetectPicksMostRecent(t *testing.T) {
 	t.Setenv("HOME", home)
 	cwd := "/work/proj"
 	// An older claude-code session...
-	ccDir := claudeProjectDir(cwd)
+	ccDir := ClaudeProjectDir(cwd)
 	os.MkdirAll(ccDir, 0o755)
 	ccFile := filepath.Join(ccDir, "old.jsonl")
 	os.WriteFile(ccFile, []byte(`{"type":"user","message":{"role":"user","content":"x"}}`+"\n"), 0o644)

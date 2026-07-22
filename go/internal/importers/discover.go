@@ -29,7 +29,9 @@ func home() string {
 	return h
 }
 
-func claudeProjectDir(cwd string) string {
+// ClaudeProjectDir is exported so the CLI can resolve a pasted session id
+// (Claude Code names transcripts <uuid>.jsonl inside it).
+func ClaudeProjectDir(cwd string) string {
 	enc := strings.ReplaceAll(strings.ReplaceAll(cwd, "/", "-"), ".", "-")
 	return filepath.Join(home(), ".claude", "projects", enc)
 }
@@ -191,7 +193,7 @@ func Latest(harness, cwd string) (*Found, bool) {
 }
 
 func latestClaude(cwd string) (*Found, bool) {
-	if f, t := newestFile(claudeProjectDir(cwd)); f != "" {
+	if f, t := newestFile(ClaudeProjectDir(cwd)); f != "" {
 		found := fileInput(f, "claude-code", t)
 		return &found, true
 	}

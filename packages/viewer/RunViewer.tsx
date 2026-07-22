@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   Braces,
@@ -60,7 +60,12 @@ const fmtCost = (n: number) => (n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)
 
 const spanDur = (s: Span) => ts(s.ended_at) - ts(s.started_at);
 
-const spanLabel = (s: Span) => s.name || s.type;
+// Coerced defensively: the wire format is open, so `name` and `type` can
+// arrive as anything — a non-string label must not throw in every tree row.
+const spanLabel = (s: Span) =>
+  (typeof s.name === "string" && s.name) ||
+  (typeof s.type === "string" && s.type) ||
+  "span";
 
 function stringify(v: unknown): string {
   try {
@@ -118,8 +123,11 @@ function indexRun(run: Run): RunIndex {
   let sawCost = false;
   for (const s of run.spans) {
     if (s.type !== "llm_call") continue;
-    const label = `${s.model.provider ? s.model.provider + "/" : ""}${s.model.id}`;
-    if (!models.includes(label)) models.push(label);
+    // Open-world guard: a span may claim llm_call without carrying a model.
+    if (s.model) {
+      const label = `${s.model.provider ? s.model.provider + "/" : ""}${s.model.id}`;
+      if (!models.includes(label)) models.push(label);
+    }
     if (s.usage) {
       sawUsage = true;
       tin += s.usage.input_tokens ?? 0;
@@ -143,6 +151,84 @@ function indexRun(run: Run): RunIndex {
     cost: run.metrics?.cost_usd ?? (sawCost ? cost : undefined),
     durMs: run.metrics?.latency_ms ?? (hasTimeline ? t1 - t0 : undefined),
   };
+}
+
+/* ------------------------------------------------------------ boundaries */
+
+/**
+ * The format is open-world, so partial or odd documents are normal — data
+ * this build can't render must degrade to a card, never a white screen.
+ */
+class Boundary extends Component<
+  { fallback: (message: string) => React.ReactNode; children: React.ReactNode },
+  { message: string | null }
+> {
+  state: { message: string | null } = { message: null };
+  static getDerivedStateFromError(e: unknown) {
+    return { message: e instanceof Error ? e.message : String(e) };
+  }
+  render() {
+    if (this.state.message != null) return this.props.fallback(this.state.message);
+    return this.props.children;
+  }
+}
+
+/** Whole-viewer fallback — the calm version of a crash. */
+function ViewerFallback({ message, src }: { message: string; src?: string }) {
+  return (
+    <div
+      className="rv"
+      style={{
+        fontFamily: T.mono,
+        fontSize: 12,
+        color: T.faint,
+        border: `1px solid ${T.line}`,
+        borderRadius: 10,
+        background: T.panel,
+        padding: "48px 24px",
+        textAlign: "center",
+      }}
+    >
+      <div style={{ color: T.error }}>
+        this session couldn&apos;t be rendered — {message}
+      </div>
+      <div style={{ marginTop: 8 }}>
+        {src ? (
+          <>
+            the raw JSON is still valid — only this viewer build choked on it
+            {" · "}
+            <a href={src} style={{ color: T.ink }}>
+              raw JSON
+            </a>
+          </>
+        ) : (
+          /* No URL to point at (e.g. the run was inlined into the page) —
+             don't promise an escape hatch this card can't render. */
+          <>the document itself is intact — only this viewer build choked on it</>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Per-span fallback — replaces one span's detail, never the tree. */
+function SpanFallback({ message }: { message: string }) {
+  return (
+    <div
+      style={{
+        border: `1px dashed ${T.line}`,
+        borderRadius: 6,
+        padding: "10px 12px",
+        fontFamily: T.mono,
+        fontSize: 12,
+        color: T.faint,
+      }}
+    >
+      <span style={{ color: T.error }}>this span couldn&apos;t be rendered</span>
+      {" — "}
+      {message} · the raw view still works
+    </div>
+  );
 }
 
 /* ---------------------------------------------------------------- atoms */
@@ -249,23 +335,76 @@ function BlobRefNote({ label, hash }: { label: string; hash: string }) {
   );
 }
 
+/** Past either bound, text mounts clamped behind an expander — one huge
+ *  tool result must not swamp the page (or the DOM) it lands on. */
+const CLAMP_LINES = 20;
+const CLAMP_CHARS = 4 * 1024;
+
+function ClampedText({
+  text,
+  render,
+}: {
+  text: string;
+  render: (visible: string) => React.ReactNode;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const lines = text.split("\n").length;
+  if (lines <= CLAMP_LINES && text.length <= CLAMP_CHARS) {
+    return <>{render(text)}</>;
+  }
+  const clipped =
+    text.slice(0, CLAMP_CHARS).split("\n").slice(0, CLAMP_LINES).join("\n") +
+    "\n…";
+  const kb = `${(text.length / 1024).toFixed(1)} KB`;
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      {render(showAll ? text : clipped)}
+      <button
+        onClick={() => setShowAll((v) => !v)}
+        style={{
+          justifySelf: "start",
+          border: `1px solid ${T.line}`,
+          background: T.panel,
+          borderRadius: 6,
+          padding: "4px 9px",
+          fontFamily: T.mono,
+          fontSize: 11,
+          cursor: "pointer",
+          color: T.faint,
+        }}
+      >
+        {showAll
+          ? "collapse"
+          : lines > 1
+            ? `show all ${fmtInt(lines)} lines (${kb})`
+            : `show all ${kb}`}
+      </button>
+    </div>
+  );
+}
+
 function JsonBlock({ value, tall = false }: { value: unknown; tall?: boolean }) {
   return (
-    <pre
-      style={{
-        fontFamily: T.mono,
-        fontSize: 12,
-        lineHeight: 1.55,
-        background: T.soft,
-        borderRadius: 6,
-        padding: "10px 12px",
-        overflow: "auto",
-        maxHeight: tall ? 560 : 280,
-        whiteSpace: "pre",
-      }}
-    >
-      {stringify(value)}
-    </pre>
+    <ClampedText
+      text={stringify(value)}
+      render={(visible) => (
+        <pre
+          style={{
+            fontFamily: T.mono,
+            fontSize: 12,
+            lineHeight: 1.55,
+            background: T.soft,
+            borderRadius: 6,
+            padding: "10px 12px",
+            overflow: "auto",
+            maxHeight: tall ? 560 : 280,
+            whiteSpace: "pre",
+          }}
+        >
+          {visible}
+        </pre>
+      )}
+    />
   );
 }
 
@@ -275,9 +414,16 @@ function PartView({ part }: { part: ContentPart }) {
   switch (part.type) {
     case "text":
       return (
-        <div style={{ fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-          {part.text}
-        </div>
+        <ClampedText
+          text={part.text}
+          render={(visible) => (
+            <div
+              style={{ fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap" }}
+            >
+              {visible}
+            </div>
+          )}
+        />
       );
     case "thinking":
       return (
@@ -294,21 +440,26 @@ function PartView({ part }: { part: ContentPart }) {
           >
             thinking
           </summary>
-          <div
-            style={{
-              fontFamily: T.serif,
-              fontStyle: "italic",
-              fontSize: 13.5,
-              lineHeight: 1.6,
-              color: T.faint,
-              whiteSpace: "pre-wrap",
-              borderLeft: `2px solid ${T.line}`,
-              padding: "4px 0 4px 12px",
-              margin: "8px 0 0",
-            }}
-          >
-            {part.text}
-          </div>
+          <ClampedText
+            text={part.text}
+            render={(visible) => (
+              <div
+                style={{
+                  fontFamily: T.serif,
+                  fontStyle: "italic",
+                  fontSize: 13.5,
+                  lineHeight: 1.6,
+                  color: T.faint,
+                  whiteSpace: "pre-wrap",
+                  borderLeft: `2px solid ${T.line}`,
+                  padding: "4px 0 4px 12px",
+                  margin: "8px 0 0",
+                }}
+              >
+                {visible}
+              </div>
+            )}
+          />
         </details>
       );
     case "tool_call":
@@ -844,6 +995,8 @@ function TreeRow({
  *         sessions so the run's bytes travel once, gzipped, instead of
  *         being serialized into both the SSR markup and the hydration
  *         payload (an 11.8MB run made a 17.6MB page that way).
+ * Passing both is meaningful: `run` wins for rendering (no fetch happens),
+ * and `src` gives the crash fallback a raw-JSON link worth showing.
  */
 export function RunViewer({ run, src }: { run?: Run; src?: string }) {
   const [fetched, setFetched] = useState<Run | null>(null);
@@ -905,7 +1058,13 @@ export function RunViewer({ run, src }: { run?: Run; src?: string }) {
       </div>
     );
   }
-  return <LoadedViewer run={resolved} />;
+  return (
+    <Boundary
+      fallback={(message) => <ViewerFallback message={message} src={src} />}
+    >
+      <LoadedViewer run={resolved} />
+    </Boundary>
+  );
 }
 
 /** Every visible tree row is exactly this tall — the invariant the
@@ -1312,7 +1471,7 @@ function LoadedViewer({ run }: { run: Run }) {
                 <span
                   style={{ fontFamily: T.mono, fontSize: 11, color: T.faint }}
                 >
-                  {selected.type}
+                  {String(selected.type)}
                 </span>
                 {Number.isFinite(spanDur(selected)) && (
                   <span
@@ -1340,7 +1499,7 @@ function LoadedViewer({ run }: { run: Run }) {
                       padding: "2px 8px",
                     }}
                   >
-                    {selected.fidelity}
+                    {String(selected.fidelity)}
                   </span>
                 )}
                 <span style={{ flex: 1 }} />
@@ -1410,14 +1569,25 @@ function LoadedViewer({ run }: { run: Run }) {
                   }}
                 >
                   {selected.error.type ? `${selected.error.type}: ` : ""}
-                  {selected.error.message}
+                  {String(selected.error.message ?? "")}
                 </div>
               )}
 
               {raw ? (
-                <JsonBlock value={selected} tall />
+                /* Keyed like the Boundary below: without the key, this
+                   JsonBlock reconciles in place across selections and the
+                   clamp expander's showAll state leaks — span B would mount
+                   with span A's expansion. */
+                <JsonBlock key={sel ?? ""} value={selected} tall />
               ) : (
-                <>
+                /* Keyed by span: a new selection resets both a caught error
+                   and any expander state left inside the old detail. The raw
+                   toggle lives in the header above, so it stays usable when
+                   this subtree falls back. */
+                <Boundary
+                  key={sel ?? ""}
+                  fallback={(message) => <SpanFallback message={message} />}
+                >
                   <SpanDetail span={selected} />
                   {selected.metadata && Object.keys(selected.metadata).length > 0 && (
                     <>
@@ -1425,7 +1595,7 @@ function LoadedViewer({ run }: { run: Run }) {
                       <JsonBlock value={selected.metadata} />
                     </>
                   )}
-                </>
+                </Boundary>
               )}
             </>
           ) : (

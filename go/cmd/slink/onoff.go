@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -15,14 +14,11 @@ import (
 	"golang.org/x/term"
 )
 
+// tapReachable is true only for a real slink tap — any other HTTP server
+// squatting the port must not be handed LLM traffic.
 func tapReachable(port int) bool {
-	client := &http.Client{Timeout: 500 * time.Millisecond}
-	res, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
-	if err != nil {
-		return false
-	}
-	res.Body.Close()
-	return res.StatusCode == 200
+	_, ok := tapInfo(port)
+	return ok
 }
 
 // startTapDaemon starts the tap detached so it outlives this invocation
@@ -89,12 +85,17 @@ func tapShaped(env string) bool {
 // tap isn't actually up, and never claim capture is on unless it can be.
 func runOn(args []string) {
 	fs := flag.NewFlagSet("on", flag.ExitOnError)
-	port := fs.Int("port", 4141, "tap port")
+	port := fs.Int("port", 0, "tap port (default: the running tap's, else 4141)")
 	noStart := fs.Bool("no-start", false, "don't auto-start the tap")
 	setUsage(fs, `eval "$(slink on)"  [flags]`,
 		"Route this shell's Anthropic/OpenAI traffic through the always-on tap.\n  Prints export lines — they only take effect inside eval \"$(...)\".",
 		`eval "$(slink on)"`)
 	parseReordered(fs, args)
+	if *port == 0 {
+		if *port = persistedTapPort(); *port == 0 {
+			*port = 4141
+		}
+	}
 
 	prevAnthropic := customUpstream("ANTHROPIC_BASE_URL")
 	prevOpenAI := customUpstream("OPENAI_BASE_URL")
@@ -183,10 +184,10 @@ func runOn(args []string) {
 		// Printed to a terminal, not eval'd — the exports above changed nothing.
 		fmt.Fprintln(os.Stderr, `# nothing changed yet — run: eval "$(slink on)"`)
 	case len(skipped) > 0:
-		fmt.Fprintf(os.Stderr, "# capture is on for %s calls in this shell (%s left untouched) — review: slink open · publish: slink push\n",
+		fmt.Fprintf(os.Stderr, "# capture is on for %s calls in this shell (%s left untouched) — review: slink view · publish: slink share\n",
 			strings.Join(routed, "+"), strings.Join(skipped, "+"))
 	default:
-		fmt.Fprintln(os.Stderr, "# capture is on for this shell — review: slink open · publish: slink push")
+		fmt.Fprintln(os.Stderr, "# capture is on for this shell — review: slink view · publish: slink share")
 	}
 }
 
