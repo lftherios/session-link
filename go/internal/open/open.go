@@ -9,6 +9,7 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"net"
@@ -16,7 +17,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/lftherios/session-link/internal/cli"
 	"github.com/lftherios/session-link/internal/spool"
@@ -54,6 +57,11 @@ const css = `
   .card:hover .t{color:var(--signal)}
   .card .t{font-family:var(--serif);font-size:18px;margin-bottom:3px}
   .card .m{font-family:var(--mono);font-size:12px;color:var(--faint)}
+  .card.dead{border-style:dashed;color:var(--faint);cursor:default}
+  .card.dead .t{color:var(--faint)}
+  .card.dead:hover{border-color:var(--line);box-shadow:none;transform:none}
+  .card.dead:hover .t{color:var(--faint)}
+  .hid{font-family:var(--mono);font-size:.72em}
   dialog{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;
     padding:20px 22px;max-width:460px;width:calc(100% - 48px)}
   dialog::backdrop{background:rgba(23,32,28,.35)}
@@ -80,21 +88,34 @@ type Server struct {
 
 func (s *Server) indexPage() string {
 	captures := cli.ListCaptures(s.CaptureDir)
+	listed := map[string]bool{}
 	var cards strings.Builder
 	for _, c := range captures {
+		listed[filepath.Base(c.File)] = true
 		id := strings.TrimSuffix(filepath.Base(c.File), ".json")
 		name := c.Name
 		if name == "" {
 			name = id
 		}
-		rec := ""
+		meta := []string{nSpans(c.Spans)}
+		if len(c.Models) > 0 {
+			meta = append(meta, html.EscapeString(strings.Join(c.Models, ", ")))
+		}
+		if c.CreatedAt != "" {
+			meta = append(meta, agoSpan(c.CreatedAt))
+		}
 		if c.InProgress {
-			rec = " · recording"
+			meta = append(meta, "recording")
 		}
 		fmt.Fprintf(&cards, `<a class="card" href="/r/%s"><div class="t">%s</div>
-        <div class="m">%d spans · %s · %s%s</div></a>`,
-			id, html.EscapeString(name), c.Spans,
-			html.EscapeString(strings.Join(c.Models, ", ")), html.EscapeString(c.CreatedAt), rec)
+        <div class="m">%s</div></a>`,
+			id, html.EscapeString(name), strings.Join(meta, " · "))
+	}
+	// Files the listing had to skip still exist — grey them out rather than
+	// let a local file silently vanish from its own index.
+	for _, d := range skippedCaptures(s.CaptureDir, listed) {
+		fmt.Fprintf(&cards, `<div class="card dead"><div class="t">%s</div>
+        <div class="m">%s</div></div>`, html.EscapeString(d.id), d.meta)
 	}
 	body := cards.String()
 	if body == "" {
@@ -106,16 +127,108 @@ func (s *Server) indexPage() string {
      `+body)
 }
 
+// deadCard is an index row for a capture the shell cannot render: no link,
+// just the id and why.
+type deadCard struct {
+	id   string
+	meta string // pre-rendered HTML
+}
+
+// skippedCaptures is every .json in the capture dir that the listing had to
+// skip — unreadable, invalid JSON, or not a session document.
+func skippedCaptures(dir string, listed map[string]bool) []deadCard {
+	entries, _ := os.ReadDir(dir)
+	var out []deadCard
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".json") || listed[name] {
+			continue
+		}
+		note := "can't render — invalid JSON"
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			note = "can't render — unreadable file"
+		} else if json.Valid(raw) {
+			note = "can't render — not a session document"
+		}
+		meta := html.EscapeString(note)
+		if info, ierr := e.Info(); ierr == nil {
+			meta += " · " + agoSpan(info.ModTime().Format(time.RFC3339))
+		}
+		out = append(out, deadCard{id: strings.TrimSuffix(name, ".json"), meta: meta})
+	}
+	// Filenames embed the timestamp, so name order is time order (newest first).
+	sort.Slice(out, func(i, j int) bool { return out[i].id > out[j].id })
+	return out
+}
+
+// agoSpan renders a timestamp the way a human scans a card — "2h ago" —
+// with the exact moment held in the title attribute for hover.
+func agoSpan(iso string) string {
+	t, err := time.Parse(time.RFC3339, iso)
+	if err != nil {
+		return html.EscapeString(iso) // unparseable: show what's there
+	}
+	return `<span title="` + html.EscapeString(iso) + `">` + age(t, time.Now()) + `</span>`
+}
+
+// age words how long ago t was: "just now" through "3w ago", then the
+// plain date once relative stops meaning anything.
+func age(t, now time.Time) string {
+	d := now.Sub(t)
+	switch {
+	case d < -time.Minute:
+		return t.Format("2006-01-02") // future stamp: relative would lie
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 7*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours())/24)
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf("%dw ago", int(d.Hours())/(24*7))
+	default:
+		return t.Format("2 Jan 2006")
+	}
+}
+
+func nSpans(n int) string {
+	if n == 1 {
+		return "1 span"
+	}
+	return fmt.Sprintf("%d spans", n)
+}
+
+// displayPath abbreviates the home directory to ~ where a human reads a
+// path — the same convention as the CLI's terminal output.
+func displayPath(p string) string {
+	if h, err := os.UserHomeDir(); err == nil && strings.HasPrefix(p, h+string(os.PathSeparator)) {
+		return "~" + p[len(h):]
+	}
+	return p
+}
+
+// errNotJSON marks a capture that exists on disk but won't parse — the
+// shell renders it as a styled error page, never a raw Go error.
+var errNotJSON = errors.New("capture is not valid JSON")
+
 func (s *Server) runPage(id string) (string, error) {
 	file := filepath.Join(s.CaptureDir, id+".json")
 	spool.Assemble(file, spool.AssembleOptions{}) // live session: fresh snapshot
 	raw, err := os.ReadFile(file)
 	if err != nil {
-		return "", err
+		return "", err // os.ErrNotExist → the styled 404
 	}
 	var run map[string]any
 	if err := json.Unmarshal(raw, &run); err != nil {
-		return "", err
+		return "", errNotJSON
+	}
+	// The index greys non-session JSON as unrenderable — the direct URL
+	// must agree, not serve a half-broken viewer over it.
+	if sch, _ := run["schema"].(string); sch != "session/v0" && sch != "run/v0" {
+		return "", errNotJSON
 	}
 	name, _ := run["name"].(string)
 	if name == "" {
@@ -135,7 +248,8 @@ func (s *Server) runPage(id string) (string, error) {
 	// <-escaping keeps attacker-controlled trace text inert inside the tag.
 	runJSON := strings.ReplaceAll(string(mustCompact(raw)), "<", `\u003c`)
 	// json.Marshal escapes < > & by default, so this is script-safe as-is.
-	pubJSON, _ := json.Marshal(map[string]any{"hasKey": s.APIKey != "", "file": absFile})
+	// The file path is only ever read by a human in error text — abbreviated.
+	pubJSON, _ := json.Marshal(map[string]any{"hasKey": s.APIKey != "", "file": displayPath(absFile)})
 	keyNote, btnLabel := "", "Publish"
 	if s.APIKey == "" {
 		keyNote = " · no API key (slink login)"
@@ -145,6 +259,8 @@ func (s *Server) runPage(id string) (string, error) {
 		`<div class="top">
        <p class="eyebrow" style="margin:0"><a href="/">← captures</a> · local preview</p>
        <div class="pub">
+         <button class="btn" id="copy" title="copy the page URL, span selection included">copy link</button>
+         <button class="btn" id="dl" title="save the run document as `+id+`.json">download JSON</button>
          <span class="note">unlisted → `+html.EscapeString(s.Target)+keyNote+`</span>
          <button class="btn primary" id="pub">`+btnLabel+`</button>
        </div>
@@ -215,6 +331,18 @@ func (s *Server) runPage(id string) (string, error) {
            }
          };
        }
+       const copy=document.getElementById("copy"),dl=document.getElementById("dl");
+       copy.onclick=async()=>{
+         try{await navigator.clipboard.writeText(location.href);copy.textContent="copied"}
+         catch{copy.textContent="copy failed"}
+         setTimeout(()=>{copy.textContent="copy link"},1200);
+       };
+       dl.onclick=()=>{
+         const u=URL.createObjectURL(new Blob([JSON.stringify(window.__RUN__)],{type:"application/json"}));
+         const a=document.createElement("a");
+         a.href=u;a.download="`+id+`.json";a.click();
+         setTimeout(()=>URL.revokeObjectURL(u),1000);
+       };
      </script>`), nil
 }
 
@@ -236,6 +364,34 @@ func mustCompact(raw []byte) []byte {
 		return raw
 	}
 	return buf.Bytes()
+}
+
+// errorShell is the one chrome every error page shares: the way back up
+// top, a serif headline, mono detail lines below — same style as the rest
+// of the shell.
+func errorShell(title, headlineHTML, detailHTML string) string {
+	return page(title,
+		`<p class="eyebrow" style="margin:0 0 18px"><a href="/">← captures</a> · local preview</p>
+     <h1 style="font-family:var(--serif);font-weight:500">`+headlineHTML+`</h1>
+     `+detailHTML)
+}
+
+// missingPage is the styled 404 for /r/<id> nobody has.
+func (s *Server) missingPage(id string) string {
+	return errorShell("no session "+id+" here",
+		`no session <span class="hid">`+html.EscapeString(id)+`</span> here`,
+		`<p class="note">nothing by that id in `+html.EscapeString(displayPath(s.CaptureDir))+`</p>
+     <p class="note"><a href="/">back to the captures index</a></p>`)
+}
+
+// brokenPage is the styled 500 for a capture that exists but won't render.
+func (s *Server) brokenPage(id, why string) string {
+	file := filepath.Join(s.CaptureDir, id+".json")
+	return errorShell("session "+id+" can't render",
+		`session <span class="hid">`+html.EscapeString(id)+`</span> can't render`,
+		`<p class="note">`+html.EscapeString(why)+`</p>
+     <div class="kv"><span class="k">file</span><span class="v">`+html.EscapeString(displayPath(file))+`</span></div>
+     <p class="note"><a href="/">back to the captures index</a></p>`)
 }
 
 type publishResult struct {
@@ -262,7 +418,7 @@ func (s *Server) publish(id string) publishResult {
 		return publishResult{422, map[string]any{"error": map[string]any{
 			"code":    "secrets_detected",
 			"message": "publish blocked — credentials detected; redact the local file first",
-			"path":    abs,
+			"path":    displayPath(abs), // read by a human in the page's error text
 			"details": ins.Secrets,
 		}}}
 	}
@@ -299,11 +455,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		send(200, "text/javascript", string(viewerJS))
 	case m != nil && m[1] == "r" && id != "" && r.Method == http.MethodGet:
 		body, err := s.runPage(id)
-		if err != nil {
-			send(500, "text/plain", err.Error())
-			return
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			send(404, "text/html", s.missingPage(id))
+		case errors.Is(err, errNotJSON):
+			send(500, "text/html", s.brokenPage(id, "the file on disk is not valid JSON"))
+		case err != nil:
+			send(500, "text/html", s.brokenPage(id, "the file on disk could not be read"))
+		default:
+			send(200, "text/html", body)
 		}
-		send(200, "text/html", body)
 	case m != nil && m[1] == "api/publish" && id != "" && r.Method == http.MethodPost:
 		// CSRF guard: the custom header forces a CORS preflight (never
 		// answered), and the Origin must be this server.
@@ -317,7 +478,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b, _ := json.Marshal(out.Body)
 		send(out.Status, "application/json", string(b))
 	default:
-		send(404, "text/plain", "not found")
+		send(404, "text/html", errorShell("no such page",
+			`no such page`,
+			`<p class="note">everything here starts at <a href="/">the captures index</a></p>`))
 	}
 }
 
