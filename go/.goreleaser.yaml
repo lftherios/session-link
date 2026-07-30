@@ -86,9 +86,14 @@ release:
   github:
     owner: lftherios
     name: session-link
-  # Drafts by default so a tag never auto-publishes a release before the
-  # maintainer reviews it — belt-and-suspenders with the workflow gate.
-  draft: true
+  # Publish immediately. draft:true looked like a review gate but wasn't
+  # one: the cask push and the npm channel run in the same workflow either
+  # way, so v0.5.0's tap pointed at draft-only asset URLs (public 404) for
+  # the whole review window — brew install was broken until the draft was
+  # published by hand. The deliberate act is the gated tag push
+  # (GO_RELEASE_ENABLED + a hand-pushed v* tag); review happens before
+  # tagging, in git.
+  draft: false
   name_template: "v{{ .Version }}"
 
 # The npm platform packages are intentionally NOT produced here — the
