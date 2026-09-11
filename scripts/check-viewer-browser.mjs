@@ -56,6 +56,10 @@ try {
   assert.equal(await evaluate("document.querySelectorAll('.sv-primary').length"), 1);
   assert.equal(await evaluate("getComputedStyle(document.querySelector('.sv-block-tools')).opacity"), "0");
   assert.ok(await evaluate("document.querySelector('.sv-toolbar').getBoundingClientRect().height<50"));
+  await evaluate("document.querySelector('.sv-position').click()"); await waitFor("!!document.querySelector('#sv-outline [aria-current=true]')");
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await waitFor("!document.querySelector('#sv-outline') && document.activeElement.classList.contains('sv-position')");
+  await evaluate("document.activeElement.blur()");
   assert.ok(await evaluate("document.querySelector('.sv-search').getBoundingClientRect().bottom<innerHeight/2"));
   assert.equal(await evaluate("!!document.querySelector('.sv-selection-bar')"), false);
   assert.equal(await evaluate("document.querySelectorAll('.sv-support').length"), 1);
@@ -108,8 +112,18 @@ try {
   assert.match(await evaluate("document.querySelector('.sv-linked').textContent"), /source-check-42/);
   console.log("PASS: view search stays scoped; session search reaches earlier answers; view search reveals collapsed activity");
 
-  await clickText("Show full conversation"); await waitFor("!!document.querySelector('.sv-conversation-card')");
-  await evaluate("document.querySelector('.sv-conversation-card .sv-label button').click()");
+  await clickText("Full session"); await waitFor("!!document.querySelector('.sv-conversation-card')");
+  assert.ok(await evaluate("document.querySelectorAll('.sv-conversation-card').length>=8 && ![...document.querySelectorAll('button')].some(b=>/^Show (earlier|later)/.test(b.textContent))"), "the full session renders every exchange");
+  const shown = await evaluate("parseInt(document.querySelector('.sv-position strong').textContent)");
+  const step = shown > 1 ? "Previous" : "Next", target = shown > 1 ? shown - 1 : shown + 1;
+  await evaluate(`document.querySelector('[aria-label="${step} in conversation"]').click()`);
+  await waitFor(`document.querySelector('.sv-position strong').textContent==='${target}' && !!document.querySelector('.sv-conversation-card') && document.querySelector('[aria-label="Reading layout"] [aria-pressed="true"]').textContent==='Full session'`);
+  assert.equal(await evaluate("[...document.querySelectorAll('.sv-conversation-card button')].some(b=>b.textContent.trim()==='Focus') || !!document.querySelector('.sv-conversation-card > .sv-label button')"), false, "cards carry no Focus buttons");
+  await clickText("Raw data"); await waitFor("!!document.querySelector('.sv-raw-dialog[open]')");
+  assert.equal(await evaluate("JSON.parse(document.querySelector('.sv-raw').textContent).spans.length===window.__RUN__.spans.length"), true);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await waitFor("!document.querySelector('.sv-raw-dialog') && document.activeElement.classList.contains('sv-raw-button')");
+  await clickText("Focused");
   await waitFor("!document.querySelector('.sv-conversation-card')");
   await navigate(url + "#span=s8"); await waitFor("!!document.querySelector('.sv-response-body table')");
   await evaluate("history.replaceState(null,'',location.pathname);window.scrollTo(0,450)");

@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Search, ChevronDown, ArrowLeft, ArrowRight, Check, Plus, Share2, MoreHorizontal, Pencil } from "lucide-react";
+import { Search, ChevronDown, ChevronLeft, ChevronRight, ArrowLeft, Check, Plus, Share2, MoreHorizontal, Pencil, FileJson } from "lucide-react";
 import { ViewDialog } from "./ViewDialog";
 import type { ViewDraft } from "./view-draft";
 import type { ContentPart, Run, Span } from "@session-link/format";
-import { buildFlow, defaultExchange, exchangesFor, messageText, promptLabel, promptText, readerFlow, readingKey, readingRole, reasoningUnavailable, responseFor, selectionPrefixes, sessionLabel, sessionTitle, shortText, type Exchange, type MessageBlock } from "./session-model";
+import { buildFlow, defaultExchange, exchangesFor, messageText, previewText, promptLabel, promptText, readerFlow, readingKey, readingRole, reasoningUnavailable, responseFor, selectionPrefixes, sessionLabel, sessionTitle, shortText, type Exchange, type MessageBlock } from "./session-model";
 
 export type LocalViewer = { source: string; project?: string; title?: string };
 type Props = { run: Run; local?: LocalViewer; renderPart: (part: ContentPart, full?: boolean) => ReactNode; renderSpan: (span: Span) => ReactNode; renderTree: () => ReactNode; details: ReactNode };
@@ -21,7 +21,15 @@ const CSS = `
 .sv input,.sv textarea{border:1px solid var(--rv-line);border-radius:6px;background:var(--rv-panel);color:var(--rv-ink);padding:10px 12px;min-width:0}.sv .sv-title-input{display:block;width:100%;font:500 30px/1.2 "Iowan Old Style",Palatino,Georgia,serif;letter-spacing:-.025em;padding:0 0 2px;border:0;border-bottom:2px solid var(--rv-signal);border-radius:0;background:transparent;outline:none}.sv .sv-title-input:focus-visible{outline:none}.sv .sv-title-input::placeholder{color:var(--rv-faint);opacity:.6}
 .sv .sv-controls{max-width:860px;margin:0 auto 30px;scroll-margin-top:20px}.sv .sv-search{display:flex;align-items:center;gap:12px;padding:9px 10px 9px 17px;border:1px solid var(--rv-line);border-radius:12px;background:var(--rv-panel);box-shadow:0 3px 12px #00000005;color:var(--rv-faint)}
 .sv .sv-search:focus-within{border-color:var(--rv-signal);box-shadow:0 0 0 2px color-mix(in srgb,var(--rv-signal) 12%,transparent)}.sv .sv-search>svg{flex:none}.sv .sv-search input{flex:1;width:100%;border:0;padding:7px 0;background:transparent;font-size:15px;outline:none}.sv .sv-search-scope{display:flex;gap:2px;background:var(--rv-soft);padding:3px;border-radius:7px;flex:none}.sv .sv-search-scope button{border-color:transparent;background:transparent;font-size:11px;padding:6px 9px;color:var(--rv-faint);white-space:nowrap}.sv .sv-search-scope button[aria-pressed=true]{background:var(--rv-panel);color:var(--rv-ink);box-shadow:0 1px 3px #0001}
-.sv .sv-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0 0}.sv .sv-nav-buttons{display:flex;align-items:center;gap:3px;min-width:0}.sv .sv-position{font-size:11px!important;gap:8px!important}
+.sv .sv-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 0 0}.sv .sv-nav{position:relative;min-width:0}
+.sv .sv-pager,.sv .sv-layout{display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:10px}.sv .sv-pager{border:1px solid var(--rv-line);background:var(--rv-panel);box-shadow:0 1px 2px #0000000a}.sv .sv-layout{border:1px solid transparent;background:var(--rv-soft)}
+.sv .sv-pager button,.sv .sv-layout button{height:28px;border:0;border-radius:7px;background:transparent;font-size:12px;white-space:nowrap}.sv .sv-pager button:focus-visible,.sv .sv-layout button:focus-visible{outline-offset:1px}
+.sv .sv-pager .sv-step{width:28px;padding:0;color:var(--rv-faint)}.sv .sv-pager .sv-step:hover:not(:disabled){color:var(--rv-ink)}.sv .sv-pager .sv-step:disabled{opacity:.35}
+.sv .sv-position{gap:0!important;padding:0 8px 0 11px!important;color:var(--rv-ink);font-variant-numeric:tabular-nums}.sv .sv-position strong{font-weight:600}.sv .sv-position .sv-of{margin-left:4px;color:var(--rv-faint)}.sv .sv-position .sv-agent{max-width:9em;overflow:hidden;text-overflow:ellipsis;margin-right:6px;color:var(--rv-signal)}.sv .sv-caret{margin-left:6px;color:var(--rv-faint);transition:transform .15s}.sv .sv-position[aria-expanded=true]{background:var(--rv-soft)}.sv .sv-position[aria-expanded=true] .sv-caret{transform:rotate(180deg)}
+.sv .sv-toolbar-end{display:flex;align-items:center;gap:8px;margin-left:auto}.sv .sv-toolbar .sv-raw-button{height:36px;padding:0 12px;border-radius:10px;color:var(--rv-faint);box-shadow:0 1px 2px #0000000a}.sv .sv-toolbar .sv-raw-button:hover:not(:disabled){background:var(--rv-panel);color:var(--rv-ink)}
+.sv .sv-dialog.sv-raw-dialog{width:min(1100px,calc(100% - 32px));max-width:1100px;overflow:hidden}.sv .sv-raw-dialog[open]{display:flex;flex-direction:column}.sv .sv-raw-dialog .sv-dialog-head h2 .sv-meta{margin-left:10px;vertical-align:middle}
+.sv .sv-dialog pre.sv-raw{flex:1;min-height:0;margin:0;overflow:auto;white-space:pre;overflow-wrap:normal;padding:14px 16px;border-radius:8px;background:var(--rv-soft);font:12px/1.55 ui-monospace,monospace;tab-size:2}
+.sv .sv-layout button{padding:0 12px;color:var(--rv-faint)}.sv .sv-layout button:hover:not(:disabled){background:transparent;color:var(--rv-ink)}.sv .sv-layout button[aria-pressed=true],.sv .sv-layout button[aria-pressed=true]:hover{background:var(--rv-panel);color:var(--rv-ink);box-shadow:0 1px 3px #0000001f}
 .sv .sv-reading{max-width:780px;margin:0 auto;min-width:0}.sv .sv-prompt{padding:18px 22px;border-left:3px solid var(--rv-line);background:var(--rv-soft);border-radius:0 8px 8px 0;margin-bottom:32px;overflow-wrap:anywhere}
 .sv .sv-label{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;font:11px ui-monospace,monospace;color:var(--rv-faint);letter-spacing:.08em;text-transform:uppercase}
 .sv .sv-response{overflow-wrap:anywhere}.sv .sv-response-body{font-size:15px;line-height:1.75}
@@ -41,9 +49,13 @@ const CSS = `
 .sv .sv-included-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0}.sv .sv-included-item{border:1px solid var(--rv-line);border-radius:9px;margin:8px 0}.sv .sv-included-item>summary{padding:12px 14px;list-style:none}.sv .sv-included-item>summary::-webkit-details-marker{display:none}.sv .sv-included-item>summary>span{display:block}.sv .sv-included-item>summary>span:last-child{color:var(--rv-ink);font-size:13px;margin-top:5px}.sv .sv-included-item>summary:after{content:'Expand';font-size:10px;display:block;margin-top:5px}.sv .sv-included-item[open]>summary:after{content:'Collapse'}.sv .sv-included-body{border-top:1px solid var(--rv-line);padding:16px}
 .sv .sv-item-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px}.sv .sv-passage{width:100%;min-height:180px;max-height:400px;font:12px/1.6 ui-monospace,monospace;resize:vertical}.sv .sv-reference-options{margin:16px 0}.sv .sv-reference-options label{display:flex;gap:10px;align-items:flex-start;font-size:12px;margin-top:10px;overflow-wrap:anywhere}.sv .sv-share-footer{border-top:1px solid var(--rv-line);padding-top:12px;margin-top:20px}.sv .sv-share-footer .sv-item-actions{justify-content:flex-end}
 .sv .sv-saved-notice{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--rv-soft);padding:14px;border-radius:8px;margin-top:16px;font-size:12px}.sv .sv-saved-notice a,.sv .sv-saved-views a{color:var(--rv-signal)}.sv .sv-saved-views{margin-top:20px}.sv .sv-saved-views a{display:block;padding:8px 0;font-size:13px;overflow-wrap:anywhere}
+.sv .sv-outline.sv-nav-outline{position:absolute;top:calc(100% + 8px);left:0;z-index:7;width:min(600px,calc(100vw - 32px));margin:0;padding:6px;border-radius:12px;box-shadow:0 14px 36px #00000024,0 2px 6px #0000000f}.sv .sv-nav-outline .sv-outline-list{max-height:min(420px,60vh);gap:2px}
+.sv .sv-nav-outline .sv-outline-list>button{display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:10px;align-items:baseline;padding:9px 12px;border-radius:8px}.sv .sv-outline-n{font:11px ui-monospace,monospace;color:var(--rv-faint);text-align:right;font-variant-numeric:tabular-nums}.sv .sv-outline-text{min-width:0}
+.sv .sv-outline-prompt{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--rv-ink);font-size:13px;line-height:1.45}.sv .sv-outline.sv-nav-outline .sv-preview{margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--rv-faint)}
+.sv .sv-outline.sv-nav-outline button[aria-current=true]{background:var(--rv-soft);box-shadow:inset 3px 0 0 var(--rv-signal)}.sv .sv-nav-outline button[aria-current=true] .sv-outline-n{color:var(--rv-signal);font-weight:600}
 @media(hover:none){.sv .sv-block-tools{opacity:1;pointer-events:auto}.sv .sv-block-tools button{padding:6px 9px}.sv .sv-block-menu>summary{padding:6px}}
 @media(prefers-reduced-motion:reduce){.sv .sv-block-tools{transition:none}}
-@media(max-width:600px){.sv .sv-header{gap:8px;flex-wrap:wrap;margin-bottom:22px}.sv .sv-heading{flex-basis:100%;order:3}.sv h1,.sv .sv-title-input{font-size:25px}.sv .sv-edit-title{opacity:1}.sv .sv-share{font-size:12px;padding:10px 12px}.sv .sv-search{flex-wrap:wrap;gap:8px;padding:10px 12px}.sv .sv-search input{width:calc(100% - 32px);flex:auto}.sv .sv-search-scope{margin-left:26px}.sv .sv-toolbar{gap:2px}.sv .sv-position{font-size:10px!important;padding:6px 3px!important}.sv .sv-toolbar>button{padding:6px 3px}.sv .sv-nav-buttons{gap:0}.sv .sv-prompt{padding:16px 14px}.sv .sv-conversation-card{padding:16px}.sv .sv-selection-bar{gap:4px;padding:8px;font-size:11px}.sv .sv-selection-bar button{font-size:11px}.sv .sv-dialog{padding:18px;max-height:90vh}.sv .sv-dialog-head,.sv .sv-share-dialog .sv-dialog-head{top:-18px}.sv .sv-dialog-head h2{font-size:22px}.sv .sv-included-heading{flex-wrap:wrap}.sv .sv-label{font-size:10px}}
+@media(max-width:600px){.sv .sv-header{gap:8px;flex-wrap:wrap;margin-bottom:22px}.sv .sv-heading{flex-basis:100%;order:3}.sv h1,.sv .sv-title-input{font-size:25px}.sv .sv-edit-title{opacity:1}.sv .sv-share{font-size:12px;padding:10px 12px}.sv .sv-search{flex-wrap:wrap;gap:8px;padding:10px 12px}.sv .sv-search input{width:calc(100% - 32px);flex:auto}.sv .sv-search-scope{margin-left:26px}.sv .sv-toolbar{gap:8px}.sv .sv-layout button{padding:0 9px}.sv .sv-raw-label{display:none}.sv .sv-toolbar .sv-raw-button{width:36px;padding:0}.sv .sv-position{padding:0 6px 0 9px!important}.sv .sv-prompt{padding:16px 14px}.sv .sv-conversation-card{padding:16px}.sv .sv-selection-bar{gap:4px;padding:8px;font-size:11px}.sv .sv-selection-bar button{font-size:11px}.sv .sv-dialog{padding:18px;max-height:90vh}.sv .sv-dialog-head,.sv .sv-share-dialog .sv-dialog-head{top:-18px}.sv .sv-dialog-head h2{font-size:22px}.sv .sv-included-heading{flex-wrap:wrap}.sv .sv-label{font-size:10px}}
 `;
 
 function Inspector({ span, renderSpan, close }: { span: Span; renderSpan: Props["renderSpan"]; close: () => void }) {
@@ -52,6 +64,22 @@ function Inspector({ span, renderSpan, close }: { span: Span; renderSpan: Props[
   return <dialog className="sv-dialog" ref={ref} onCancel={e => { e.preventDefault(); close(); }} aria-label="Inspect recorded step">
     <div className="sv-dialog-head"><strong>{span.name ?? span.type}</strong><button onClick={() => setRaw(v => !v)}>{raw ? "Formatted" : "Raw data"}</button><button onClick={close}>Close inspection</button></div>
     {raw ? <pre>{JSON.stringify(span, null, 2)}</pre> : renderSpan(span)}
+  </dialog>;
+}
+
+// The whole session document as JSON, opened from the full session.
+function SessionData({ run, close }: { run: Run; close: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null), [copied, setCopied] = useState("");
+  const text = useMemo(() => JSON.stringify(run, null, 2), [run]);
+  const bytes = useMemo(() => new TextEncoder().encode(text).length, [text]);
+  const size = bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  useEffect(() => { ref.current?.showModal(); }, []);
+  const copy = async () => { try { await navigator.clipboard.writeText(text); setCopied("Copied"); } catch { setCopied("Could not copy"); } };
+  // Close the modal first; the page behind it can't take focus while it's open.
+  const done = () => { ref.current?.close(); close(); };
+  return <dialog className="sv-dialog sv-raw-dialog" ref={ref} onCancel={event => { event.preventDefault(); done(); }} aria-label="Session data">
+    <div className="sv-dialog-head"><h2>Session data<span className="sv-meta">{run.spans.length} recorded spans · {size}</span></h2><button onClick={copy}>{copied || "Copy JSON"}</button><button onClick={done}>Close</button></div>
+    <pre className="sv-raw">{text}</pre>
   </dialog>;
 }
 
@@ -68,12 +96,14 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
   const [reconcile, setReconcile] = useState(false);
   const preparedScope = useRef(""), preparedExplicit = useRef(false), preparations = useRef(new Map<string, ViewDraft>());
   const search = useRef<HTMLInputElement>(null), shareButton = useRef<HTMLButtonElement>(null);
+  const navRef = useRef<HTMLDivElement>(null), positionButton = useRef<HTMLButtonElement>(null);
   const [linked, setLinked] = useState<string | null>(null), [inspect, setInspect] = useState<string | null>(null);
   const [title, setTitle] = useState(local?.title || sessionTitle(run, exchanges)), [editing, setEditing] = useState(false), [titleValue, setTitleValue] = useState(title), [titleStatus, setTitleStatus] = useState(""), [titleError, setTitleError] = useState(false);
   const titleSaving = useRef(false), label = sessionLabel(run);
   const [copy, setCopy] = useState("");
-  const [trace, setTrace] = useState(false);
+  const [trace, setTrace] = useState(false), [rawOpen, setRawOpen] = useState(false);
   const reading = useRef<HTMLDivElement>(null), focusButton = useRef<HTMLElement | null>(null);
+  const jumpTo = useRef<string | null>(null), spyHold = useRef(false);
   const restored = useRef(false), state = useRef({ active, mode }); state.current = { active, mode };
   const storeKey = `slink:reading:${local?.source ?? readingKey(run, exchanges)}`;
   const current = exchanges.find(e => e.id === active) ?? initial;
@@ -125,10 +155,35 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
     return () => { cancelAnimationFrame(frame); window.removeEventListener("scroll", scroll); window.removeEventListener("pagehide", save); };
   }, [storeKey, active, mode]);
 
+  // Entering the full session keeps your place. After that, scrolling moves
+  // the position; the position never pulls the page back.
   useLayoutEffect(() => {
-    if (mode === "conversation") document.getElementById(`exchange-${active}`)?.scrollIntoView({ block: "start" });
-    else if (linked && !searchTarget) document.getElementById(`message-${linked}`)?.scrollIntoView({ block: "center" });
+    if (mode === "conversation") {
+      if (!jumpTo.current) return;
+      spyHold.current = true;
+      document.getElementById(`exchange-${jumpTo.current}`)?.scrollIntoView({ block: "start" });
+      jumpTo.current = null;
+    } else if (linked && !searchTarget) document.getElementById(`message-${linked}`)?.scrollIntoView({ block: "center" });
   }, [mode, linked, active, searchTarget]);
+
+  // In the full session, the position follows the card at the top of the screen.
+  useEffect(() => {
+    if (mode !== "conversation") return;
+    let frame = 0;
+    const spy = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
+      if (spyHold.current) return;
+      const cards = Array.from(document.querySelectorAll<HTMLElement>(".sv-conversation-card"));
+      const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+      const card = atBottom ? cards.at(-1) : cards.find(el => el.getBoundingClientRect().bottom > 96) ?? cards.at(-1);
+      const id = card?.id.slice("exchange-".length);
+      if (id) setActive(previous => previous === id ? previous : id);
+    }); };
+    // A jump holds the position until the reader scrolls by hand.
+    const release = () => { spyHold.current = false; };
+    const inputs = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+    window.addEventListener("scroll", spy, { passive: true }); inputs.forEach(type => window.addEventListener(type, release, { passive: true }));
+    return () => { cancelAnimationFrame(frame); window.removeEventListener("scroll", spy); inputs.forEach(type => window.removeEventListener(type, release)); };
+  }, [mode]);
 
   useLayoutEffect(() => {
     if (!searchTarget) return;
@@ -148,6 +203,16 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
       }
   }, [searchTarget, active, linked]);
 
+  // The outline is a popover: a click elsewhere or Escape closes it.
+  useEffect(() => {
+    if (!outline) return;
+    const away = (event: MouseEvent) => { if (!navRef.current?.contains(event.target as Node)) setOutline(false); };
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") { setOutline(false); positionButton.current?.focus(); } };
+    document.addEventListener("mousedown", away); document.addEventListener("keydown", key);
+    document.querySelector<HTMLElement>("#sv-outline [aria-current=true]")?.scrollIntoView({ block: "nearest" });
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", key); };
+  }, [outline]);
+
   const navigate = (e: Exchange, scroll = true) => {
     setActive(e.id); setMode("exchange"); setLinked(null); setSearchTarget(null); setCopy(""); setOutline(false);
     // Browsing doesn't create a deep link; copied links explicitly do.
@@ -156,6 +221,14 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
   };
   const startTitle = () => { setTitleValue(title); setTitleStatus(""); setTitleError(false); setEditing(true); };
   const cancelTitle = () => { titleSaving.current = false; setEditing(false); setTitleValue(title); };
+  // Move within the current layout: the full session scrolls to the card
+  // instead of switching back to one exchange at a time.
+  const moveTo = (e: Exchange) => {
+    if (mode !== "conversation") { navigate(e); return; }
+    setOutline(false); setActive(e.id);
+    spyHold.current = true;
+    document.getElementById(`exchange-${e.id}`)?.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  };
   const saveTitle = async () => {
     // Enter and blur both land here; the first one wins.
     if (!local || titleSaving.current) return;
@@ -270,22 +343,35 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
         <div className="sv-search-scope" role="group" aria-label="Search scope"><button aria-pressed={searchScope === "view"} onClick={() => { setSearchScope("view"); setSearchOpen(true); setLimit(50); }}>This view</button><button aria-pressed={searchScope === "session"} onClick={() => { setSearchScope("session"); setSearchOpen(true); setLimit(50); }}>Whole session</button></div>
       </div>
       <nav className="sv-toolbar" aria-label="Session navigation">
-        {current && <div className="sv-nav-buttons"><button className="sv-quiet" aria-label="Previous in conversation" disabled={position <= 0} onClick={() => navigate(sequence[position - 1])}><ArrowLeft size={15} /></button><button className="sv-quiet sv-position" aria-expanded={outline} title="Conversation outline" onClick={() => { setOutline(value => !value); setSearchOpen(false); }}>{current.child ? `${current.agent ?? "Agent"} · ` : ""}{position + 1} of {sequence.length}<ChevronDown size={13} /></button><button className="sv-quiet" aria-label="Next in conversation" disabled={position >= sequence.length - 1} onClick={() => navigate(sequence[position + 1])}><ArrowRight size={15} /></button></div>}
-        <button className="sv-quiet" onClick={() => { setMode(value => value === "exchange" ? "conversation" : "exchange"); setOutline(false); }}>{mode === "exchange" ? "Show full conversation" : "Show one at a time"}</button>
+        {current && <div className="sv-nav" ref={navRef}>
+          <div className="sv-pager">
+            <button className="sv-step" aria-label="Previous in conversation" title="Previous" disabled={position <= 0} onClick={() => moveTo(sequence[position - 1])}><ChevronLeft size={16} /></button>
+            <button ref={positionButton} className="sv-position" aria-expanded={outline} aria-controls="sv-outline" title="Conversation outline" onClick={() => { setOutline(value => !value); setSearchOpen(false); }}>{current.child && <><span className="sv-agent">{current.agent ?? "Agent"}</span>{" "}</>}<strong>{position + 1}</strong>{" "}<span className="sv-of">of {sequence.length}</span><ChevronDown size={14} className="sv-caret" aria-hidden="true" /></button>
+            <button className="sv-step" aria-label="Next in conversation" title="Next" disabled={position >= sequence.length - 1} onClick={() => moveTo(sequence[position + 1])}><ChevronRight size={16} /></button>
+          </div>
+          {outline && <section id="sv-outline" className="sv-outline sv-nav-outline" aria-label="Conversation outline"><div className="sv-outline-list">{exchanges.map(exchange => <button key={exchange.id} className={exchange.child ? "sv-child" : undefined} aria-current={exchange.id === active} onClick={() => moveTo(exchange)}><span className="sv-outline-n">{(exchange.child ? exchanges : main).indexOf(exchange) + 1}</span><span className="sv-outline-text"><span className="sv-outline-prompt">{exchange.child ? `${exchange.agent ?? "Agent"} · ` : ""}{previewText(promptLabel(exchange), 120)}</span><span className="sv-preview">{previewText(messageText(responseFor(exchange)?.msg ?? { role: "assistant", content: [] }), 140) || "No response captured"}</span></span></button>)}</div></section>}
+        </div>}
+        <div className="sv-toolbar-end">
+          {mode === "conversation" && <button className="sv-raw-button" aria-label="Raw data" title="Open the whole session as JSON" onClick={event => { focusButton.current = event.currentTarget; setRawOpen(true); }}><FileJson size={14} aria-hidden="true" /><span className="sv-raw-label">Raw data</span></button>}
+          <div className="sv-layout" role="group" aria-label="Reading layout">
+            <button aria-pressed={mode === "exchange"} onClick={() => { setMode("exchange"); setOutline(false); }}>Focused</button>
+            <button aria-pressed={mode === "conversation"} onClick={() => { if (mode !== "conversation") jumpTo.current = active; setMode("conversation"); setOutline(false); }}>Full session</button>
+          </div>
+        </div>
       </nav>
       {!!query.trim() && searchOpen && <section id="sv-search-results" className="sv-outline sv-results" aria-label="Search results" onKeyDown={event => { if (event.key === "Escape") { search.current?.focus(); setSearchOpen(false); } }}>
         <div className="sv-results-head"><span className="sv-meta" role="status">{matches.length} {matches.length === 1 ? "match" : "matches"} · {searchScope === "view" ? "this view" : "whole session"}</span><button className="sv-quiet" onClick={() => setSearchOpen(false)}>Close results</button></div>
-        <div className="sv-outline-list">{matches.slice(0, limit).map(hit => <button key={hit.block?.key ?? `span-${hit.span}`} onClick={() => { if (hit.exchange) { navigate(hit.exchange, false); setLinked(hit.block?.key ?? null); if (hit.block) setSearchTarget({ key: hit.block.key, query: query.trim().toLowerCase() }); } else { focusButton.current = search.current; setInspect(hit.span); } setSearchOpen(false); }}><span className="sv-meta">{hit.block ? hit.block.err ? "Error" : readingRole(hit.block.msg) === "human" ? "Human input" : readingRole(hit.block.msg) === "context" ? "Provided context" : hit.exchange && responseFor(hit.exchange) === hit.block ? "Agent response" : "Agent activity" : "Raw data"}{hit.exchange?.child ? ` · ${hit.exchange.agent ?? "Subagent"}` : ""}</span><span className="sv-preview">{snippet(hit.text)}</span></button>)}
+        <div className="sv-outline-list">{matches.slice(0, limit).map(hit => <button key={hit.block?.key ?? `span-${hit.span}`} onClick={() => { if (hit.exchange) { if (mode === "conversation") { setActive(hit.exchange.id); spyHold.current = true; } else navigate(hit.exchange, false); setLinked(hit.block?.key ?? null); if (hit.block) setSearchTarget({ key: hit.block.key, query: query.trim().toLowerCase() }); } else { focusButton.current = search.current; setInspect(hit.span); } setSearchOpen(false); }}><span className="sv-meta">{hit.block ? hit.block.err ? "Error" : readingRole(hit.block.msg) === "human" ? "Human input" : readingRole(hit.block.msg) === "context" ? "Provided context" : hit.exchange && responseFor(hit.exchange) === hit.block ? "Agent response" : "Agent activity" : "Raw data"}{hit.exchange?.child ? ` · ${hit.exchange.agent ?? "Subagent"}` : ""}</span><span className="sv-preview">{snippet(hit.text)}</span></button>)}
           {!matches.length && <p className="sv-meta">No matches.{searchScope === "view" && <> <button className="sv-quiet" onClick={() => setSearchScope("session")}>Search the whole session</button></>}</p>}{matches.length > limit && <button onClick={() => setLimit(value => value + 50)}>Show more matches</button>}
         </div>
       </section>}
-      {outline && <section className="sv-outline" aria-label="Conversation outline"><div className="sv-outline-list">{exchanges.map(exchange => <button key={exchange.id} className={exchange.child ? "sv-child" : undefined} aria-current={exchange.id === active} onClick={() => navigate(exchange)}>{exchange.child ? `${exchange.agent ?? "Agent"} · ` : ""}{shortText(promptLabel(exchange), 100)}<span className="sv-preview">{shortText(messageText(responseFor(exchange)?.msg ?? { role: "assistant", content: [] }), 130) || "No response captured"}</span></button>)}</div></section>}
     </div>
-    <div className="sv-reading">{mode === "exchange" ? current ? exchangeBody(current) : <p className="sv-notice">No conversation was captured. Open session details to inspect the recorded data.</p> : <Conversation exchanges={exchanges} active={active} render={exchangeBody} onFocus={navigate} />}</div>
+    <div className="sv-reading">{mode === "exchange" ? current ? exchangeBody(current) : <p className="sv-notice">No conversation was captured. Open session details to inspect the recorded data.</p> : <Conversation exchanges={exchanges} render={exchangeBody} />}</div>
     {selection.length > 0 && local && <div className="sv-selection-bar" role="region" aria-label="Selection actions"><span>{selection.length} selected</span><button className="sv-quiet" onClick={event => openPanel("annotate", event.currentTarget)}>Annotate</button><button className="sv-quiet" onClick={event => openPanel("edit", event.currentTarget)}>Edit view</button><button className="sv-quiet" onClick={() => { setSelection([]); setViewDraft(null); preparedScope.current = ""; }}>Clear</button></div>}
     <details className="sv-details"><summary>Session details</summary><div className="sv-details-body"><p className="sv-meta sv-provenance">{[local?.project ? local.project.split(/[\\/]/).filter(Boolean).at(-1) : "", (run.source as { harness?: string } | undefined)?.harness ?? run.source?.kind ?? "Session", run.created_at.slice(0, 10), local ? "local capture" : ""].filter(Boolean).join(" · ")}</p>{details}<details onToggle={e => setTrace(e.currentTarget.open)}><summary>Explore trace and raw data</summary>{trace && renderTree()}</details></div></details>
     {panel && local && <ViewDialog source={local.source} title={title || shortText(main.map(promptText).find(Boolean) ?? label, 90)} prefixes={prefixes} primary={prefixes[0]} activity={activity} explicit={selection.length > 0} reconcile={reconcile} intent={panel} draft={viewDraft} onDraft={draft => { setViewDraft(draft); preparations.current.set(preparedScope.current, draft); }} close={closePanel} />}
     {inspected && <Inspector key={inspected.id} span={inspected} renderSpan={renderSpan} close={closeInspector} />}
+    {rawOpen && <SessionData run={run} close={() => { setRawOpen(false); focusButton.current?.focus({ preventScroll: true }); }} />}
   </div>;
 }
 
@@ -296,15 +382,12 @@ function SupportingSteps({ count, initiallyOpen, render }: { count: number; init
   return <details className="sv-support" open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary>Agent activity{count > 0 ? ` · ${count}` : ""}</summary>{open && render()}</details>;
 }
 
-function Conversation({ exchanges, active, render, onFocus }: { exchanges: Exchange[]; active: string; render: (e: Exchange, compact: boolean) => ReactNode; onFocus: (e: Exchange) => void }) {
-  const at = Math.max(0, exchanges.findIndex(e => e.id === active));
-  const [before, setBefore] = useState(Math.max(0, at - 3)), [after, setAfter] = useState(Math.min(exchanges.length, at + 4));
+// The full session renders every exchange; it never paginates.
+function Conversation({ exchanges, render }: { exchanges: Exchange[]; render: (e: Exchange, compact: boolean) => ReactNode }) {
   // Positions match the navigation row: main exchanges count among themselves,
   // subagent exchanges by their place in the whole session. The interface
   // shows no noun for the unit until a better name than "exchange" is chosen.
   const main = exchanges.filter(e => !e.child);
   const position = (e: Exchange) => e.child ? `${e.agent ?? "Agent"} · ${exchanges.indexOf(e) + 1} of ${exchanges.length}` : `${main.indexOf(e) + 1} of ${main.length}`;
-  return <>{before > 0 && <button onClick={() => setBefore(n => Math.max(0, n - 10))}>Show earlier · {before} more</button>}
-    {exchanges.slice(before, after).map(e => <article id={`exchange-${e.id}`} className="sv-conversation-card" key={e.id}><div className="sv-label"><span>{position(e)}</span><button className="sv-quiet" onClick={() => onFocus(e)}>Show on its own</button></div>{render(e, true)}</article>)}
-    {after < exchanges.length && <button onClick={() => setAfter(n => Math.min(exchanges.length, n + 10))}>Show later · {exchanges.length - after} more</button>}</>;
+  return <>{exchanges.map(e => <article id={`exchange-${e.id}`} className="sv-conversation-card" key={e.id}><div className="sv-label"><span>{position(e)}</span></div>{render(e, true)}</article>)}</>;
 }

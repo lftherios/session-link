@@ -157,6 +157,14 @@ export const promptLabel = (e: Exchange) => {
   const types = new Set(e.prompts.flatMap(p => p.msg.content.map(part => part.type)));
   return types.has("tool_result") ? "Tool result" : types.has("image") ? "Image" : "Human input without text";
 };
+// A one-line preview for lists and outlines, without Markdown syntax.
+export const previewText = (text: string, max = 86) => shortText(text
+  .replace(/```\w*/g, " ")
+  .replace(/`([^`]*)`/g, "$1")
+  .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+  .replace(/(\*\*|__)(.+?)\1/g, "$2")
+  .replace(/^\s{0,3}(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s?)/gm, "")
+  .replace(/\|?\s*:?-{3,}:?\s*/g, " ").replace(/\|/g, " "), max);
 export const shortText = (text: string, max = 86) => { const clean = text.replace(/\s+/g, " ").trim(); return clean.length > max ? clean.slice(0, max - 1).trimEnd() + "…" : clean; };
 export const meaningfulTitle = (name?: string) => !!name?.trim() && !/^(?:untitled(?: session)?|session|[a-f\d-]{24,}|rollout-.*|.*\.(?:jsonl?|spool))$/i.test(name.trim()) && !/^[/<]/.test(name.trim());
 // Importers clip the first prompt into `name` when a harness records no

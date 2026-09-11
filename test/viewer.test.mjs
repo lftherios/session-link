@@ -48,7 +48,7 @@ test("arrival: latest input and answer open beneath scoped search and one share 
     call("s2", [message("user", "current-question")], [message("assistant", "current-answer")]),
   ], { kind: "import" }), name: "A recognizable task" };
   const html = render(doc, "exchange", { source: "fixture", project: "/tmp/demo" });
-  assert.match(html, /title="Conversation outline">(?:<!-- -->)?2(?:<!-- -->)? of (?:<!-- -->)?2</);
+  assert.match(html, /title="Conversation outline"><strong>2<\/strong> <span class="sv-of">of (?:<!-- -->)?2<\/span>/);
   assert.match(html, />Human input</); assert.match(html, />Agent response</);
   assert.doesNotMatch(html, />Prompt<|>Response</);
   assert.doesNotMatch(html.replace(/<style>[\s\S]*?<\/style>/g, ""), />[^<]*\bexchange|aria-label="[^"]*exchange/i, "the reader never shows the internal word exchange");
@@ -60,8 +60,9 @@ test("arrival: latest input and answer open beneath scoped search and one share 
   assert.match(html, /Whole session/);
   assert.match(html, /aria-label="Select human input"/);
   assert.match(html, /aria-label="Select agent response"/);
-  assert.match(html, />Show full conversation</);
+  assert.match(html, /aria-label="Reading layout"><button aria-pressed="true">Focused<\/button><button aria-pressed="false">Full session<\/button>/);
   assert.match(html, /aria-label="Previous in conversation"/);
+  assert.doesNotMatch(html, /class="sv-raw-button"/, "raw session data is offered in the full session layout");
   assert.doesNotMatch(html, /Share this response|Select a passage|aria-label="Selection actions"/);
   assert.match(html, /Edit title/);
   assert.match(html, /aria-label="All sessions"/);
@@ -81,6 +82,12 @@ test("navigation: human input is listed by its text or contents, and tool result
     call("s3", [{ role: "user", content: [{ type: "image", media_type: "image/png", data: "" }] }], [message("assistant", "A chart")]),
   ]);
   assert.deepEqual(exchangesFor(doc).map(promptLabel), ["Run the checks", "Image"]);
+});
+
+test("navigation: outline previews drop Markdown syntax", async () => {
+  const { previewText } = await sessionModel();
+  assert.equal(previewText("## Plan\n- **Left, a pager.** Uses ```js\ncode``` and [docs](https://example.test)", 200), "Plan Left, a pager. Uses code and docs");
+  assert.equal(previewText("| Before | After |\n| --- | --- |\n| 111 | 13 |", 200), "Before After 111 13");
 });
 
 test("arrival: tool results and harness messages never become human input", async () => {

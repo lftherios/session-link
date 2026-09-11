@@ -69,15 +69,16 @@ the title; harness, date and project move under **Session details**. The
 local reading page carries no whole-session tools (copy local URL, download,
 publish); that flow is being redesigned. A wide, central search bar is always visible. **This view** is the
 default scope: the current exchange, including its agent activity, or the full
-conversation when that is showing. **Whole session** also searches other
+session when that layout is showing. **Whole session** also searches other
 exchanges, subagents and recorded span payloads. Results identify individual
 matching content and reveal the relevant response, context or activity.
 
-Previous/next arrows and a **12 of 62** position dropdown form a compact
-navigation row beneath search. The interface shows no noun for the exchange
-until a better name is chosen. The dropdown opens the conversation outline;
-**Show full conversation** switches to scrolling and **Show one at a time**
-switches back. Search and navigation do not change the selected material.
+A compact navigation row sits beneath search. On the left, a pager groups the
+previous and next arrows around a **12 of 62** position button that opens the
+conversation outline as a popover; Escape or a click elsewhere closes it. On
+the right, a **Focused** and **Full session** switch, styled like the search
+scopes, sets the reading layout. In the full session, **Raw data** opens the whole session document as JSON, which can be copied.
+The interface shows no noun for the exchange until a better name is chosen. Search and navigation do not change the selected material.
 
 Explicit `#message=<unit-prefix>`, `#exchange=<exchange-id>` and existing
 `#span=<id>` links take precedence over saved reading state. Message/span links
@@ -85,8 +86,10 @@ open the readable exchange and reveal supporting material when needed. A span
 with no conversational representation opens an inspector instead.
 
 Previous/next controls navigate main exchanges; the outline includes subagent
-exchanges too. The full conversation opens around the active exchange and shows
-earlier and later sections on demand.
+exchanges too. The full session layout renders every exchange and never paginates. It opens at
+the active exchange; within it, the pager, the outline and search results scroll
+to the matching card instead of switching layouts, and the position follows the
+card at the top of the screen.
 Opening inspection uses a keyboard-accessible modal and retains the underlying
 reading position. Closing it returns focus to its trigger.
 
