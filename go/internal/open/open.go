@@ -325,7 +325,7 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 		// The reading view owns its header: back link, editable title and one
 		// primary action. Whole-session publishing has no chrome here yet.
 		previewNote = ""
-		config, _ := json.Marshal(map[string]string{"source": id, "project": s.Project, "title": s.localTitle(id)})
+		config, _ := json.Marshal(map[string]string{"source": id, "project": s.Project, "title": s.titleFor(id, run)})
 		localConfig = `<script>window.__LOCAL__=` + string(config) + `</script>`
 		top = ""
 	}

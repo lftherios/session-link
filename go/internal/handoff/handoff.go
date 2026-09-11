@@ -20,12 +20,14 @@ import (
 
 type Source struct {
 	ID, Title, Harness, Dir string
-	Updated                 time.Time
-	Read                    func() ([]byte, error)
+	// Name is a title the harness recorded; Prompt is the first real prompt.
+	Name, Prompt     string
+	Updated, Started time.Time
+	Read             func() ([]byte, error)
 }
 
 func Native(candidate importers.Candidate) Source {
-	return Source{ID: candidate.ID, Title: candidate.Title, Harness: candidate.Harness,
+	return Source{ID: candidate.ID, Title: candidate.Title, Harness: candidate.Harness, Name: candidate.Name, Prompt: candidate.Prompt, Started: candidate.Started,
 		Dir: candidate.Dir, Updated: time.Unix(0, candidate.Recency), Read: func() ([]byte, error) {
 			in, err := candidate.Load()
 			if err != nil {

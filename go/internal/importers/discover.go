@@ -2,13 +2,16 @@ package importers
 
 import (
 	"bufio"
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver — no cgo
 )
@@ -435,14 +438,26 @@ func newestUnderProjects(base string) (string, int64) {
 // peekTranscript reads the first lines of a transcript for a cwd and a
 // best-effort title without loading the whole file.
 func peekTranscript(file string, maxLines int) (cwd, title string) {
+	cwd, name, prompt, _ := peekTitles(file, maxLines)
+	if name != "" {
+		return cwd, name
+	}
+	return cwd, prompt
+}
+
+// peekTitles reads the head of a transcript: its working directory, a title
+// the harness recorded (Claude Code's own title or a summary), the first real
+// prompt, and when the session started.
+func peekTitles(file string, maxLines int) (cwd, name, prompt string, started time.Time) {
 	f, err := os.Open(file)
 	if err != nil {
-		return "", ""
+		return "", "", "", time.Time{}
 	}
 	defer f.Close()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	var users []map[string]any
+	summary := ""
 	for n := 0; sc.Scan() && n < maxLines; n++ {
 		var e map[string]any
 		if json.Unmarshal(sc.Bytes(), &e) != nil {
@@ -455,13 +470,21 @@ func peekTranscript(file string, maxLines int) (cwd, title string) {
 				cwd = strOr(p["cwd"], "")
 			}
 		}
-		if t := strOr(e["type"], ""); t == "summary" && title == "" {
-			title = strOr(e["summary"], "")
-		} else if t == "user" {
+		if started.IsZero() {
+			if t, err := time.Parse(time.RFC3339Nano, strOr(e["timestamp"], strOr(m(e["payload"])["timestamp"], ""))); err == nil {
+				started = t
+			}
+		}
+		switch t := strOr(e["type"], ""); {
+		case t == "ai-title" && strOr(e["aiTitle"], "") != "":
+			name = strOr(e["aiTitle"], "")
+		case t == "summary" && summary == "":
+			summary = strOr(e["summary"], "")
+		case t == "user":
 			users = append(users, e)
-		} else if t == "message" && m(e["message"])["role"] == "user" {
+		case t == "message" && m(e["message"])["role"] == "user":
 			users = append(users, map[string]any{"type": "user", "message": e["message"]})
-		} else if t == "response_item" && m(e["payload"])["role"] == "user" {
+		case t == "response_item" && m(e["payload"])["role"] == "user":
 			msg := m(e["payload"])
 			var text strings.Builder
 			for _, p := range arr(msg["content"]) {
@@ -473,10 +496,45 @@ func peekTranscript(file string, maxLines int) (cwd, title string) {
 			users = append(users, map[string]any{"type": "user", "message": map[string]any{"content": text.String()}})
 		}
 	}
-	if title == "" {
-		title = ccFirstUserText(users)
+	if name == "" {
+		name = summary
 	}
-	return cwd, title
+	return cwd, name, ccFirstUserText(users), started
+}
+
+// latestAITitle finds the most recent title Claude Code recorded. It reads
+// only the end of the transcript, where the title is rewritten as work goes on.
+func latestAITitle(file string) string {
+	f, err := os.Open(file)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	offset := info.Size() - 512*1024
+	if offset < 0 {
+		offset = 0
+	}
+	buf := make([]byte, info.Size()-offset)
+	if _, err := f.ReadAt(buf, offset); err != nil && err != io.EOF {
+		return ""
+	}
+	lines := bytes.Split(buf, []byte("\n"))
+	for i := len(lines) - 1; i >= 0; i-- {
+		if !bytes.Contains(lines[i], []byte(`"ai-title"`)) {
+			continue
+		}
+		var e map[string]any
+		if json.Unmarshal(lines[i], &e) == nil && strOr(e["type"], "") == "ai-title" {
+			if title := strOr(e["aiTitle"], ""); title != "" {
+				return title
+			}
+		}
+	}
+	return ""
 }
 
 func anywhereClaude() (*Elsewhere, bool) {

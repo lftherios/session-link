@@ -220,6 +220,7 @@ func viewSources(loc importers.Locations, cwd, from, ref string, explicitNative 
 			continue
 		}
 		source.Title, source.Dir = capture.Name, dir
+		source.Name = capture.Name
 		if source.Title == "" {
 			source.Title = source.ID
 		}

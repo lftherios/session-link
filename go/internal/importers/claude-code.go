@@ -149,6 +149,10 @@ func ccTranscriptToRun(lines []string, sessionName string) map[string]any {
 		if strOr(e["type"], "") == "summary" && ccTruthy(e["summary"]) {
 			name = e["summary"]
 		}
+		// Claude Code records its own session title; the latest one names it.
+		if strOr(e["type"], "") == "ai-title" && ccTruthy(e["aiTitle"]) {
+			name = e["aiTitle"]
+		}
 		t := strOr(e["type"], "")
 		if t != "user" && t != "assistant" {
 			continue

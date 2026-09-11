@@ -53,7 +53,7 @@ func TestPreviewSelectionAndPublishUseSavedBytes(t *testing.T) {
 	defer upstream.Close()
 	var published string
 	s := &Server{Project: "/work/project", PreviewDir: t.TempDir(), Target: upstream.URL, APIKey: "fixture-key",
-		Sources:   []handoff.Source{{ID: "pinned", Harness: "pi", Title: "Research <script>", Read: func() ([]byte, error) { reads++; return data, nil }}},
+		Sources:   []handoff.Source{{ID: "pinned", Harness: "pi", Title: "Research <script>", Name: "Research <script>", Read: func() ([]byte, error) { reads++; return data, nil }}},
 		OnPublish: func(url string) { published = url },
 	}
 	index := action(s, "GET", "/", "", "")

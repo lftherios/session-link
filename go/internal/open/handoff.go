@@ -5,6 +5,7 @@ import (
 	"html"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -51,7 +52,26 @@ func (s *Server) pickerPage() string {
 	rows := make([]listRow, 0, len(s.Sources))
 	for i, source := range s.Sources {
 		harness := harnessLabel(source.Harness)
-		meta := []string{html.EscapeString(harness)}
+		// The title the session page shows: one typed for the session, a title
+		// the harness recorded, or the untitled label.
+		title, untitled := s.typedSessionTitle(source.Harness, source.ID), false
+		if title == "" && meaningfulTitle(source.Name) {
+			title = strings.TrimSpace(source.Name)
+		}
+		if title == "" {
+			started := source.Started
+			if started.IsZero() {
+				started = source.Updated
+			}
+			title, untitled = "Untitled · "+harness, true
+			if !started.IsZero() {
+				title += " · " + started.Local().Format("Jan 2, 2006")
+			}
+		}
+		var meta []string
+		if !untitled {
+			meta = append(meta, html.EscapeString(harness))
+		}
 		if source.Harness == "hermes" {
 			meta = append(meta, "experimental")
 		}
@@ -65,14 +85,17 @@ func (s *Server) pickerPage() string {
 			}
 			meta = append(meta, `<code title="`+html.EscapeString(source.ID)+`">`+html.EscapeString(short)+`</code>`)
 		}
-		title := strings.TrimSpace(source.Title)
-		if title == "" {
-			title = "Untitled session"
+		if prompt := strings.TrimSpace(source.Prompt); prompt != "" && prompt != title {
+			meta = append(meta, `<span class="row-preview">`+html.EscapeString(prompt)+`</span>`)
 		}
-		search := strings.ToLower(strings.Join([]string{source.Title, harness, source.Harness, source.ID, source.Dir}, " "))
+		titleClass := "row-title"
+		if untitled {
+			titleClass += " untitled"
+		}
+		search := strings.ToLower(strings.Join([]string{title, source.Prompt, harness, source.Harness, source.ID, source.Dir}, " "))
 		rows = append(rows, listRow{day: dayLabel(source.Updated, now), html: fmt.Sprintf(
-			`<button class="row" data-source="%d" data-search="%s"><span class="row-title">%s</span><span class="row-meta">%s</span><span class="row-side">%s<span class="row-open">%s</span></span></button>`,
-			i, html.EscapeString(search), html.EscapeString(title), strings.Join(meta, listDot), rowStamp(source.Updated, now), iconChevron)})
+			`<button class="row" data-source="%d" data-search="%s"><span class="%s">%s</span><span class="row-meta">%s</span><span class="row-side">%s<span class="row-open">%s</span></span></button>`,
+			i, html.EscapeString(search), titleClass, html.EscapeString(title), strings.Join(meta, listDot), rowStamp(source.Updated, now), iconChevron)})
 	}
 	name := filepath.Base(filepath.Clean(s.Project))
 	warning := ""
@@ -142,7 +165,8 @@ const listCSS = `<style>
   .row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 20px;width:100%;padding:15px 18px;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent;color:var(--ink);font:inherit;text-align:left;text-decoration:none;cursor:pointer}
   .row:first-child{border-top:0}.row:hover{background:var(--soft)}.row:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
   .row-title{grid-column:1;display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:15px;line-height:1.45;overflow-wrap:anywhere}
-  .row-meta{grid-column:1;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 7px;font-size:12px;color:var(--faint)}
+  .row-meta{grid-column:1;display:flex;align-items:baseline;gap:0 7px;min-width:0;overflow:hidden;white-space:nowrap;font-size:12px;color:var(--faint)}.row-meta>*{flex:none}.row-meta>.row-preview{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .row-title.untitled{color:var(--faint)}
   .row-meta code{font:11px var(--mono)}.row-meta .live{color:var(--signal)}
   .row-side{grid-column:2;grid-row:1/span 2;display:flex;align-items:center;gap:10px;color:var(--faint);font:12px var(--mono);white-space:nowrap}
   .row-open{display:inline-flex;transition:transform .15s,color .15s}
@@ -225,6 +249,15 @@ func rowStamp(t, now time.Time) string {
 		label = age(t, now)
 	}
 	return `<time datetime="` + t.UTC().Format(time.RFC3339) + `" title="` + html.EscapeString(t.Local().Format("Monday, January 2, 2006 at 3:04 PM")) + `">` + html.EscapeString(label) + `</time>`
+}
+
+var placeholderTitle = regexp.MustCompile(`(?i)^(?:untitled(?: session)?|session|[a-f\d-]{24,}|rollout-.*|.*\.(?:jsonl?|spool))$`)
+
+// meaningfulTitle mirrors the viewer: placeholders, file names, paths and
+// injected context are not titles.
+func meaningfulTitle(name string) bool {
+	name = strings.TrimSpace(name)
+	return name != "" && !placeholderTitle.MatchString(name) && !strings.HasPrefix(name, "/") && !strings.HasPrefix(name, "<")
 }
 
 // harnessLabel is how people name each agent.

@@ -1,6 +1,8 @@
 package open
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -84,6 +86,42 @@ func (s *Server) localTitle(id string) string {
 		return ""
 	}
 	return title.Title
+}
+
+// sessionTitleKey names the title file shared by every snapshot of a session.
+func sessionTitleKey(harness, id string) string {
+	if harness == "" || id == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(harness + "\n" + id))
+	return "session-" + hex.EncodeToString(sum[:16])
+}
+
+func runSessionTitleKey(run map[string]any) string {
+	source, _ := run["source"].(map[string]any)
+	meta, _ := run["metadata"].(map[string]any)
+	harness, _ := source["harness"].(string)
+	id, _ := meta["session_id"].(string)
+	return sessionTitleKey(harness, id)
+}
+
+// titleFor prefers the title typed for the session over the snapshot's own,
+// so a later snapshot of the same session keeps its name.
+func (s *Server) titleFor(id string, run map[string]any) string {
+	if key := runSessionTitleKey(run); key != "" {
+		if title := s.localTitle(key); title != "" {
+			return title
+		}
+	}
+	return s.localTitle(id)
+}
+
+// typedSessionTitle is the title typed on any snapshot of a session.
+func (s *Server) typedSessionTitle(harness, id string) string {
+	if key := sessionTitleKey(harness, id); key != "" {
+		return s.localTitle(key)
+	}
+	return ""
 }
 func (s *Server) composeSource(id string) (*composeSource, error) {
 	if cached, ok := s.composeSources.Load(id); ok {
@@ -222,7 +260,7 @@ func (s *Server) composeAPI(w http.ResponseWriter, r *http.Request, action, id s
 	}
 	if action == "api/title" {
 		if read {
-			send(200, map[string]string{"title": s.localTitle(id)})
+			send(200, map[string]string{"title": s.titleFor(id, source.run)})
 			return
 		}
 		var title struct {
@@ -241,6 +279,13 @@ func (s *Server) composeAPI(w http.ResponseWriter, r *http.Request, action, id s
 			fail(500, err)
 			return
 		}
+		// The session's own title file lets later snapshots and the sessions page use it.
+		if key := runSessionTitleKey(source.run); key != "" {
+			if err := atomicJSON(filepath.Join(s.draftsDir(), "titles", key+".json"), title); err != nil {
+				fail(500, err)
+				return
+			}
+		}
 		send(200, title)
 		return
 	}
@@ -258,7 +303,7 @@ func (s *Server) composeAPI(w http.ResponseWriter, r *http.Request, action, id s
 			}
 			draft.Draft = *record.Draft
 		}
-		title := s.localTitle(id)
+		title := s.titleFor(id, source.run)
 		if title == "" {
 			title, _ = source.run["name"].(string)
 		}

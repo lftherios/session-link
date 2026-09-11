@@ -13,17 +13,23 @@ import (
 func TestSessionPickerUsesQuietHeaderAndDayGroups(t *testing.T) {
 	now := time.Now()
 	s := &Server{Project: "/work/project", PreviewDir: t.TempDir(), Sources: []handoff.Source{
-		{ID: "abcdef12-3456-7890", Harness: "claude-code", Title: "Fix <b>header</b>", Updated: now.Add(-5 * time.Minute)},
-		{ID: "older", Harness: "codex", Updated: now.AddDate(0, 0, -1)},
+		{ID: "abcdef12-3456-7890", Harness: "claude-code", Name: "Fix <b>header</b>", Prompt: "Please fix the header", Updated: now.Add(-5 * time.Minute)},
+		{ID: "older", Harness: "codex", Prompt: "Review the project status", Updated: now.AddDate(0, 0, -1), Started: time.Date(2026, 9, 10, 9, 0, 0, 0, time.Local)},
+		{ID: "renamed", Harness: "pi", Name: "rollout-2026.jsonl", Prompt: "Compare competitors", Updated: now.Add(-time.Hour)},
 	}}
+	if err := atomicJSON(filepath.Join(s.draftsDir(), "titles", sessionTitleKey("pi", "renamed")+".json"), map[string]string{"title": "Competitor comparison"}); err != nil {
+		t.Fatal(err)
+	}
 	body := action(s, "GET", "/", "", "").Body.String()
-	for _, want := range []string{`<h1 title="/work/project">project</h1>`, `aria-label="Today"`, `aria-label="Yesterday"`, "Claude Code", "Codex",
-		`<code title="abcdef12-3456-7890">abcdef12</code>`, "Fix &lt;b&gt;header&lt;/b&gt;", "Untitled session", `placeholder="Search 2 sessions…"`, `id="stop"`} {
+	for _, want := range []string{`<h1 title="/work/project">project</h1>`, `aria-label="Today"`, `aria-label="Yesterday"`,
+		`<span class="row-title">Fix &lt;b&gt;header&lt;/b&gt;</span>`, `<span class="row-title untitled">Untitled · Codex · Sep 10, 2026</span>`,
+		`<span class="row-title">Competitor comparison</span>`, `<span class="row-preview">Review the project status</span>`,
+		`<code title="abcdef12-3456-7890">abcdef12</code>`, `placeholder="Search 3 sessions…"`, `id="stop"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("picker is missing %q", want)
 		}
 	}
-	for _, gone := range []string{"local sessions", "Bring your session", "Project:", "Open preview"} {
+	for _, gone := range []string{"local sessions", "Bring your session", "Project:", "Open preview", `class="row-title">rollout-2026.jsonl`} {
 		if strings.Contains(body, gone) {
 			t.Errorf("picker still shows %q", gone)
 		}

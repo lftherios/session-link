@@ -57,7 +57,7 @@ without claiming that the work is complete or verified. A trailing prompt shows
 **No response captured**. Recording status is shown only when explicitly present
 in the saved metadata. Historical errors do not override later exchanges.
 
-A meaningful existing name (a harness summary or a name someone typed) is the
+A meaningful existing name (a title the harness recorded or a name someone typed) is the
 title. Anything else counts as untitled: placeholder IDs, filenames, empty
 names, names that look like injected context (starting with `<`), and names an
 importer clipped from the first human input. An untitled session shows a quiet
@@ -65,7 +65,10 @@ importer clipped from the first human input. An untitled session shows a quiet
 below already opens on human input, so it is not repeated as a headline.
 No model call or naming form is needed to start reading. Clicking the label
 names the session. **Edit title** is available for local saved previews. Names persist in private
-`drafts/titles/<source-id>.json` sidecars and seed new excerpt titles. Renaming
+`drafts/titles/` sidecars for the snapshot and, when the capture records a session ID, for
+the session, so later snapshots keep the name. They seed new excerpt titles. Claude Code's own
+recorded title counts as a harness title. The sessions page applies the same rule and shows the
+first prompt beneath each row as a preview. Renaming
 does not rewrite captured bytes or change an existing share draft's title.
 Publishing the original whole session retains that original document's title.
 

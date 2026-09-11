@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Candidate identifies a source session, not merely whichever file is newest
@@ -14,6 +15,10 @@ import (
 type Candidate struct {
 	Found
 	ID, Title, Dir, File string
+	// Name is a title the harness recorded and Prompt the first real prompt;
+	// Title stays the terminal's fallback of either, or the ID.
+	Name, Prompt string
+	Started      time.Time
 }
 
 // Locations makes discovery testable without reading or changing the user's
@@ -151,7 +156,16 @@ func (loc Locations) Recent(harness, cwd, id string, limit int) ([]Candidate, er
 	for i := range candidates {
 		c := &candidates[i]
 		if c.File != "" {
-			_, c.Title = peekTranscript(c.File, 40)
+			_, c.Name, c.Prompt, c.Started = peekTitles(c.File, 40)
+			if latest := latestAITitle(c.File); latest != "" {
+				c.Name = latest
+			}
+			c.Title = c.Name
+			if c.Title == "" {
+				c.Title = c.Prompt
+			}
+		} else {
+			c.Name = c.Title // database-backed harnesses store their own titles
 		}
 		if c.Title == "" {
 			c.Title = c.ID

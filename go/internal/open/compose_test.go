@@ -306,3 +306,32 @@ func TestSavedViewsRemainIndependentAndReopenAfterRestart(t *testing.T) {
 		t.Fatal("unknown view was silently substituted")
 	}
 }
+
+func TestTypedTitleFollowsTheSessionAcrossSnapshots(t *testing.T) {
+	s := &Server{Project: "/work", PreviewDir: t.TempDir()}
+	data, err := os.ReadFile("../../../testdata/import/claude-code/basic/golden.run.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := func(doc []byte) string {
+		id, err := handoff.Save(s.PreviewDir, handoff.Source{ID: "golden-1", Harness: "claude-code", Read: func() ([]byte, error) { return doc, nil }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	first := snapshot(data)
+	if w := composeRequest(s, "PUT", "/api/title/"+first, map[string]string{"title": "Listing files"}); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	second := snapshot(bytes.Replace(data, []byte("Two entries: README.md and src."), []byte("Two entries, README.md and src."), 1))
+	if second == first {
+		t.Fatal("expected a new snapshot of the same session")
+	}
+	if page := action(s, "GET", "/p/"+second, "", ""); !strings.Contains(page.Body.String(), `"title":"Listing files"`) {
+		t.Fatal("a later snapshot lost the session's typed title")
+	}
+	if s.typedSessionTitle("claude-code", "golden-1") != "Listing files" {
+		t.Fatal("the sessions page cannot see the typed title")
+	}
+}
