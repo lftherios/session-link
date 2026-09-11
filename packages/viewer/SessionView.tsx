@@ -31,7 +31,7 @@ const CSS = `
 .sv .sv-position{gap:0!important;padding:0 8px 0 11px!important;color:var(--rv-ink);font-variant-numeric:tabular-nums}.sv .sv-position strong{font-weight:600}.sv .sv-position .sv-of{margin-left:4px;color:var(--rv-faint)}.sv .sv-position .sv-agent{max-width:9em;overflow:hidden;text-overflow:ellipsis;margin-right:6px;color:var(--rv-signal)}.sv .sv-caret{margin-left:6px;color:var(--rv-faint);transition:transform .15s}.sv .sv-position[aria-expanded=true]{background:var(--rv-soft)}.sv .sv-position[aria-expanded=true] .sv-caret{transform:rotate(180deg)}
 .sv .sv-toolbar-end{display:flex;align-items:center;gap:8px;margin-left:auto}.sv .sv-toolbar .sv-raw-button{height:36px;padding:0 12px;border-radius:10px;color:var(--rv-faint);box-shadow:0 1px 2px #0000000a}.sv .sv-toolbar .sv-raw-button:hover:not(:disabled){background:var(--rv-panel);color:var(--rv-ink)}
 .sv .sv-dialog.sv-raw-dialog{width:min(1100px,calc(100% - 32px));max-width:1100px;overflow:hidden}.sv .sv-raw-dialog[open]{display:flex;flex-direction:column}.sv .sv-raw-dialog .sv-dialog-head h2 .sv-meta{margin-left:10px;vertical-align:middle}
-.sv .sv-dialog pre.sv-raw{flex:1;min-height:0;margin:0;overflow:auto;white-space:pre;overflow-wrap:normal;padding:14px 16px;border-radius:8px;background:var(--rv-soft);font:12px/1.55 ui-monospace,monospace;tab-size:2}
+.sv .sv-raw-dialog[open]{height:85vh}.sv .sv-raw{position:relative;flex:1;min-height:0;overflow:auto;border-radius:8px;background:var(--rv-soft)}.sv .sv-raw-lines{position:relative;font:12px/19px ui-monospace,monospace}.sv .sv-dialog .sv-raw pre{position:absolute;left:16px;margin:0;padding:0;background:transparent;white-space:pre;overflow-wrap:normal;font:12px/19px ui-monospace,monospace;tab-size:2}.sv .sv-raw-loading{flex:1;display:grid;place-items:center;margin:0}
 .sv .sv-layout button{padding:0 12px;color:var(--rv-faint)}.sv .sv-layout button:hover:not(:disabled){background:transparent;color:var(--rv-ink)}.sv .sv-layout button[aria-pressed=true],.sv .sv-layout button[aria-pressed=true]:hover{background:var(--rv-panel);color:var(--rv-ink);box-shadow:0 1px 3px #0000001f}
 .sv .sv-reading{max-width:780px;margin:0 auto;min-width:0}.sv .sv-prompt{padding:18px 22px;border-left:3px solid var(--rv-line);background:var(--rv-soft);border-radius:0 8px 8px 0;margin-bottom:32px;overflow-wrap:anywhere}
 .sv .sv-label{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;font:11px ui-monospace,monospace;color:var(--rv-faint);letter-spacing:.08em;text-transform:uppercase}
@@ -91,18 +91,45 @@ function TraceDialog({ render, close }: { render: () => ReactNode; close: () => 
 }
 
 // The whole session document as JSON, opened from the full session.
+// Pretty-printing a large session is slow, so it happens once per document,
+// after the dialog paints, and only the lines on screen are rendered.
+const rawDocuments = new WeakMap<Run, { text: string; lines: string[]; bytes: number; widest: number }>();
+const RAW_LINE = 19;
 function SessionData({ run, close }: { run: Run; close: () => void }) {
-  const ref = useRef<HTMLDialogElement>(null), [copied, setCopied] = useState("");
-  const text = useMemo(() => JSON.stringify(run, null, 2), [run]);
-  const bytes = useMemo(() => new TextEncoder().encode(text).length, [text]);
-  const size = bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  const ref = useRef<HTMLDialogElement>(null), viewport = useRef<HTMLDivElement>(null);
+  const [raw, setRaw] = useState(() => rawDocuments.get(run) ?? null), [copied, setCopied] = useState("");
+  const [view, setView] = useState({ top: 0, height: 800 });
   useEffect(() => { ref.current?.showModal(); }, []);
-  const copy = async () => { try { await navigator.clipboard.writeText(text); setCopied("Copied"); } catch { setCopied("Could not copy"); } };
+  useEffect(() => {
+    if (raw) return;
+    const handle = window.setTimeout(() => {
+      const text = JSON.stringify(run, null, 2), lines = text.split("\n");
+      const next = { text, lines, bytes: new Blob([text]).size, widest: lines.reduce((widest, line) => Math.max(widest, line.length), 0) };
+      rawDocuments.set(run, next); setRaw(next);
+    }, 20);
+    return () => window.clearTimeout(handle);
+  }, [run, raw]);
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const measure = () => setView({ top: element.scrollTop, height: element.clientHeight });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [raw]);
+  const size = !raw ? "" : raw.bytes >= 1048576 ? `${(raw.bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(raw.bytes / 1024))} KB`;
+  const first = Math.max(0, Math.floor(view.top / RAW_LINE) - 30), last = raw ? Math.min(raw.lines.length, Math.ceil((view.top + view.height) / RAW_LINE) + 30) : 0;
+  const copy = async () => { if (!raw) return; try { await navigator.clipboard.writeText(raw.text); setCopied("Copied"); } catch { setCopied("Could not copy"); } };
   // Close the modal first; the page behind it can't take focus while it's open.
   const done = () => { ref.current?.close(); close(); };
   return <dialog className="sv-dialog sv-raw-dialog" ref={ref} onCancel={event => { event.preventDefault(); done(); }} aria-label="Session data">
-    <div className="sv-dialog-head"><h2>Session data<span className="sv-meta">{run.spans.length} recorded spans · {size}</span></h2><button onClick={copy}>{copied || "Copy JSON"}</button><button onClick={done}>Close</button></div>
-    <pre className="sv-raw">{text}</pre>
+    <div className="sv-dialog-head"><h2>Session data<span className="sv-meta">{run.spans.length} recorded spans{size ? ` · ${size}` : ""}</span></h2><button onClick={copy} disabled={!raw}>{copied || "Copy JSON"}</button><button onClick={done}>Close</button></div>
+    {raw ? <div className="sv-raw" ref={viewport} tabIndex={0} role="region" aria-label="Session JSON" onScroll={event => setView({ top: event.currentTarget.scrollTop, height: event.currentTarget.clientHeight })}>
+      <div className="sv-raw-lines" style={{ height: raw.lines.length * RAW_LINE + 28, width: `calc(${raw.widest}ch + 32px)` }}>
+        <pre style={{ top: 14 + first * RAW_LINE }}>{raw.lines.slice(first, last).join("\n")}</pre>
+      </div>
+    </div> : <p className="sv-meta sv-raw-loading" role="status">Preparing JSON…</p>}
   </dialog>;
 }
 
@@ -406,20 +433,25 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
     </>;
   };
 
+  // Rendered messages depend only on what they show. Reading position, search
+  // typing and panel edits must not re-render or re-parse them.
+  const focusedBody = useMemo(() => mode === "exchange" && current ? exchangeBody(current) : null, [mode, current, linked, run, local, renderPart]);
+  const conversation = useMemo(() => mode === "conversation" ? <Conversation exchanges={exchanges} render={exchangeBody} /> : null, [mode, exchanges, linked, run, local, renderPart]);
+
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
     const scope = searchScope === "session" || mode === "conversation" ? exchanges : current ? [current] : [];
-    const hits = scope.flatMap(exchange => [...exchange.prompts, ...exchange.blocks].filter(block => canonicalMessage(block).toLowerCase().includes(q)).map(block => ({ exchange, block, span: block.spanId, text: canonicalMessage(block) })));
+    const hits = scope.flatMap(exchange => [...exchange.prompts, ...exchange.blocks].filter(block => searchableBlock(block).lower.includes(q)).map(block => ({ exchange, block, span: block.spanId, entry: searchableBlock(block) })));
     if (searchScope === "session") {
       const found = new Set(hits.map(hit => hit.span));
-      return [...hits, ...run.spans.filter(span => !found.has(span.id) && JSON.stringify(span).toLowerCase().includes(q)).map(span => ({ exchange: undefined, block: undefined, span: span.id, text: JSON.stringify(span, null, 2) }))];
+      return [...hits, ...run.spans.filter(span => !found.has(span.id) && searchableSpan(span).lower.includes(q)).map(span => ({ exchange: undefined, block: undefined, span: span.id, entry: searchableSpan(span) }))];
     }
     return hits;
   }, [exchanges, current, mode, searchScope, query, run]);
-  const snippet = (text: string) => {
-    const at = text.toLowerCase().indexOf(query.trim().toLowerCase());
-    return `${at > 50 ? "…" : ""}${shortText(text.slice(Math.max(0, at - 50)), 170)}`;
+  const snippet = ({ text, lower }: { text: string; lower: string }) => {
+    const at = Math.max(0, lower.indexOf(query.trim().toLowerCase()));
+    return `${at > 50 ? "…" : ""}${shortText(text.slice(Math.max(0, at - 50), at + 400), 170)}`;
   };
   const inspected = run.spans.find(s => s.id === inspect);
   return <div className="rv sv"><style>{CSS}</style>
@@ -456,12 +488,12 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
       </nav>
       {!!query.trim() && searchOpen && <section id="sv-search-results" className="sv-outline sv-results" aria-label="Search results" onKeyDown={event => { if (event.key === "Escape") { search.current?.focus(); setSearchOpen(false); } }}>
         <div className="sv-results-head"><span className="sv-meta" role="status">{matches.length} {matches.length === 1 ? "match" : "matches"} · {searchScope === "view" ? "this view" : "whole session"}</span><button className="sv-quiet" onClick={() => setSearchOpen(false)}>Close results</button></div>
-        <div className="sv-outline-list">{matches.slice(0, limit).map(hit => <button key={hit.block?.key ?? `span-${hit.span}`} onClick={() => { if (hit.exchange) { if (mode === "conversation") { setActive(hit.exchange.id); spyHold.current = true; } else navigate(hit.exchange, false); setLinked(hit.block?.key ?? null); if (hit.block) setSearchTarget({ key: hit.block.key, query: query.trim().toLowerCase() }); } else { focusButton.current = search.current; setInspect(hit.span); } setSearchOpen(false); }}><span className="sv-meta">{hit.block ? hit.block.err ? "Error" : readingRole(hit.block.msg) === "human" ? "Human input" : readingRole(hit.block.msg) === "context" ? "Provided context" : hit.exchange && responseFor(hit.exchange) === hit.block ? "Agent response" : "Agent activity" : "Raw data"}{hit.exchange?.child ? ` · ${hit.exchange.agent ?? "Subagent"}` : ""}</span><span className="sv-preview">{snippet(hit.text)}</span></button>)}
+        <div className="sv-outline-list">{matches.slice(0, limit).map(hit => <button key={hit.block?.key ?? `span-${hit.span}`} onClick={() => { if (hit.exchange) { if (mode === "conversation") { setActive(hit.exchange.id); spyHold.current = true; } else navigate(hit.exchange, false); setLinked(hit.block?.key ?? null); if (hit.block) setSearchTarget({ key: hit.block.key, query: query.trim().toLowerCase() }); } else { focusButton.current = search.current; setInspect(hit.span); } setSearchOpen(false); }}><span className="sv-meta">{hit.block ? hit.block.err ? "Error" : readingRole(hit.block.msg) === "human" ? "Human input" : readingRole(hit.block.msg) === "context" ? "Provided context" : hit.exchange && responseFor(hit.exchange) === hit.block ? "Agent response" : "Agent activity" : "Raw data"}{hit.exchange?.child ? ` · ${hit.exchange.agent ?? "Subagent"}` : ""}</span><span className="sv-preview">{snippet(hit.entry)}</span></button>)}
           {!matches.length && <p className="sv-meta">No matches.{searchScope === "view" && <> <button className="sv-quiet" onClick={() => setSearchScope("session")}>Search the whole session</button></>}</p>}{matches.length > limit && <button onClick={() => setLimit(value => value + 50)}>Show more matches</button>}
         </div>
       </section>}
     </div>
-    <div className="sv-reading" onContextMenu={openMenu}>{mode === "exchange" ? current ? exchangeBody(current) : <p className="sv-notice">No conversation was captured. Open session details to inspect the recorded data.</p> : <Conversation exchanges={exchanges} render={exchangeBody} />}</div>
+    <div className="sv-reading" onContextMenu={openMenu}>{mode === "exchange" ? focusedBody ?? <p className="sv-notice">No conversation was captured. Open session details to inspect the recorded data.</p> : conversation}</div>
     <details className="sv-details" open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}>
       <summary><ChevronRight size={15} className="sv-details-chevron" aria-hidden="true" /><span className="sv-details-title">Session details</span><span className="sv-details-synopsis">{synopsis}</span></summary>
       {detailsOpen && <>
@@ -485,6 +517,15 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
 }
 
 const canonicalMessage = (block: MessageBlock) => [messageText(block.msg), block.err ?? "", ...block.msg.content.filter(p => p.type !== "text").map(p => JSON.stringify(p))].join("\n");
+// Search text is derived once per message and span, not on every keystroke.
+const blockSearch = new WeakMap<MessageBlock, { text: string; lower: string }>(), spanSearch = new WeakMap<Span, { text: string; lower: string }>();
+const searchable = <T extends object>(cache: WeakMap<T, { text: string; lower: string }>, item: T, read: (item: T) => string) => {
+  let entry = cache.get(item);
+  if (!entry) { const text = read(item); entry = { text, lower: text.toLowerCase() }; cache.set(item, entry); }
+  return entry;
+};
+const searchableBlock = (block: MessageBlock) => searchable(blockSearch, block, canonicalMessage);
+const searchableSpan = (span: Span) => searchable(spanSearch, span, item => JSON.stringify(item));
 
 function SupportingSteps({ count, duration, initiallyOpen, render }: { count: number; duration: string; initiallyOpen: boolean; render: () => ReactNode }) {
   const [open, setOpen] = useState(initiallyOpen);

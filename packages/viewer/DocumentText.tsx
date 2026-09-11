@@ -1,4 +1,4 @@
-import { Children, isValidElement, useId, useState, type ReactNode } from "react";
+import { Children, isValidElement, memo, useId, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -40,11 +40,12 @@ const safeUrl = (url: string) => /^(?:https?:\/\/|mailto:|#)/i.test(url) ? url :
 
 // Raw HTML remains escaped. Relative source paths stay readable as text:
 // they must not become links to arbitrary routes on the hosting application.
-export function DocumentText({ text, definitions = "" }: { text: string; definitions?: string }) {
+// Memoized: a message's Markdown is parsed again only when its text changes.
+export const DocumentText = memo(function DocumentText({ text, definitions = "" }: { text: string; definitions?: string }) {
   const prefix = `note-${useId().replace(/[^a-zA-Z0-9-]/g, "")}-`;
   return <div className="rv-document"><Markdown remarkPlugins={REMARK_PLUGINS}
     remarkRehypeOptions={{ clobberPrefix: prefix }}
     urlTransform={safeUrl}
     components={MARKDOWN_COMPONENTS}
   >{definitions ? `${text}\n\n${definitions}` : text}</Markdown></div>;
-}
+});

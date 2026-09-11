@@ -219,16 +219,24 @@ export const shortText = (text: string, max = 86) => { const clean = text.replac
 // A recorded time for display: time of day, with the date only when it falls
 // on a different day from the session start. The title carries the full
 // date, time and zone.
+// Creating Intl formatters is costly, so each format is created once.
+const TIME_FORMATS = { clock: { hour: "numeric", minute: "2-digit" }, seconds: { hour: "numeric", minute: "2-digit", second: "2-digit" }, day: { month: "short", day: "numeric" }, full: { dateStyle: "full", timeStyle: "long" } } as const;
+const timeFormats = new Map<keyof typeof TIME_FORMATS, Intl.DateTimeFormat>();
+const formatTime = (date: Date, kind: keyof typeof TIME_FORMATS) => {
+  let format = timeFormats.get(kind);
+  if (!format) timeFormats.set(kind, format = new Intl.DateTimeFormat(undefined, TIME_FORMATS[kind]));
+  return format.format(date);
+};
 export function eventTime(at?: string, sessionStart?: string, seconds = false) {
   const date = at ? new Date(at) : null;
   if (!date || Number.isNaN(date.getTime())) return null;
-  const clock = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}) });
+  const clock = formatTime(date, seconds ? "seconds" : "clock");
   const start = sessionStart ? new Date(sessionStart) : null;
   const sameDay = !!start && !Number.isNaN(start.getTime()) && start.toDateString() === date.toDateString();
   return {
     iso: date.toISOString(),
-    label: sameDay ? clock : `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${clock}`,
-    title: date.toLocaleString(undefined, { dateStyle: "full", timeStyle: "long" }),
+    label: sameDay ? clock : `${formatTime(date, "day")}, ${clock}`,
+    title: formatTime(date, "full"),
   };
 }
 // Compact elapsed time between two recorded moments, or "" when unknown.

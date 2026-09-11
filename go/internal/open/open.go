@@ -344,7 +344,7 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
        </div>
      </dialog>
      `+previewNote+`<div id="root"></div>
-     <script>window.__RUN__=`+runJSON+`</script>`+localConfig+`
+     <script type="application/json" id="run-data">`+runJSON+`</script><script>window.__RUN__=JSON.parse(document.getElementById("run-data").textContent)</script>`+localConfig+`
      <script>window.__PUB__=`+string(pubJSON)+`</script>
      <script src="/assets/viewer.js"></script>
      <script>
