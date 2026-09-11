@@ -15,6 +15,16 @@ prompt messages within the same recorded call stay together. Earlier assistant
 steps, tool arguments/results and recorded failures remain in supporting steps.
 Subagent exchanges remain navigable and do not replace the main landing point.
 
+Human input means what a person contributed. Some harnesses record other
+material with the user role, so the reader and the share catalog apply one rule.
+User-role messages made only of tool results are agent activity; Claude Code
+records tool results that way. User-role messages wrapped in harness tags, such
+as environment context, system reminders and local slash-command records, are
+provided context and appear in the activity of the exchange they preceded. The
+Claude Code importer now records tool results with the tool role, rows Claude
+Code flags as injected metadata with the system role, and synthetic API
+failures such as rate limits as failed spans rather than agent responses.
+
 Each exchange has one collapsed **Agent activity** section. Captured thinking
 and tool work live there even when the harness packages them in the same message
 as the answer. Expanding the section reveals the thinking directly, without a
@@ -34,31 +44,40 @@ addresses, and unavailable text cannot be selected for export.
 
 The current format does not consistently preserve final-response channel
 markers across harnesses. The default is therefore the latest recorded assistant
-message containing text in that exchange. It is labeled **Latest response**,
+message containing text in that exchange. It is labeled **Agent response**,
 without claiming that the work is complete or verified. A trailing prompt shows
 **No response captured**. Recording status is shown only when explicitly present
 in the saved metadata. Historical errors do not override later exchanges.
 
-A meaningful existing name is used as the title. Recognizable placeholder IDs,
-filenames and empty names fall back to a short task-prompt excerpt, then a neutral
-source/date label. No model call or naming form is needed to start reading.
-**Edit title** is available for local saved previews. Names persist in private
+A meaningful existing name (a harness summary or a name someone typed) is the
+title. Anything else counts as untitled: placeholder IDs, filenames, empty
+names, names that look like injected context (starting with `<`), and names an
+importer clipped from the first human input. An untitled session shows a quiet
+**Untitled · Claude Code · Sep 11, 2026** label in the title slot; the reading
+below already opens on human input, so it is not repeated as a headline.
+No model call or naming form is needed to start reading. Clicking the label
+names the session. **Edit title** is available for local saved previews. Names persist in private
 `drafts/titles/<source-id>.json` sidecars and seed new excerpt titles. Renaming
 does not rewrite captured bytes or change an existing share draft's title.
 Publishing the original whole session retains that original document's title.
 
 ## Action hierarchy and navigation
 
-The header presents the title and one primary **Share this view** action at the
-top right. A wide, central search bar is always visible. **This view** is the
-default scope: the focused exchange, including its recorded activity, or the
-conversation when browsing that view. **Whole session** also searches other
+The header is one row: a back link to the session list, the title, and one
+primary **Share this view** action at the top right. Nothing else sits above
+the title; harness, date and project move under **Session details**. The
+local reading page carries no whole-session tools (copy local URL, download,
+publish); that flow is being redesigned. A wide, central search bar is always visible. **This view** is the
+default scope: the current exchange, including its agent activity, or the full
+conversation when that is showing. **Whole session** also searches other
 exchanges, subagents and recorded span payloads. Results identify individual
 matching content and reveal the relevant response, context or activity.
 
-Previous/next arrows and an exchange-position dropdown form a compact navigation
-row beneath search. The dropdown opens the conversation outline; **Conversation**
-switches to browsing. Search and navigation do not change the selected material.
+Previous/next arrows and a **12 of 62** position dropdown form a compact
+navigation row beneath search. The interface shows no noun for the exchange
+until a better name is chosen. The dropdown opens the conversation outline;
+**Show full conversation** switches to scrolling and **Show one at a time**
+switches back. Search and navigation do not change the selected material.
 
 Explicit `#message=<unit-prefix>`, `#exchange=<exchange-id>` and existing
 `#span=<id>` links take precedence over saved reading state. Message/span links
@@ -66,8 +85,8 @@ open the readable exchange and reveal supporting material when needed. A span
 with no conversational representation opens an inspector instead.
 
 Previous/next controls navigate main exchanges; the outline includes subagent
-exchanges too. Conversation mode
-opens around the active exchange and loads earlier/later sections on demand.
+exchanges too. The full conversation opens around the active exchange and shows
+earlier and later sections on demand.
 Opening inspection uses a keyboard-accessible modal and retains the underlying
 reading position. Closing it returns focus to its trigger.
 
@@ -82,11 +101,13 @@ component state. Metrics and the existing trace/raw viewer are under **Session d
 Content-level **Select** controls appear on hover and keyboard focus, and remain
 available on touch devices. Selected content keeps its indicator while navigating.
 A compact selection bar then offers **Annotate**, **Edit view** and **Clear**.
-The content's small action menu contains recorded details and a precise link.
-Session title editing lives under **Session details**.
+The content's small action menu offers **Inspect** and **Copy link**.
+The title is edited in place: click it, or the pencil beside it, type, and
+press Enter or click away to save; Escape cancels. A brief **Saved** note
+confirms the write and an error keeps the edit visible.
 
 **Share this view** opens an in-place panel. With no explicit selection it starts
-with the visible exchange's human input and response text, opening on the input.
+with the visible exchange's human input and agent response text, opening on the input.
 A trailing failure is included when present. In conversation mode it uses the
 inputs and answers from that conversation. An explicit selection supplies the
 panel instead. Agent activity is separately includable; collapsing or expanding
@@ -113,9 +134,12 @@ The saved presentation currently includes a starting point and source-ordered
 context; custom ordering and expanded/collapsed state remain future work.
 Hosted excerpt publishing remains disabled pending hosted compatibility checks.
 
-Existing excerpt recipients start with author context and the sender's chosen
-material. The generic session reader labels its prompt neutrally as
-**Original prompt** when not in a local viewer.
+Existing excerpt recipients start with the author note and the sender's chosen
+material. Labels follow the [content model](viewer-model.md): the reader shows
+**Human input**, **Agent response** and **Agent activity** in local and shared
+views alike. Activity steps read **Reasoning**, **Tool call**, **Tool result**,
+**Agent message**, **Provided context** and **Error**. Excerpts show
+**Author note** and **Relevant context**.
 
 CommonMark/GFM rendering provides headings, tables, lists, code, links and
 footnotes. Raw HTML is escaped. Links are restricted to HTTP(S), mail and fragment

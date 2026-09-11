@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Search, ChevronDown, ArrowLeft, ArrowRight, Check, Plus, Share2, MoreHorizontal } from "lucide-react";
+import { Search, ChevronDown, ArrowLeft, ArrowRight, Check, Plus, Share2, MoreHorizontal, Pencil } from "lucide-react";
 import { ViewDialog } from "./ViewDialog";
 import type { ViewDraft } from "./view-draft";
 import type { ContentPart, Run, Span } from "@session-link/format";
-import { buildFlow, defaultExchange, exchangesFor, messageText, promptLabel, readerFlow, readingKey, reasoningUnavailable, responseFor, selectionPrefixes, sessionTitle, shortText, type Exchange, type MessageBlock } from "./session-model";
+import { buildFlow, defaultExchange, exchangesFor, messageText, promptLabel, promptText, readerFlow, readingKey, readingRole, reasoningUnavailable, responseFor, selectionPrefixes, sessionLabel, sessionTitle, shortText, type Exchange, type MessageBlock } from "./session-model";
 
 export type LocalViewer = { source: string; project?: string; title?: string };
 type Props = { run: Run; local?: LocalViewer; renderPart: (part: ContentPart, full?: boolean) => ReactNode; renderSpan: (span: Span) => ReactNode; renderTree: () => ReactNode; details: ReactNode };
@@ -13,10 +13,12 @@ const CSS = `
 .sv button:disabled{opacity:.4;cursor:default}.sv button.sv-quiet{border-color:transparent;background:transparent;color:var(--rv-faint);padding:6px 8px}.sv button:hover:not(:disabled){background:var(--rv-soft)}
 .sv button.sv-primary{background:var(--rv-signal);color:var(--rv-paper);border-color:var(--rv-signal)}.sv button.sv-primary:hover:not(:disabled){filter:brightness(.93)}
 .sv :where(button,input,textarea,a,summary):focus-visible{outline:2px solid var(--rv-signal);outline-offset:3px}
-.sv .sv-meta{font:11px/1.65 ui-monospace,monospace;color:var(--rv-faint)}.sv .sv-eyebrow{text-transform:uppercase;letter-spacing:.07em}
-.sv .sv-header{display:flex;align-items:center;justify-content:space-between;gap:24px;margin:10px 0 32px}.sv .sv-identity{min-width:0}.sv .sv-heading{margin-top:9px}
-.sv h1{font:500 30px/1.2 "Iowan Old Style",Palatino,Georgia,serif;letter-spacing:-.025em;overflow-wrap:anywhere;margin:0}.sv .sv-share{flex:none;padding:11px 16px;font-size:13px;font-weight:550}
-.sv .sv-heading form{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.sv input,.sv textarea{border:1px solid var(--rv-line);border-radius:6px;background:var(--rv-panel);color:var(--rv-ink);padding:10px 12px;min-width:0}.sv .sv-title-input{flex:1;font-size:20px}
+.sv .sv-meta{font:11px/1.65 ui-monospace,monospace;color:var(--rv-faint)}
+.sv .sv-header{display:flex;align-items:flex-start;gap:14px;margin:4px 0 30px}.sv .sv-back{flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid transparent;border-radius:8px;color:var(--rv-faint);text-decoration:none}.sv .sv-back:hover{background:var(--rv-soft);color:var(--rv-ink)}
+.sv .sv-heading{flex:1;min-width:0;padding-top:1px}.sv h1{display:inline;font:500 30px/1.2 "Iowan Old Style",Palatino,Georgia,serif;letter-spacing:-.025em;overflow-wrap:anywhere;margin:0;border-radius:4px;box-decoration-break:clone;-webkit-box-decoration-break:clone}.sv .sv-untitled{color:var(--rv-faint);font-weight:400}.sv .sv-local h1{cursor:text}.sv .sv-local h1:hover{background:var(--rv-soft);box-shadow:0 0 0 5px var(--rv-soft)}
+.sv .sv-edit-title{vertical-align:middle;margin-left:6px;padding:5px!important;opacity:0;transition:opacity .12s}.sv .sv-heading:hover .sv-edit-title,.sv .sv-heading:focus-within .sv-edit-title,.sv .sv-edit-title:focus-visible{opacity:1}.sv .sv-title-status{display:block;margin-top:6px}
+.sv .sv-share{flex:none;margin-left:auto;padding:11px 16px;font-size:13px;font-weight:550}
+.sv input,.sv textarea{border:1px solid var(--rv-line);border-radius:6px;background:var(--rv-panel);color:var(--rv-ink);padding:10px 12px;min-width:0}.sv .sv-title-input{display:block;width:100%;font:500 30px/1.2 "Iowan Old Style",Palatino,Georgia,serif;letter-spacing:-.025em;padding:0 0 2px;border:0;border-bottom:2px solid var(--rv-signal);border-radius:0;background:transparent;outline:none}.sv .sv-title-input:focus-visible{outline:none}.sv .sv-title-input::placeholder{color:var(--rv-faint);opacity:.6}
 .sv .sv-controls{max-width:860px;margin:0 auto 30px;scroll-margin-top:20px}.sv .sv-search{display:flex;align-items:center;gap:12px;padding:9px 10px 9px 17px;border:1px solid var(--rv-line);border-radius:12px;background:var(--rv-panel);box-shadow:0 3px 12px #00000005;color:var(--rv-faint)}
 .sv .sv-search:focus-within{border-color:var(--rv-signal);box-shadow:0 0 0 2px color-mix(in srgb,var(--rv-signal) 12%,transparent)}.sv .sv-search>svg{flex:none}.sv .sv-search input{flex:1;width:100%;border:0;padding:7px 0;background:transparent;font-size:15px;outline:none}.sv .sv-search-scope{display:flex;gap:2px;background:var(--rv-soft);padding:3px;border-radius:7px;flex:none}.sv .sv-search-scope button{border-color:transparent;background:transparent;font-size:11px;padding:6px 9px;color:var(--rv-faint);white-space:nowrap}.sv .sv-search-scope button[aria-pressed=true]{background:var(--rv-panel);color:var(--rv-ink);box-shadow:0 1px 3px #0001}
 .sv .sv-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0 0}.sv .sv-nav-buttons{display:flex;align-items:center;gap:3px;min-width:0}.sv .sv-position{font-size:11px!important;gap:8px!important}
@@ -41,7 +43,7 @@ const CSS = `
 .sv .sv-saved-notice{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--rv-soft);padding:14px;border-radius:8px;margin-top:16px;font-size:12px}.sv .sv-saved-notice a,.sv .sv-saved-views a{color:var(--rv-signal)}.sv .sv-saved-views{margin-top:20px}.sv .sv-saved-views a{display:block;padding:8px 0;font-size:13px;overflow-wrap:anywhere}
 @media(hover:none){.sv .sv-block-tools{opacity:1;pointer-events:auto}.sv .sv-block-tools button{padding:6px 9px}.sv .sv-block-menu>summary{padding:6px}}
 @media(prefers-reduced-motion:reduce){.sv .sv-block-tools{transition:none}}
-@media(max-width:600px){.sv .sv-header{align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:24px}.sv .sv-identity{flex:1 1 190px}.sv h1{font-size:25px}.sv .sv-share{font-size:12px;padding:10px 12px;margin-left:auto}.sv .sv-search{flex-wrap:wrap;gap:8px;padding:10px 12px}.sv .sv-search input{width:calc(100% - 32px);flex:auto}.sv .sv-search-scope{margin-left:26px}.sv .sv-toolbar{gap:2px}.sv .sv-position{font-size:10px!important;padding:6px 3px!important}.sv .sv-toolbar>button{padding:6px 3px}.sv .sv-nav-buttons{gap:0}.sv .sv-prompt{padding:16px 14px}.sv .sv-conversation-card{padding:16px}.sv .sv-selection-bar{gap:4px;padding:8px;font-size:11px}.sv .sv-selection-bar button{font-size:11px}.sv .sv-dialog{padding:18px;max-height:90vh}.sv .sv-dialog-head,.sv .sv-share-dialog .sv-dialog-head{top:-18px}.sv .sv-dialog-head h2{font-size:22px}.sv .sv-included-heading{flex-wrap:wrap}.sv .sv-label{font-size:10px}}
+@media(max-width:600px){.sv .sv-header{gap:8px;flex-wrap:wrap;margin-bottom:22px}.sv .sv-heading{flex-basis:100%;order:3}.sv h1,.sv .sv-title-input{font-size:25px}.sv .sv-edit-title{opacity:1}.sv .sv-share{font-size:12px;padding:10px 12px}.sv .sv-search{flex-wrap:wrap;gap:8px;padding:10px 12px}.sv .sv-search input{width:calc(100% - 32px);flex:auto}.sv .sv-search-scope{margin-left:26px}.sv .sv-toolbar{gap:2px}.sv .sv-position{font-size:10px!important;padding:6px 3px!important}.sv .sv-toolbar>button{padding:6px 3px}.sv .sv-nav-buttons{gap:0}.sv .sv-prompt{padding:16px 14px}.sv .sv-conversation-card{padding:16px}.sv .sv-selection-bar{gap:4px;padding:8px;font-size:11px}.sv .sv-selection-bar button{font-size:11px}.sv .sv-dialog{padding:18px;max-height:90vh}.sv .sv-dialog-head,.sv .sv-share-dialog .sv-dialog-head{top:-18px}.sv .sv-dialog-head h2{font-size:22px}.sv .sv-included-heading{flex-wrap:wrap}.sv .sv-label{font-size:10px}}
 `;
 
 function Inspector({ span, renderSpan, close }: { span: Span; renderSpan: Props["renderSpan"]; close: () => void }) {
@@ -67,7 +69,8 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
   const preparedScope = useRef(""), preparedExplicit = useRef(false), preparations = useRef(new Map<string, ViewDraft>());
   const search = useRef<HTMLInputElement>(null), shareButton = useRef<HTMLButtonElement>(null);
   const [linked, setLinked] = useState<string | null>(null), [inspect, setInspect] = useState<string | null>(null);
-  const [title, setTitle] = useState(local?.title || sessionTitle(run, exchanges)), [editing, setEditing] = useState(false), [titleValue, setTitleValue] = useState(title), [titleStatus, setTitleStatus] = useState("");
+  const [title, setTitle] = useState(local?.title || sessionTitle(run, exchanges)), [editing, setEditing] = useState(false), [titleValue, setTitleValue] = useState(title), [titleStatus, setTitleStatus] = useState(""), [titleError, setTitleError] = useState(false);
+  const titleSaving = useRef(false), label = sessionLabel(run);
   const [copy, setCopy] = useState("");
   const [trace, setTrace] = useState(false);
   const reading = useRef<HTMLDivElement>(null), focusButton = useRef<HTMLElement | null>(null);
@@ -77,12 +80,13 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
   const main = exchanges.filter(e => !e.child), position = current ? (current.child ? exchanges : main).indexOf(current) : -1;
   const sequence = current?.child ? exchanges : main;
 
-  useEffect(() => { if (local) document.title = `${title} · session.link`; }, [title, local]);
+  useEffect(() => { if (local) document.title = `${title || label} · session.link`; }, [title, label, local]);
 
   useLayoutEffect(() => {
     const arrive = () => {
       const params = new URLSearchParams(location.hash.slice(1)), message = params.get("message"), span = params.get("span"), exchangeID = params.get("exchange");
-      const found = exchanges.find(e => e.id === exchangeID || [...e.prompts, ...e.blocks].some(b => message ? b.key === message : span ? b.spanId === span : false));
+      // Older links can name a message that no longer starts its own exchange.
+      const found = exchanges.find(e => e.id === exchangeID || [...e.prompts, ...e.blocks].some(b => message ? b.key === message : span ? b.spanId === span : b.key === exchangeID));
       if (found) {
         const blocks = [...found.prompts, ...found.blocks];
         const target = blocks.find(b => b.key === message) ?? blocks.filter(b => b.spanId === span && b.msg.role === "assistant" && messageText(b.msg)).at(-1) ?? blocks.find(b => b.spanId === span);
@@ -150,14 +154,21 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
     if (location.hash) history.replaceState(null, "", location.pathname + location.search);
     if (scroll) reading.current?.scrollIntoView({ block: "start" });
   };
-  const saveTitle = async (event: React.FormEvent) => {
-    event.preventDefault(); if (!local || !titleValue.trim()) return;
-    setTitleStatus("Saving…");
+  const startTitle = () => { setTitleValue(title); setTitleStatus(""); setTitleError(false); setEditing(true); };
+  const cancelTitle = () => { titleSaving.current = false; setEditing(false); setTitleValue(title); };
+  const saveTitle = async () => {
+    // Enter and blur both land here; the first one wins.
+    if (!local || titleSaving.current) return;
+    const next = titleValue.trim();
+    if (!next || next === title) { cancelTitle(); return; }
+    titleSaving.current = true; setEditing(false); setTitle(next); setTitleError(false); setTitleStatus("Saving…");
     try {
-      const response = await fetch(`/api/title/${local.source}`, { method: "PUT", headers: { "x-slink": "1", "content-type": "application/json" }, body: JSON.stringify({ title: titleValue.trim() }) });
-      if (!response.ok) throw new Error("Could not save the title. Your edit is still here.");
-      setTitle(titleValue.trim()); setEditing(false); setTitleStatus("Saved locally · used for new excerpts");
-    } catch (error) { setTitleStatus(error instanceof Error ? error.message : String(error)); }
+      const response = await fetch(`/api/title/${local.source}`, { method: "PUT", headers: { "x-slink": "1", "content-type": "application/json" }, body: JSON.stringify({ title: next }) });
+      if (!response.ok) throw new Error("Could not save the title.");
+      setTitleStatus("Saved");
+      window.setTimeout(() => setTitleStatus(current => current === "Saved" ? "" : current), 2400);
+    } catch (error) { setTitle(title); setTitleValue(next); setTitleError(true); setTitleStatus(error instanceof Error ? error.message : String(error)); }
+    finally { titleSaving.current = false; }
   };
   const copyLink = async (block: MessageBlock) => {
     try { const url = new URL(location.href); url.hash = `message=${block.key}`; await navigator.clipboard.writeText(url.href); setCopy(block.key); }
@@ -187,10 +198,10 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
   const showPart = (part: ContentPart, full = false) => reasoningUnavailable(part, run) ? null : part.type === "thinking" ? <div className="sv-thinking">{part.text}</div> : renderPart(part, full);
   const showBlock = (block: MessageBlock, full = false, collapsed = false) => <div id={`message-${block.key}`} key={block.key} className={`sv-block${linked === block.key ? " sv-linked" : ""}${selection.includes(block.key) ? " sv-selected" : ""}`}>
     <div className="sv-block-tools">
-      {local && <button className="sv-select" aria-label={`${selection.includes(block.key) ? "Deselect" : "Select"} ${block.msg.role === "user" ? "human input" : block.err ? "recorded error" : block.msg.role === "assistant" && messageText(block.msg) ? "agent response" : "agent activity"}`} aria-pressed={selection.includes(block.key)} onClick={() => toggleSelection(block)}>{selection.includes(block.key) ? <Check size={13} /> : <Plus size={13} />}{selection.includes(block.key) ? "Selected" : "Select"}</button>}
+      {local && <button className="sv-select" aria-label={`${selection.includes(block.key) ? "Deselect" : "Select"} ${block.err ? "error" : readingRole(block.msg) === "human" ? "human input" : readingRole(block.msg) === "context" ? "provided context" : block.msg.role === "assistant" && messageText(block.msg) ? "agent response" : "agent activity"}`} aria-pressed={selection.includes(block.key)} onClick={() => toggleSelection(block)}>{selection.includes(block.key) ? <Check size={13} /> : <Plus size={13} />}{selection.includes(block.key) ? "Selected" : "Select"}</button>}
       <details className="sv-block-menu"><summary aria-label="Content actions"><MoreHorizontal size={16} /></summary><div>
-        <button className="sv-quiet" onClick={event => openInspector(block, event.currentTarget)}>Recorded details</button>
-        <button className="sv-quiet" onClick={() => copyLink(block)}>{copy === block.key ? "Copied" : "Copy content link"}</button>
+        <button className="sv-quiet" onClick={event => openInspector(block, event.currentTarget)}>Inspect</button>
+        <button className="sv-quiet" onClick={() => copyLink(block)}>{copy === block.key ? "Copied" : "Copy link"}</button>
         {copy === "failed" && <span role="status" className="sv-meta">Could not copy the link.</span>}
       </div></details>
     </div>
@@ -209,19 +220,19 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
     const readableReasoning = supporting.some(block => block.msg.content.some(part => part.type === "thinking" && !reasoningUnavailable(part, run)));
     const last = exchange.blocks.at(-1), endedWithError = last?.err && (!response || exchange.blocks.indexOf(last) >= exchange.blocks.indexOf(response));
     return <>
-      {exchange.prompts.length > 0 && <div className="sv-prompt"><p className="sv-label">{local ? "You asked" : "Original prompt"}</p>{exchange.prompts.map(block => {
+      {exchange.prompts.length > 0 && <div className="sv-prompt"><p className="sv-label">Human input</p>{exchange.prompts.map(block => {
         const long = messageText(block.msg).length > 600;
         return showBlock(block, true, long);
       })}</div>}
-      {!exchange.prompts.length && <p className="sv-meta">Original prompt unavailable in this capture.</p>}
-      {endedWithError && <p className="sv-notice sv-error">Recorded failure: {last.err}</p>}
-      {response ? <section className="sv-response" aria-label="Recorded response">
-        <div className="sv-label"><span>{selected ? "Linked response" : exchange.id === initial?.id ? "Latest response" : "Recorded response"}</span></div>
+      {!exchange.prompts.length && <p className="sv-meta">Human input not captured.</p>}
+      {endedWithError && <p className="sv-notice sv-error">Error: {last.err}</p>}
+      {response ? <section className="sv-response" aria-label="Agent response">
+        <div className="sv-label"><span>Agent response</span></div>
         <div className="sv-response-body">{showBlock(response, !compact)}</div>
       </section> : <div className="sv-notice">No response captured.{run.metadata?.in_progress === true && exchange.id === initial?.id ? " The session was still recording when this snapshot was saved." : ""}</div>}
       {supporting.length > 0 && <SupportingSteps key={`${exchange.id}-${linked}`} count={visibleSupporting.length} initiallyOpen={supporting.some(b => b.key === linked)} render={() => <>
         {unavailableReasoning.length > 0 && <p className={`sv-notice sv-reasoning-unavailable${unavailableTarget ? " sv-linked" : ""}`} id={unavailableTarget ? `message-${unavailableTarget.key}` : undefined}>{readableReasoning ? "Some reasoning text isn’t available in this capture." : "Reasoning text isn’t available in this capture."}{encryptedReasoning ? " The source contains encrypted reasoning without a readable summary." : " Reasoning events were recorded without readable text."}</p>}
-        {visibleSupporting.map(block => <div className="sv-step" key={block.key}><div className="sv-label"><span>{block.err ? "Recorded failure" : block.msg.content.length > 0 && block.msg.content.every(part => part.type === "thinking") ? "Recorded reasoning" : block.msg.content.some(part => part.type === "tool_call") ? "Tool call" : block.msg.role === "assistant" ? "Agent message" : block.msg.role === "system" ? "Recorded context" : block.msg.role === "tool" ? "Tool result" : block.msg.role}</span></div>{showBlock(block)}</div>)}
+        {visibleSupporting.map(block => <div className="sv-step" key={block.key}><div className="sv-label"><span>{block.err ? "Error" : block.msg.content.length > 0 && block.msg.content.every(part => part.type === "thinking") ? "Reasoning" : block.msg.content.some(part => part.type === "tool_call") ? "Tool call" : block.msg.role === "assistant" ? "Agent message" : readingRole(block.msg) === "context" ? "Provided context" : readingRole(block.msg) === "tool" ? "Tool result" : block.msg.role}</span></div>{showBlock(block)}</div>)}
       </>} />}
 
     </>;
@@ -244,24 +255,27 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
   };
   const inspected = run.spans.find(s => s.id === inspect);
   return <div className="rv sv"><style>{CSS}</style>
-    <header className="sv-header">
-      <div className="sv-identity"><div className="sv-meta sv-eyebrow">{local?.project ? `${local.project.split(/[\\/]/).filter(Boolean).at(-1)} · ` : ""}{(run.source as { harness?: string } | undefined)?.harness ?? run.source?.kind ?? "Session"} · {run.created_at.slice(0, 10)}{local ? " · local" : ""}</div>
-        <div className="sv-heading">{editing ? <form onSubmit={saveTitle}><input className="sv-title-input" aria-label="Session title" value={titleValue} maxLength={256} autoFocus onChange={e => setTitleValue(e.target.value)} onKeyDown={e => { if (e.key === "Escape") setEditing(false); }} /><button type="submit" disabled={!titleValue.trim()}>Save title</button><button type="button" onClick={() => setEditing(false)}>Cancel</button></form> : <h1>{title}</h1>}</div>
+    <header className={`sv-header${local ? " sv-local" : ""}`}>
+      {local && <a className="sv-back" href="/" aria-label="All sessions" title="All sessions"><ArrowLeft size={17} /></a>}
+      <div className="sv-heading">
+        {editing ? <input className="sv-title-input" aria-label="Session title" placeholder="Name this session" value={titleValue} maxLength={256} autoFocus onChange={e => setTitleValue(e.target.value)} onKeyDown={e => { if (e.key === "Escape") cancelTitle(); if (e.key === "Enter") { e.preventDefault(); void saveTitle(); } }} onBlur={() => { void saveTitle(); }} />
+          : title ? <h1 onClick={local ? startTitle : undefined}>{title}</h1> : <h1 className="sv-untitled" onClick={local ? startTitle : undefined}>{label}</h1>}
+        {local && !editing && <button className="sv-quiet sv-edit-title" aria-label="Edit title" title="Edit title" onClick={startTitle}><Pencil size={14} /></button>}
+        {titleStatus && <span className={`sv-meta sv-title-status${titleError ? " sv-error" : ""}`} role="status">{titleStatus}</span>}
       </div>
       {local && <button ref={shareButton} className="sv-primary sv-share" disabled={!prefixes.length} onClick={event => openPanel("share", event.currentTarget)}><Share2 size={15} />Share this view</button>}
     </header>
-    {titleStatus && <p className="sv-meta" role="status">{titleStatus}</p>}
     <div className="sv-controls" ref={reading}>
       <div className="sv-search" role="search"><Search size={19} aria-hidden="true" /><input ref={search} type="search" aria-label="Search session content" aria-controls="sv-search-results" aria-expanded={!!query.trim() && searchOpen} placeholder={searchScope === "view" ? "Search this view…" : "Search the whole session…"} value={query} onFocus={() => setSearchOpen(true)} onChange={event => { setQuery(event.target.value); setLimit(50); setSearchOpen(true); setOutline(false); }} onKeyDown={event => { if (event.key === "Escape") { setSearchOpen(false); search.current?.blur(); } if (event.key === "ArrowDown") { event.preventDefault(); document.querySelector<HTMLButtonElement>("#sv-search-results .sv-outline-list button")?.focus(); } }} />
         <div className="sv-search-scope" role="group" aria-label="Search scope"><button aria-pressed={searchScope === "view"} onClick={() => { setSearchScope("view"); setSearchOpen(true); setLimit(50); }}>This view</button><button aria-pressed={searchScope === "session"} onClick={() => { setSearchScope("session"); setSearchOpen(true); setLimit(50); }}>Whole session</button></div>
       </div>
       <nav className="sv-toolbar" aria-label="Session navigation">
-        {current && <div className="sv-nav-buttons"><button className="sv-quiet" aria-label="Previous exchange" disabled={position <= 0} onClick={() => navigate(sequence[position - 1])}><ArrowLeft size={15} /></button><button className="sv-quiet sv-position" aria-expanded={outline} onClick={() => { setOutline(value => !value); setSearchOpen(false); }}>{current.child ? `${current.agent ?? "Agent"} · ` : current.id === initial?.id ? "Latest exchange · " : "Exchange "}{position + 1} of {sequence.length}<ChevronDown size={13} /></button><button className="sv-quiet" aria-label="Next exchange" disabled={position >= sequence.length - 1} onClick={() => navigate(sequence[position + 1])}><ArrowRight size={15} /></button></div>}
-        <button className="sv-quiet" onClick={() => { setMode(value => value === "exchange" ? "conversation" : "exchange"); setOutline(false); }}>{mode === "exchange" ? "Conversation" : "Focus exchange"}</button>
+        {current && <div className="sv-nav-buttons"><button className="sv-quiet" aria-label="Previous in conversation" disabled={position <= 0} onClick={() => navigate(sequence[position - 1])}><ArrowLeft size={15} /></button><button className="sv-quiet sv-position" aria-expanded={outline} title="Conversation outline" onClick={() => { setOutline(value => !value); setSearchOpen(false); }}>{current.child ? `${current.agent ?? "Agent"} · ` : ""}{position + 1} of {sequence.length}<ChevronDown size={13} /></button><button className="sv-quiet" aria-label="Next in conversation" disabled={position >= sequence.length - 1} onClick={() => navigate(sequence[position + 1])}><ArrowRight size={15} /></button></div>}
+        <button className="sv-quiet" onClick={() => { setMode(value => value === "exchange" ? "conversation" : "exchange"); setOutline(false); }}>{mode === "exchange" ? "Show full conversation" : "Show one at a time"}</button>
       </nav>
       {!!query.trim() && searchOpen && <section id="sv-search-results" className="sv-outline sv-results" aria-label="Search results" onKeyDown={event => { if (event.key === "Escape") { search.current?.focus(); setSearchOpen(false); } }}>
         <div className="sv-results-head"><span className="sv-meta" role="status">{matches.length} {matches.length === 1 ? "match" : "matches"} · {searchScope === "view" ? "this view" : "whole session"}</span><button className="sv-quiet" onClick={() => setSearchOpen(false)}>Close results</button></div>
-        <div className="sv-outline-list">{matches.slice(0, limit).map(hit => <button key={hit.block?.key ?? `span-${hit.span}`} onClick={() => { if (hit.exchange) { navigate(hit.exchange, false); setLinked(hit.block?.key ?? null); if (hit.block) setSearchTarget({ key: hit.block.key, query: query.trim().toLowerCase() }); } else { focusButton.current = search.current; setInspect(hit.span); } setSearchOpen(false); }}><span className="sv-meta">{hit.block ? hit.block.err ? "Recorded error" : hit.block.msg.role === "user" ? "Human input" : hit.block.msg.role === "assistant" ? "Agent" : hit.block.msg.role : "Recorded details"}{hit.exchange?.child ? ` · ${hit.exchange.agent ?? "Subagent"}` : ""}</span><span className="sv-preview">{snippet(hit.text)}</span></button>)}
+        <div className="sv-outline-list">{matches.slice(0, limit).map(hit => <button key={hit.block?.key ?? `span-${hit.span}`} onClick={() => { if (hit.exchange) { navigate(hit.exchange, false); setLinked(hit.block?.key ?? null); if (hit.block) setSearchTarget({ key: hit.block.key, query: query.trim().toLowerCase() }); } else { focusButton.current = search.current; setInspect(hit.span); } setSearchOpen(false); }}><span className="sv-meta">{hit.block ? hit.block.err ? "Error" : readingRole(hit.block.msg) === "human" ? "Human input" : readingRole(hit.block.msg) === "context" ? "Provided context" : hit.exchange && responseFor(hit.exchange) === hit.block ? "Agent response" : "Agent activity" : "Raw data"}{hit.exchange?.child ? ` · ${hit.exchange.agent ?? "Subagent"}` : ""}</span><span className="sv-preview">{snippet(hit.text)}</span></button>)}
           {!matches.length && <p className="sv-meta">No matches.{searchScope === "view" && <> <button className="sv-quiet" onClick={() => setSearchScope("session")}>Search the whole session</button></>}</p>}{matches.length > limit && <button onClick={() => setLimit(value => value + 50)}>Show more matches</button>}
         </div>
       </section>}
@@ -269,8 +283,8 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
     </div>
     <div className="sv-reading">{mode === "exchange" ? current ? exchangeBody(current) : <p className="sv-notice">No conversation was captured. Open session details to inspect the recorded data.</p> : <Conversation exchanges={exchanges} active={active} render={exchangeBody} onFocus={navigate} />}</div>
     {selection.length > 0 && local && <div className="sv-selection-bar" role="region" aria-label="Selection actions"><span>{selection.length} selected</span><button className="sv-quiet" onClick={event => openPanel("annotate", event.currentTarget)}>Annotate</button><button className="sv-quiet" onClick={event => openPanel("edit", event.currentTarget)}>Edit view</button><button className="sv-quiet" onClick={() => { setSelection([]); setViewDraft(null); preparedScope.current = ""; }}>Clear</button></div>}
-    <details className="sv-details"><summary>Session details</summary><div className="sv-details-body">{local && <button className="sv-quiet" onClick={() => { setTitleValue(title); setEditing(true); window.scrollTo({ top: 0 }); }}>Edit title</button>}{details}<details onToggle={e => setTrace(e.currentTarget.open)}><summary>Explore trace and raw data</summary>{trace && renderTree()}</details></div></details>
-    {panel && local && <ViewDialog source={local.source} title={title} prefixes={prefixes} primary={prefixes[0]} activity={activity} explicit={selection.length > 0} reconcile={reconcile} intent={panel} draft={viewDraft} onDraft={draft => { setViewDraft(draft); preparations.current.set(preparedScope.current, draft); }} close={closePanel} />}
+    <details className="sv-details"><summary>Session details</summary><div className="sv-details-body"><p className="sv-meta sv-provenance">{[local?.project ? local.project.split(/[\\/]/).filter(Boolean).at(-1) : "", (run.source as { harness?: string } | undefined)?.harness ?? run.source?.kind ?? "Session", run.created_at.slice(0, 10), local ? "local capture" : ""].filter(Boolean).join(" · ")}</p>{details}<details onToggle={e => setTrace(e.currentTarget.open)}><summary>Explore trace and raw data</summary>{trace && renderTree()}</details></div></details>
+    {panel && local && <ViewDialog source={local.source} title={title || shortText(main.map(promptText).find(Boolean) ?? label, 90)} prefixes={prefixes} primary={prefixes[0]} activity={activity} explicit={selection.length > 0} reconcile={reconcile} intent={panel} draft={viewDraft} onDraft={draft => { setViewDraft(draft); preparations.current.set(preparedScope.current, draft); }} close={closePanel} />}
     {inspected && <Inspector key={inspected.id} span={inspected} renderSpan={renderSpan} close={closeInspector} />}
   </div>;
 }
@@ -285,7 +299,12 @@ function SupportingSteps({ count, initiallyOpen, render }: { count: number; init
 function Conversation({ exchanges, active, render, onFocus }: { exchanges: Exchange[]; active: string; render: (e: Exchange, compact: boolean) => ReactNode; onFocus: (e: Exchange) => void }) {
   const at = Math.max(0, exchanges.findIndex(e => e.id === active));
   const [before, setBefore] = useState(Math.max(0, at - 3)), [after, setAfter] = useState(Math.min(exchanges.length, at + 4));
-  return <>{before > 0 && <button onClick={() => setBefore(n => Math.max(0, n - 10))}>Load earlier exchanges ({before})</button>}
-    {exchanges.slice(before, after).map(e => <article id={`exchange-${e.id}`} className="sv-conversation-card" key={e.id}><div className="sv-label"><span>{e.child ? `${e.agent ?? "Agent"} · ` : ""}Exchange {exchanges.indexOf(e) + 1}</span><button className="sv-quiet" onClick={() => onFocus(e)}>Focus exchange</button></div>{render(e, true)}</article>)}
-    {after < exchanges.length && <button onClick={() => setAfter(n => Math.min(exchanges.length, n + 10))}>Load later exchanges ({exchanges.length - after})</button>}</>;
+  // Positions match the navigation row: main exchanges count among themselves,
+  // subagent exchanges by their place in the whole session. The interface
+  // shows no noun for the unit until a better name than "exchange" is chosen.
+  const main = exchanges.filter(e => !e.child);
+  const position = (e: Exchange) => e.child ? `${e.agent ?? "Agent"} · ${exchanges.indexOf(e) + 1} of ${exchanges.length}` : `${main.indexOf(e) + 1} of ${main.length}`;
+  return <>{before > 0 && <button onClick={() => setBefore(n => Math.max(0, n - 10))}>Show earlier · {before} more</button>}
+    {exchanges.slice(before, after).map(e => <article id={`exchange-${e.id}`} className="sv-conversation-card" key={e.id}><div className="sv-label"><span>{position(e)}</span><button className="sv-quiet" onClick={() => onFocus(e)}>Show on its own</button></div>{render(e, true)}</article>)}
+    {after < exchanges.length && <button onClick={() => setAfter(n => Math.min(exchanges.length, n + 10))}>Show later · {exchanges.length - after} more</button>}</>;
 }

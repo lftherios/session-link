@@ -112,7 +112,7 @@
       "input": {
         "messages": [
           {
-            "role": "user",
+            "role": "tool",
             "content": [
               {
                 "type": "tool_result",

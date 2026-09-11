@@ -30,7 +30,7 @@ const CSS = `
 @media(max-width:560px){.sh h1{font-size:28px}.sh .sh-card{padding:16px}.sh .sh-cardhead{align-items:flex-start}}
 `;
 
-const label = (item: Item) => ({ tool_call: "Tool arguments", tool_result: "Tool result", error: "Recorded error", thinking: "Recorded reasoning", data: "Recorded data", source_reference: "Source reference" }[item.kind] ?? item.role);
+const label = (item: Item) => ({ tool_call: "Tool arguments", tool_result: "Tool result", error: "Recorded error", thinking: "Recorded reasoning", data: "Recorded data", source_reference: "Source reference" }[item.kind] ?? { user: "Human input", assistant: "Agent response", system: "Provided context", tool: "Tool result" }[item.role] ?? item.role);
 const spanText = (run: Run, id: string) => {
   const span = run.spans.find(s => s.id === id) as { input?: { messages?: { content?: { type: string; text?: string }[] }[] } } | undefined;
   return (span?.input?.messages ?? []).flatMap(m => m.content ?? []).filter(p => p.type === "text" && typeof p.text === "string").map(p => p.text!).join("\n\n");
@@ -47,7 +47,7 @@ function ExcerptCard({ run, item, primary, renderText }: { run: Run; item: Item;
   return <article className={`sh-card${primary ? " sh-primary" : ""}`} id={`span=${item.id}`}>
     <div className="sh-cardhead"><span className="sh-meta">{primary ? "Start here · " : ""}{label(item)}{item.passage ? " · selected passage" : ""}</span><button className="sh-copy" onClick={copyLink}>{copy}</button></div>
     {renderText(item.kind === "source_reference" ? spanText(run, item.id).replace(/^(\s*)\[/gm, "$1\\[") : spanText(run, item.id))}
-    {item.prompt_missing && <p className="sh-notice">Original prompt not included.</p>}
+    {item.prompt_missing && <p className="sh-notice">Human input not included.</p>}
     {item.tool_call_missing && <p className="sh-notice">The corresponding tool arguments are not included.</p>}
     {item.omitted_before && !primary && <p className="sh-notice">Other session material preceded this excerpt and is omitted.</p>}
   </article>;
@@ -67,11 +67,11 @@ export function ShareView({ run, share, renderText }: { run: Run; share: Share; 
     <h1>{run.name ?? "Shared session excerpt"}</h1>
     <p className="sh-intro">Selected material from a session. Other content is not included.</p>
     {share.references_unavailable && <p className="sh-notice">Some cited source references were unavailable in the captured material.</p>}
-    {share.note_id && <aside className="sh-note"><p className="sh-meta">Author context</p>{renderText(spanText(run, share.note_id))}</aside>}
+    {share.note_id && <aside className="sh-note"><p className="sh-meta">Author note</p>{renderText(spanText(run, share.note_id))}</aside>}
     {primary && <ExcerptCard run={run} item={primary} primary renderText={renderIncluded} />}
-    {share.items.length > 1 && <h2 className="sh-context">Included context <span className="sh-meta">· in session order</span></h2>}
+    {share.items.length > 1 && <h2 className="sh-context">Relevant context <span className="sh-meta">· in session order</span></h2>}
     {share.items.filter(item => item.id !== primary?.id).map(item => <ExcerptCard key={item.id} run={run} item={item} primary={false} renderText={renderIncluded} />)}
-    <p className="sh-notice">{share.original_fidelity === "exact" ? "The original session was captured exactly. " : share.original_fidelity === "reconstructed" ? "The original session was reconstructed from agent history. " : ""}This excerpt contains selected text and any author context above.</p>
+    <p className="sh-notice">{share.original_fidelity === "exact" ? "The original session was captured exactly. " : share.original_fidelity === "reconstructed" ? "The original session was reconstructed from agent history. " : ""}This excerpt contains selected text and any author note above.</p>
     <details className="sh-inspect"><summary>Inspect included data</summary><pre>{JSON.stringify(run, null, 2)}</pre></details>
   </div>;
 }

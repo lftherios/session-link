@@ -5,6 +5,7 @@ package share
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -46,6 +47,39 @@ func role(v any) string {
 		return s
 	}
 	return "other"
+}
+
+// harnessWrapper matches harness-injected text carried in user messages:
+// environment and instruction blocks, reminders and local slash-command
+// records. Keep in sync with HARNESS_WRAPPER in packages/viewer/session-model.ts.
+var harnessWrapper = regexp.MustCompile(`(?i)^\s*<(?:environment_context|system|instructions|user_instructions|AGENTS|local-command-|command-name|command-message|command-args)`)
+
+// readingRole mirrors the viewer's content model. User messages made only of
+// tool results are agent activity, and harness wrappers are provided context,
+// so neither replaces the human input a response is linked to.
+func readingRole(msg map[string]any) string {
+	r := role(msg["role"])
+	content := array(msg["content"])
+	if r != "user" || len(content) == 0 {
+		return r
+	}
+	results, wrapped := true, true
+	for _, item := range content {
+		p := object(item)
+		if p["type"] != "tool_result" {
+			results = false
+		}
+		if p["type"] != "text" || !harnessWrapper.MatchString(str(p["text"])) {
+			wrapped = false
+		}
+	}
+	switch {
+	case results:
+		return "tool"
+	case wrapped:
+		return "system"
+	}
+	return r
 }
 
 // BuildCatalog collapses complete replayed histories, scoped to each agent.
@@ -178,7 +212,7 @@ func BuildCatalog(run map[string]any) Catalog {
 		}{{"in", in, skip}, {"out", out, 0}} {
 			for mi := side.skip; mi < len(side.messages); mi++ {
 				msg := object(side.messages[mi])
-				r := role(msg["role"])
+				r := readingRole(msg)
 				before := len(cat.Units)
 				parts(array(msg["content"]), fmt.Sprintf("u%d-%s-%d", si, side.name, mi), r, "text", "")
 				if r == "user" {

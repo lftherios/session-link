@@ -56,8 +56,6 @@ const css = `
   .note{font-family:var(--mono);font-size:12px;color:var(--faint);overflow-wrap:anywhere}
   .result{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
   .result.err{color:var(--error);white-space:pre-wrap}
-  .session-actions{position:relative}.session-actions summary{cursor:pointer;font-size:12px;color:var(--faint);padding:8px}
-  .session-actions>.pub{position:absolute;right:0;top:36px;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;width:min(340px,calc(100vw - 48px));box-shadow:0 8px 30px #0002}
   .card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:10px;
     padding:14px 18px;margin-bottom:10px;color:var(--ink);text-decoration:none;
     transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}
@@ -297,7 +295,7 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 		composeLink = `<a class="btn" href="/compose/` + id + `">Choose what to share</a>`
 	}
 	if ext, _ := run["extensions"].(map[string]any); ext[share.Extension] != nil {
-		previewNote = `<p class="note">Excerpt preview · only the selected material and author context are included. Excerpts can currently be downloaded locally.</p>`
+		previewNote = `<p class="note">Excerpt preview · only the selected material and the author note are included. Excerpts can currently be downloaded locally.</p>`
 		composeLink = ""
 		if source := s.editSource(id); source != "" {
 			composeLink = `<a class="btn" href="/compose/` + source + `">Edit selection</a>`
@@ -309,29 +307,28 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 		downloadClass, downloadLabel = "btn primary", "Download excerpt"
 	}
 	localConfig := ""
-	actionsOpen, actionsClose := "", ""
+	tools := `<div class="pub">
+         ` + composeLink + `
+         <button class="btn" id="copy" title="copy this local URL, span selection included; publish to share with a colleague">copy local URL</button>
+         <button class="` + downloadClass + `" id="dl" title="save the run document as ` + id + `.json">` + downloadLabel + `</button>
+         ` + publishTarget + `
+         <button class="btn primary" id="pub"` + publishDisabled + `>` + btnLabel + `</button>
+       </div>`
+	top := `<div class="top">
+       <p class="eyebrow" style="margin:0"><a href="/">← sessions</a></p>
+       ` + tools + `
+     </div>
+     <div class="result-row"><span class="result" id="out"></span></div>`
 	if preview && publishDisabled == "" {
+		// The reading view owns its header: back link, editable title and one
+		// primary action. Whole-session publishing has no chrome here yet.
 		previewNote = ""
-		composeLink = ""
 		config, _ := json.Marshal(map[string]string{"source": id, "project": s.Project, "title": s.localTitle(id)})
 		localConfig = `<script>window.__LOCAL__=` + string(config) + `</script>`
-		actionsOpen, actionsClose = `<details class="session-actions"><summary>Session actions</summary>`, `</details>`
-		if s.apiKey() != "" {
-			btnLabel = "Publish whole session…"
-		}
+		top = ""
 	}
 	return page(name,
-		`<div class="top">
-       <p class="eyebrow" style="margin:0"><a href="/">← sessions</a> · local preview</p>
-       `+actionsOpen+`<div class="pub">
-         `+composeLink+`
-         <button class="btn" id="copy" title="copy this local URL, span selection included; publish to share with a colleague">copy local URL</button>
-         <button class="`+downloadClass+`" id="dl" title="save the run document as `+id+`.json">`+downloadLabel+`</button>
-         `+publishTarget+`
-         <button class="btn primary" id="pub"`+publishDisabled+`>`+btnLabel+`</button>
-       </div>`+actionsClose+`
-     </div>
-     <div class="result-row"><span class="result" id="out"></span></div>
+		top+`
      <dialog id="confirm">
        <p class="eyebrow" style="margin:0 0 12px">Publish this capture?</p>
        <div class="kv"><span class="k">server</span><span class="v">`+html.EscapeString(s.Target)+`</span></div>
@@ -353,7 +350,9 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
              dlg=document.getElementById("confirm");
        const LOGIN="Not signed in — run `+"`slink login`"+` in a terminal, then reload this page.";
        const hits=d=>d.error?.details?"\n"+d.error.details.map(h=>"  "+(h.pattern??h)+"  "+(h.preview??"")).join("\n"):"";
-       if(!PUB.hasKey){
+       if(!btn){
+         // The reading view renders no whole-session tools.
+       }else if(!PUB.hasKey){
          btn.onclick=()=>{out.className="result err";out.textContent=LOGIN};
        }else{
          btn.onclick=()=>{out.className="result";out.textContent="";dlg.showModal()};
@@ -399,12 +398,12 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
          };
        }
        const copy=document.getElementById("copy"),dl=document.getElementById("dl");
-       copy.onclick=async()=>{
+       if(copy)copy.onclick=async()=>{
          try{await navigator.clipboard.writeText(location.href);copy.textContent="copied"}
          catch{copy.textContent="copy failed"}
          setTimeout(()=>{copy.textContent="copy local URL"},1200);
        };
-       dl.onclick=()=>{
+       if(dl)dl.onclick=()=>{
          const u=URL.createObjectURL(new Blob([JSON.stringify(window.__RUN__)],{type:"application/json"}));
          const a=document.createElement("a");
          a.href=u;a.download="`+id+`.json";a.click();

@@ -2,7 +2,10 @@
 // Walks a ~/.claude/projects JSONL transcript and reconstructs a session/v0
 // run: user/tool messages accumulate as the pending delta, each assistant
 // entry becomes an llm_call whose input is that delta, tool_use blocks
-// become tool_call spans closed by the matching tool_result.
+// become tool_call spans closed by the matching tool_result. Only what the
+// person typed keeps the user role: tool results become tool messages and
+// isMeta rows become system messages. Synthetic API error entries, such as
+// rate limits, become failed custom spans instead of agent responses.
 package importers
 
 import (
@@ -88,6 +91,41 @@ func ccString(v any) string {
 	default:
 		return fmt.Sprintf("%v", x) // JS would give [object Object]; unreachable for real transcripts
 	}
+}
+
+// ccUserRole keeps the user role for what the person typed. Tool results
+// become tool messages, as in the pi and Hermes importers, and isMeta rows
+// (injected caveats and notices) become system messages.
+func ccUserRole(e map[string]any, content []any) string {
+	results := len(content) > 0
+	for _, pv := range content {
+		if strOr(m(pv)["type"], "") != "tool_result" {
+			results = false
+			break
+		}
+	}
+	switch {
+	case results:
+		return "tool"
+	case ccTruthy(e["isMeta"]):
+		return "system"
+	}
+	return "user"
+}
+
+// ccText joins the text parts of normalized content, or returns fallback.
+func ccText(content []any, fallback string) string {
+	var texts []string
+	for _, pv := range content {
+		p := m(pv)
+		if t := strOr(p["text"], ""); strOr(p["type"], "") == "text" && t != "" {
+			texts = append(texts, t)
+		}
+	}
+	if len(texts) == 0 {
+		return fallback
+	}
+	return strings.Join(texts, "\n\n")
 }
 
 // ccPut copies src[srcKey] into dst[key] only when the key is present —
@@ -187,7 +225,29 @@ func ccTranscriptToRun(lines []string, sessionName string) map[string]any {
 			if pendingStart == nil { // ??=
 				pendingStart = e["timestamp"]
 			}
-			pending = append(pending, map[string]any{"role": "user", "content": content})
+			pending = append(pending, map[string]any{"role": ccUserRole(e, content), "content": content})
+		} else if ccTruthy(e["isApiErrorMessage"]) {
+			// Claude Code writes harness failures as assistant entries from a
+			// synthetic model. No model produced them, so keep the text as a
+			// failed span rather than an llm_call with an agent response.
+			seq++
+			failure := map[string]any{"message": ccText(normalize.AnthropicContent(msg["content"]), "Claude Code reported an API error")}
+			if kind := strOr(e["error"], ""); kind != "" {
+				failure["type"] = kind
+			}
+			spans = append(spans, map[string]any{
+				"id":         fmt.Sprintf("s%d", seq),
+				"parent_id":  "root",
+				"type":       "custom",
+				"name":       "harness error",
+				"started_at": prevTs,
+				"ended_at":   e["timestamp"],
+				"status":     "error",
+				"error":      failure,
+				"input":      map[string]any{"messages": pending},
+			})
+			pending = []any{}
+			pendingStart = nil
 		} else {
 			seq++
 			modelID := "unknown"

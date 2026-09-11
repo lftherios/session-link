@@ -46,11 +46,12 @@ try {
   await send("Runtime.enable"); await send("Page.enable");
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 950, deviceScaleFactor: 1, mobile: false });
   await navigate(url); await waitFor("!!document.querySelector('.sv-response-body table')");
-  assert.match(await evaluate("document.querySelector('.sv-position').textContent"), /Latest exchange · 8 of 8/);
+  assert.match(await evaluate("document.querySelector('.sv-position').textContent"), /^8 of 8$/);
   assert.match(await evaluate("document.querySelector('.sv-prompt').textContent"), /Write the recommendation/);
   assert.equal(await evaluate("document.activeElement.tagName"), "BODY");
   assert.equal(await evaluate("document.querySelector('.sv-details').open"), false);
-  assert.equal(await evaluate("document.querySelector('.session-actions').open"), false);
+  assert.equal(await evaluate("!!document.querySelector('.session-actions')"), false);
+  assert.equal(await evaluate("/exchange/i.test(document.querySelector('.sv').innerText)"), false);
   assert.equal(await evaluate("document.querySelector('.sv-reading').textContent.includes('Child result')"), false);
   assert.equal(await evaluate("document.querySelectorAll('.sv-primary').length"), 1);
   assert.equal(await evaluate("getComputedStyle(document.querySelector('.sv-block-tools')).opacity"), "0");
@@ -107,7 +108,7 @@ try {
   assert.match(await evaluate("document.querySelector('.sv-linked').textContent"), /source-check-42/);
   console.log("PASS: view search stays scoped; session search reaches earlier answers; view search reveals collapsed activity");
 
-  await clickText("Conversation"); await waitFor("!!document.querySelector('.sv-conversation-card')");
+  await clickText("Show full conversation"); await waitFor("!!document.querySelector('.sv-conversation-card')");
   await evaluate("document.querySelector('.sv-conversation-card .sv-label button').click()");
   await waitFor("!document.querySelector('.sv-conversation-card')");
   await navigate(url + "#span=s8"); await waitFor("!!document.querySelector('.sv-response-body table')");
@@ -161,7 +162,7 @@ try {
   await setField('[aria-label="Your annotation"]', "Please review the recommendation and the captured evidence.");
   await setField('[aria-label="View title"]', "Review the onboarding comparison");
   await evaluate("document.querySelector('[aria-label=\"Close share panel\"]').click()");
-  await evaluate("document.querySelector('[aria-label=\"Previous exchange\"]').click()");
+  await evaluate("document.querySelector('[aria-label=\"Previous in conversation\"]').click()");
   await waitFor("document.querySelector('.sv-response-body').textContent.includes('Finding 7')");
   assert.match(await evaluate("document.querySelector('.sv-selection-bar').textContent"), /1 selected/);
   await evaluate("document.querySelector('[aria-label=\"Select human input\"]').click()");
@@ -169,12 +170,12 @@ try {
   assert.equal(await evaluate("document.querySelector('[aria-label=\"Your annotation\"]').value"), "Please review the recommendation and the captured evidence.");
   await evaluate("document.querySelector('[aria-label=\"Close share panel\"]').click()");
   await evaluate("document.querySelector('[aria-label=\"Deselect human input\"]').click()");
-  await evaluate("document.querySelector('[aria-label=\"Next exchange\"]').click()");
+  await evaluate("document.querySelector('[aria-label=\"Next in conversation\"]').click()");
   await waitFor("!!document.querySelector('.sv-response-body table')");
   await clickText("Share this view"); await waitFor("!!document.querySelector('[aria-label=\"Your annotation\"]')");
   assert.equal(await evaluate("document.querySelector('[aria-label=\"Your annotation\"]').value"), "Please review the recommendation and the captured evidence.");
   await evaluate("document.querySelector('.sv-included-item').open=true");
-  await clickText("Include original prompt"); await waitFor("document.querySelectorAll('.sv-included-item').length===2");
+  await clickText("Include human input"); await waitFor("document.querySelectorAll('.sv-included-item').length===2");
   await clickText("Preview view"); await waitFor("!!document.querySelector('.sh-primary table')");
   assert.equal(await evaluate("window.__RUN__.spans.length"), 4);
   assert.equal(await evaluate("JSON.stringify(window.__RUN__).includes('Earlier recovered failure')"), false);

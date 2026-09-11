@@ -73,7 +73,7 @@ export function ViewDialog({ source, title, prefixes, primary, activity, explici
   const isSaved = saved?.fingerprint === JSON.stringify(draft);
   return <dialog className="sv-dialog sv-share-dialog" aria-label="Share this view" ref={ref} onCancel={event => { event.preventDefault(); if (!busy) close(); }}>
     <div className="sv-dialog-head"><h2>{intent === "annotate" ? "Annotate selection" : intent === "edit" ? "Edit view" : "Share this view"}</h2><button className="sv-quiet" aria-label="Close share panel" disabled={busy} onClick={close}>✕</button></div>
-    <p className="sv-dialog-intro">{explicit ? "Your selected material" : "The human input and answer in this view"}. Review what’s included, then save a local copy.</p>
+    <p className="sv-dialog-intro">{explicit ? "Your selected material" : "The human input and agent response in this view"}. Review what’s included, then save a local copy.</p>
     {error && <p className="sv-notice sv-error" role="alert">{error}{!units && <button onClick={() => setAttempt(value => value + 1)}>Try again</button>}</p>}
     {loading ? <p role="status" className="sv-meta">Loading view…</p> : units && draft && <fieldset disabled={busy}>
       <details className="sv-author-fields" open={details} onToggle={event => setDetails(event.currentTarget.open)}>
@@ -93,8 +93,8 @@ export function ViewDialog({ source, title, prefixes, primary, activity, explici
           return <details className="sv-included-item" key={unit.id} open={passage === unit.id || undefined}>
             <summary><span className="sv-meta">{unitLabel(unit)}{item.start != null ? " · passage" : ""}{draft.primary === unit.id ? " · opens first" : ""}</span><span>{shortText(text.split(/\n\s*\n/)[0].replace(/^\s{0,3}#{1,6}\s+/, ""), 150)}</span></summary>
             <div className="sv-included-body"><DocumentText text={text} />
-              <div className="sv-item-actions"><button onClick={() => change({ ...draft, primary: unit.id })} disabled={draft.primary === unit.id}>Start here</button><button onClick={() => { setPassage(unit.id); setRange(null); }}>Select passage</button>{item.start != null && <button onClick={() => replace(unit.id, { id: unit.id })}>Use full text</button>}<button onClick={() => replace(unit.id)}>Remove</button>{missingPrompts.length > 0 && <button onClick={() => include(missingPrompts)}>Include original prompt</button>}</div>
-              {unit.prompt_incomplete && <p className="sv-meta">Some original prompt content was not captured.</p>}
+              <div className="sv-item-actions"><button onClick={() => change({ ...draft, primary: unit.id })} disabled={draft.primary === unit.id}>Start here</button><button onClick={() => { setPassage(unit.id); setRange(null); }}>Select passage</button>{item.start != null && <button onClick={() => replace(unit.id, { id: unit.id })}>Use full text</button>}<button onClick={() => replace(unit.id)}>Remove</button>{missingPrompts.length > 0 && <button onClick={() => include(missingPrompts)}>Include human input</button>}</div>
+              {unit.prompt_incomplete && <p className="sv-meta">Some human input was not captured.</p>}
               {passage === unit.id && <div className="sv-passage-editor"><p className="sv-meta">Highlight the exact source passage to include.</p><textarea className="sv-passage" aria-label="Select source passage" value={unit.text} readOnly onSelect={event => readRange(event.currentTarget)} onMouseUp={event => readRange(event.currentTarget)} onKeyUp={event => readRange(event.currentTarget)} /><button disabled={!range} onClick={() => { if (range) { replace(unit.id, { id: unit.id, ...range }); setPassage(""); } }}>Use selected passage</button></div>}
             </div>
           </details>;

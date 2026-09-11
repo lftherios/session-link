@@ -54,10 +54,10 @@ function UnitCard({ unit, selection, primary, units, selections, initialPassage,
     {!unit.unavailable && <div className="sc-actions">
       <button onClick={() => { setPassage(v => !v); setRange(null); }}>{passage ? "Close passage selector" : clipped ? "Change passage" : "Select a passage"}</button>
       {clipped && <button onClick={() => onSelect({ id: unit.id })}>Use full text</button>}
-      {selection && missingPrompt && <button onClick={onPrompt}>Include original prompt</button>}
+      {selection && missingPrompt && <button onClick={onPrompt}>Include human input</button>}
       <span className="sc-meta">Source item {units.indexOf(unit) + 1}</span>
     </div>}
-    {selection && (unit.role === "assistant" || unit.role === "tool" || unit.kind === "error") && (prompts.length === 0 || unit.prompt_incomplete) && <p className="sc-note">{unit.prompt_incomplete ? "Some original prompt content is unavailable for selection." : "Original prompt unavailable in this session."}</p>}
+    {selection && (unit.role === "assistant" || unit.role === "tool" || unit.kind === "error") && (prompts.length === 0 || unit.prompt_incomplete) && <p className="sc-note">{unit.prompt_incomplete ? "Some human input is unavailable for selection." : "Human input unavailable in this session."}</p>}
     {passage && <div style={{ marginTop: 16 }}>
       <p className="sc-note">Select the exact passage below, then include it. Source text stays unchanged.</p>
       <textarea className="sc-passage" readOnly value={unit.text} aria-label={`Select passage from ${unit.id}`} onSelect={e => readRange(e.currentTarget)} onMouseUp={e => readRange(e.currentTarget)} onKeyUp={e => readRange(e.currentTarget)} />
@@ -100,7 +100,7 @@ export function ShareComposer({ source }: { source: string }) {
       const selected = from ? data.catalog.units.filter(unit => !unit.unavailable && ((unit.kind === "text" && unit.role === "assistant" && unit.id.startsWith(from + "-") && !unit.id.includes("-ref-")) || (unit.kind === "error" && unit.id === from))).map(unit => ({ id: unit.id })) : [];
       let initial = data.draft;
       const suggestedTitle = meaningfulTitle(data.source_title) ? data.source_title! : shortText(data.catalog.units.find(unit => unit.role === "user" && unit.kind === "text" && !/^\s*</.test(unit.text))?.text ?? "Session excerpt", 90);
-      if (from && selected.length === 0) setError("This response is unavailable for selection. Choose the material below.");
+      if (from && selected.length === 0) setError("This agent response is unavailable for selection. Choose the material below.");
       if (selected.length && initial.items.length === 0) {
         initial = { ...initial, items: selected, primary: selected[0].id, title: initial.title === "Shared session excerpt" ? suggestedTitle.slice(0, 256) : initial.title };
         setOnlySelected(true);
@@ -150,13 +150,13 @@ export function ShareComposer({ source }: { source: string }) {
   return <div className="rv sc"><style>{RV_CSS + CSS}</style>
     <a className="sc-meta" href={`/p/${source}`}>← Back to session</a>
     <h1>Share the useful part.</h1>
-    <p className="sc-intro">Choose a finding, a response, or the evidence behind a question. Include its prompt and add what you want your colleague to know.</p>
+    <p className="sc-intro">Choose a finding, an agent response, or the evidence behind a question. Include the human input behind it and add an author note for your colleague.</p>
     {error && <p className="sc-note sc-error" role="alert">{error}</p>}
-    {incoming.length > 0 && draft && <div className="sc-card"><p>You already have a saved draft for this session.</p><button onClick={() => { const ids = new Set(incoming.map(item => item.id)); change({ ...draft, items: [...draft.items.filter(item => !ids.has(item.id)), ...incoming], primary: incoming[0].id }); setIncoming([]); setOnlySelected(true); }}>Add this response to the draft</button></div>}
+    {incoming.length > 0 && draft && <div className="sc-card"><p>You already have a saved draft for this session.</p><button onClick={() => { const ids = new Set(incoming.map(item => item.id)); change({ ...draft, items: [...draft.items.filter(item => !ids.has(item.id)), ...incoming], primary: incoming[0].id }); setIncoming([]); setOnlySelected(true); }}>Add this agent response to the draft</button></div>}
     {!loaded || !draft ? <p className="sc-note">{status}</p> : <fieldset disabled={working}><div className="sc-layout">
       <section aria-label="Source material">
         <p className="sc-meta">Source · {loaded.source_title ?? "Session"}</p>
-        <div className="sc-tools"><input type="search" placeholder="Find a prompt, response, or result…" aria-label="Search source material" value={query} onChange={e => { setQuery(e.target.value); setShown(50); }} /><label className="sc-check"><input type="checkbox" checked={onlySelected} onChange={e => { setOnlySelected(e.target.checked); setShown(50); }} />Included only</label></div>
+        <div className="sc-tools"><input type="search" placeholder="Find human input, an agent response, or activity…" aria-label="Search source material" value={query} onChange={e => { setQuery(e.target.value); setShown(50); }} /><label className="sc-check"><input type="checkbox" checked={onlySelected} onChange={e => { setOnlySelected(e.target.checked); setShown(50); }} />Included only</label></div>
         {filtered.slice(0, shown).map(unit => <UnitCard key={unit.id} unit={unit} units={units} selection={draft.items.find(item => item.id === unit.id)} selections={draft.items} primary={draft.primary === unit.id} initialPassage={unit.id === passageUnit}
           onSelect={selection => {
             const items = draft.items.filter(item => item.id !== unit.id); if (selection) items.push(selection);
@@ -170,11 +170,11 @@ export function ShareComposer({ source }: { source: string }) {
       </section>
       <aside className="sc-side" aria-label="Excerpt details">
         <label className="sc-field">Title<input type="text" value={draft.title} maxLength={256} onChange={e => change({ ...draft, title: e.target.value })} /></label>
-        <label className="sc-field">Your context <span className="sc-meta">Optional · shown as author context</span><textarea value={draft.note} maxLength={10000} placeholder="What should your colleague look at or help with?" onChange={e => change({ ...draft, note: e.target.value })} /></label>
+        <label className="sc-field">Author note <span className="sc-meta">Optional</span><textarea value={draft.note} maxLength={10000} placeholder="What should your colleague look at or help with?" onChange={e => change({ ...draft, note: e.target.value })} /></label>
         <p className="sc-note">{draft.items.length} {draft.items.length === 1 ? "piece" : "pieces"} included. Choose “Start here” on the main finding or question.</p>
         <button className="sc-primary" disabled={working || draft.items.length === 0 || !draft.title.trim()} onClick={preview}>{working ? "Preparing preview…" : "Preview excerpt"}</button>
         <p className="sc-note" role="status">{status}</p>
-        <p className="sc-note">Only your selected text, title, and context enter the excerpt. Preview and download are available locally.</p>
+        <p className="sc-note">Only your selected text, title, and author note enter the excerpt. Preview and download are available locally.</p>
       </aside>
     </div></fieldset>}
   </div>;

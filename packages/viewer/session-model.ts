@@ -96,38 +96,100 @@ export function readerFlow(flow: FlowBlock[]): FlowBlock[] {
 
 export const selectionPrefixes = (block: MessageBlock) => block.unitPrefixes ?? [block.unitPrefix];
 
+// Harness wrappers carried in user messages: environment and instruction
+// blocks, reminders and local slash-command records. They are provided
+// context, not human input. Keep in sync with go/internal/share/catalog.go.
+const HARNESS_WRAPPER = /^\s*<(?:environment_context|system|instructions|user_instructions|AGENTS|local-command-|command-name|command-message|command-args)/i;
+export type ReadingRole = "human" | "context" | "tool" | "agent";
+// How the reader treats a message, following the content model. Some
+// harnesses record tool results and injected context with the user role.
+export function readingRole(msg: Message): ReadingRole {
+  if (msg.role === "system" || msg.role === "developer") return "context";
+  if (msg.role === "tool") return "tool";
+  if (msg.role !== "user") return "agent";
+  if (msg.content.length && msg.content.every(part => part.type === "tool_result")) return "tool";
+  const texts = msg.content.map(part => part.type === "text" ? part.text : null);
+  return texts.length && texts.every(text => text !== null && HARNESS_WRAPPER.test(text)) ? "context" : "human";
+}
+
 export function exchangesFor(run: Run, flow = buildFlow(run)): Exchange[] {
   const agents = new Map(run.spans.filter(s => s.type === "agent").map(s => [s.id, s]));
-  const current = new Map<string, Exchange>(), exchanges: Exchange[] = [];
+  const current = new Map<string, Exchange>(), held = new Map<string, MessageBlock[]>(), exchanges: Exchange[] = [];
+  const open = (block: MessageBlock) => {
+    const agent = agents.get(block.scope);
+    const exchange: Exchange = { id: block.key, scope: block.scope, child: !!agent?.parent_id, agent: agent?.name, prompts: [], blocks: [] };
+    current.set(block.scope, exchange); exchanges.push(exchange);
+    return exchange;
+  };
+  const isContext = (block: MessageBlock) => !block.err && readingRole(block.msg) === "context";
   for (const block of flow) {
     if (block.kind !== "msg") continue;
+    // Provided context waits for what follows it, so it reads with the human
+    // input it accompanied instead of trailing the previous answer.
+    if (isContext(block)) { held.set(block.scope, [...(held.get(block.scope) ?? []), block]); continue; }
+    const waiting = held.get(block.scope) ?? [];
+    held.delete(block.scope);
     let exchange = current.get(block.scope);
-    const user = block.msg.role === "user";
-    const adjacentPrompt = user && exchange?.blocks.length === 0 && exchange.prompts.at(-1)?.spanId === block.spanId;
-    if (!exchange || (user && !adjacentPrompt)) {
-      const agent = agents.get(block.scope);
-      exchange = { id: block.key, scope: block.scope, child: !!agent?.parent_id, agent: agent?.name, prompts: [], blocks: [] };
-      current.set(block.scope, exchange); exchanges.push(exchange);
+    if (readingRole(block.msg) === "human") {
+      // Consecutive human messages in one recorded call stay together.
+      const adjacent = exchange && exchange.prompts.at(-1)?.spanId === block.spanId && exchange.blocks.every(isContext);
+      if (!exchange || !adjacent) exchange = open(block);
+      exchange.blocks.push(...waiting);
+      exchange.prompts.push(block);
+    } else {
+      exchange ??= open(block);
+      exchange.blocks.push(...waiting, block);
     }
-    if (user) exchange.prompts.push(block); else exchange.blocks.push(block);
   }
-  // System-only setup is accessible in the trace; it isn't an empty exchange.
-  return exchanges.filter(e => e.prompts.length || e.blocks.some(b => b.msg.role !== "system" || b.err));
+  for (const [scope, waiting] of held) current.get(scope)?.blocks.push(...waiting);
+  // Context-only setup is accessible in the trace; it isn't an empty exchange.
+  return exchanges.filter(e => e.prompts.length || e.blocks.some(b => !isContext(b)));
 }
 
 export const responseFor = (exchange: Exchange) => exchange.blocks.filter(b => b.msg.role === "assistant" && messageText(b.msg).trim()).at(-1);
 export const defaultExchange = (exchanges: Exchange[]) => exchanges.filter(e => !e.child).at(-1) ?? exchanges.at(-1);
-export const promptLabel = (e: Exchange) => e.prompts.map(p => messageText(p.msg)).filter(t => t.trim() && !/^\s*<(?:environment_context|system|instructions|AGENTS)/i.test(t)).at(-1)?.trim() || "Recorded exchange";
+// The readable text a person typed, or "" when the prompt carries none.
+export const promptText = (e: Exchange) => e.prompts.map(p => messageText(p.msg)).filter(t => t.trim() && !HARNESS_WRAPPER.test(t)).at(-1)?.trim() ?? "";
+// What the prompt list shows: the text, or what the prompt contains instead.
+export const promptLabel = (e: Exchange) => {
+  const text = promptText(e);
+  if (text) return text;
+  const types = new Set(e.prompts.flatMap(p => p.msg.content.map(part => part.type)));
+  return types.has("tool_result") ? "Tool result" : types.has("image") ? "Image" : "Human input without text";
+};
 export const shortText = (text: string, max = 86) => { const clean = text.replace(/\s+/g, " ").trim(); return clean.length > max ? clean.slice(0, max - 1).trimEnd() + "…" : clean; };
-export const meaningfulTitle = (name?: string) => !!name?.trim() && !/^(?:untitled(?: session)?|session|[a-f\d-]{24,}|rollout-.*|.*\.(?:jsonl?|spool))$/i.test(name.trim()) && !name.trim().startsWith("/");
-export function sessionTitle(run: Run, exchanges: Exchange[]): string {
-  const name = run.name?.trim();
-  if (name && meaningfulTitle(name)) return name;
-  const prompt = exchanges.filter(e => !e.child).map(promptLabel).find(t => t !== "Recorded exchange");
-  if (prompt) return shortText(prompt, 90);
-  const harness = (run.source as { harness?: string } | undefined)?.harness ?? run.source?.kind ?? "Session";
-  return `${harness} · ${run.created_at.slice(0, 10)}`;
+export const meaningfulTitle = (name?: string) => !!name?.trim() && !/^(?:untitled(?: session)?|session|[a-f\d-]{24,}|rollout-.*|.*\.(?:jsonl?|spool))$/i.test(name.trim()) && !/^[/<]/.test(name.trim());
+// Importers clip the first prompt into `name` when a harness records no
+// summary. That keeps lists readable, but it is not a title: the reader
+// already opens on that prompt. Treat such names as untitled.
+const normalizeText = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
+export function nameIsFirstPrompt(name: string, exchanges: Exchange[]): boolean {
+  const stem = normalizeText(name.replace(/(?:…|\.\.\.)$/, ""));
+  if (!stem) return true;
+  const first = exchanges.filter(e => !e.child).flatMap(e => e.prompts.map(p => normalizeText(messageText(p.msg)))).find(t => t && !t.startsWith("<"));
+  return !!first && (first === stem || (stem.length >= 20 && first.startsWith(stem)));
 }
+
+// The authored or harness-provided title, or "" when the session is untitled.
+export function sessionTitle(run: Run, exchanges: Exchange[]): string {
+  const name = run.name?.trim() ?? "";
+  return name && meaningfulTitle(name) && !nameIsFirstPrompt(name, exchanges) ? name : "";
+}
+
+const HARNESS_NAMES: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", pi: "pi", opencode: "OpenCode", hermes: "Hermes" };
+export function harnessName(run: Run): string {
+  const harness = (run.source as { harness?: string } | undefined)?.harness;
+  if (harness) return HARNESS_NAMES[harness] ?? harness;
+  const kind = run.source?.kind;
+  return kind ? kind[0].toUpperCase() + kind.slice(1) : "Session";
+}
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function sessionDate(run: Run): string {
+  const date = new Date(run.created_at);
+  return Number.isNaN(date.getTime()) ? run.created_at.slice(0, 10) : `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+}
+// What an untitled session is called until someone names it.
+export const sessionLabel = (run: Run) => `Untitled · ${harnessName(run)} · ${sessionDate(run)}`;
 
 // Only a fingerprint and reading coordinates enter browser storage, never
 // captured text. Local previews use their full content-addressed source ID.
