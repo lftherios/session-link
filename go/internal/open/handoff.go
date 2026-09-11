@@ -47,71 +47,206 @@ func (s *Server) prepare(ref string) publishResult {
 }
 
 func (s *Server) pickerPage() string {
-	var cards strings.Builder
+	now := time.Now()
+	rows := make([]listRow, 0, len(s.Sources))
 	for i, source := range s.Sources {
-		harness := source.Harness
-		if harness == "" {
-			harness = "local capture"
+		harness := harnessLabel(source.Harness)
+		meta := []string{html.EscapeString(harness)}
+		if source.Harness == "hermes" {
+			meta = append(meta, "experimental")
 		}
-		detail := harness
-		if !source.Updated.IsZero() {
-			detail += " · " + age(source.Updated, time.Now())
+		if source.Dir != "" && filepath.Clean(source.Dir) != filepath.Clean(s.Project) {
+			meta = append(meta, `<span title="`+html.EscapeString(displayPath(source.Dir))+`">`+html.EscapeString(filepath.Base(source.Dir))+`</span>`)
 		}
-		if source.Dir != "" {
-			detail += " · " + displayPath(source.Dir)
+		if source.ID != "" {
+			short := source.ID
+			if len(short) > 12 {
+				short = short[:8]
+			}
+			meta = append(meta, `<code title="`+html.EscapeString(source.ID)+`">`+html.EscapeString(short)+`</code>`)
 		}
-		if harness == "hermes" {
-			detail += " · experimental"
+		title := strings.TrimSpace(source.Title)
+		if title == "" {
+			title = "Untitled session"
 		}
-		fmt.Fprintf(&cards, `<button class="card session" data-source="%d" data-search="%s"><span class="t">%s</span><span class="m">%s</span><span class="sid">%s</span><span class="open-label" aria-hidden="true">Open preview →</span></button>`,
-			i, html.EscapeString(strings.ToLower(source.Title+" "+detail+" "+source.ID)), html.EscapeString(source.Title), html.EscapeString(detail), html.EscapeString(source.ID))
+		search := strings.ToLower(strings.Join([]string{source.Title, harness, source.Harness, source.ID, source.Dir}, " "))
+		rows = append(rows, listRow{day: dayLabel(source.Updated, now), html: fmt.Sprintf(
+			`<button class="row" data-source="%d" data-search="%s"><span class="row-title">%s</span><span class="row-meta">%s</span><span class="row-side">%s<span class="row-open">%s</span></span></button>`,
+			i, html.EscapeString(search), html.EscapeString(title), strings.Join(meta, listDot), rowStamp(source.Updated, now), iconChevron)})
 	}
-	empty := ""
+	name := filepath.Base(filepath.Clean(s.Project))
 	warning := ""
 	if s.Warning != "" {
-		warning = `<p class="result err">Some sessions could not be listed: ` + html.EscapeString(s.Warning) + `</p>`
+		warning = `<p class="list-status err">Some sessions could not be listed: ` + html.EscapeString(s.Warning) + `</p>`
 	}
-	if len(s.Sources) == 0 {
-		empty = `<p class="note">No sessions found for this project yet. Open a specific transcript with <code>slink view --session &lt;path&gt;</code>, or record new work with <code>slink record -- &lt;command&gt;</code>.</p>`
+	list := `<div class="empty-state"><strong>No sessions for this project yet</strong>Open a transcript with <code>slink view --session &lt;path&gt;</code>, or record new work with <code>slink record -- &lt;command&gt;</code>.</div>`
+	if len(rows) > 0 {
+		list = `<label class="find">` + iconSearch + `<input type="search" id="search" aria-label="Find a session" placeholder="Search ` + plural(len(rows), "session", "sessions") + `…" autocomplete="off"></label>
+    <p id="result" class="list-status" role="status"></p>` + warning + `<div class="groups">` + groupRows(rows) + `</div>
+    <p id="no-match" class="list-status empty-match" hidden>No sessions match this search.</p>`
+	} else {
+		list = `<p id="result" class="list-status" role="status"></p>` + warning + list
 	}
-	return page("session.link — choose a session", `<style>
-      .intro{max-width:640px;line-height:1.6;color:var(--faint)}
-      .session{width:100%;text-align:left;cursor:pointer;font:inherit;position:relative;padding-right:155px}
-      .session span{display:block}.session .sid{font:10px var(--mono);color:var(--faint);margin-top:8px;overflow-wrap:anywhere}
-      .session .open-label{position:absolute;right:18px;top:20px;color:var(--signal);font:11px var(--mono)}
-      .session:focus-visible,.search:focus-visible{outline:2px solid var(--signal);outline-offset:3px}
-      .session[hidden]{display:none}.session:disabled{opacity:.6;cursor:wait}
-      .search{width:100%;font:14px system-ui;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);margin:12px 0 20px}
-      .btn{color:var(--ink)}.empty{font:12px var(--mono);color:var(--faint);padding:24px 0}
-      @media(max-width:560px){.wrap{padding:20px 16px}.session{padding-right:18px}.session .open-label{position:static;margin-top:12px}}
-    </style>
-    <div class="top"><p class="eyebrow">session.link · local sessions</p><button class="btn" id="stop">Stop viewer</button></div>
-    <h1 style="font-family:var(--serif);font-weight:500;font-size:32px;margin-bottom:8px">Bring your session to the web.</h1>
-    <p class="intro">Choose a session to inspect and share. Opening a preview saves a local snapshot; publishing is a separate step.</p>
-    <p class="note">Project: `+html.EscapeString(displayPath(s.Project))+`</p>
-    <input class="search" type="search" id="search" aria-label="Find a session" placeholder="Find by task, agent, or session ID…">
-    <div id="result" role="status" class="result err"></div>
-    `+warning+`<div id="sessions">`+cards.String()+empty+`</div>
-    <p id="no-match" class="empty" hidden>No sessions match this search.</p>
+	return page(name+" · session.link", listCSS+`
+    <header class="list-head"><h1 title="`+html.EscapeString(displayPath(s.Project))+`">`+html.EscapeString(name)+`</h1><button class="quiet" id="stop">`+iconPower+`Stop viewer</button></header>
+    `+list+listScript+`
     <script>
-      const result=document.getElementById('result'),cards=[...document.querySelectorAll('[data-source]')];
-      document.getElementById('search').oninput=e=>{
-        const q=e.target.value.trim().toLowerCase();
-        cards.forEach(card=>card.hidden=!card.dataset.search.includes(q));
-        document.getElementById('no-match').hidden=cards.length===0||cards.some(card=>!card.hidden);
-      };
-      cards.forEach(card=>card.onclick=async()=>{
-        card.disabled=true;result.textContent='Opening a local preview…';
+      const result=document.getElementById('result');
+      document.querySelectorAll('[data-source]').forEach(row=>row.onclick=async()=>{
+        if(row.getAttribute('aria-busy')==='true')return;
+        row.setAttribute('aria-busy','true');result.className='list-status';result.textContent='Opening…';
         try{
-          const r=await fetch('/api/preview/'+card.dataset.source,{method:'POST',headers:{'x-slink':'1'}});
-          const d=await r.json();if(!r.ok)throw new Error(d.error?.message||'Could not open this session');
+          const r=await fetch('/api/preview/'+row.dataset.source,{method:'POST',headers:{'x-slink':'1'}});
+          const d=await r.json();if(!r.ok)throw new Error(d.error?.message||'Could not open this session.');
           location.assign(d.url);
-        }catch(e){result.textContent=e.message;card.disabled=false;}
+        }catch(e){result.className='list-status err';result.textContent=e.message;row.removeAttribute('aria-busy');}
       });
       document.getElementById('stop').onclick=async()=>{
         try{const r=await fetch('/api/stop',{method:'POST',headers:{'x-slink':'1'}});if(!r.ok)throw new Error();
-          document.body.textContent='Local viewer stopped. Your saved previews are still on disk.';
-        }catch{result.textContent='Could not stop the viewer. Use Ctrl-C in the terminal that started it.';}
+          document.querySelector('.wrap').innerHTML='<div class="empty-state stopped"><strong>Viewer stopped</strong>Your saved previews are still on disk. Run <code>slink view</code> to open it again.</div>';
+        }catch{result.className='list-status err';result.textContent='Could not stop the viewer. Press Ctrl-C in the terminal that started it.';}
       };
     </script>`)
+}
+
+// listRow is one entry in a session list, grouped under its local day.
+type listRow struct {
+	day  string
+	html string
+}
+
+const listDot = `<span aria-hidden="true">·</span>`
+
+// Icons follow the viewer's line style.
+const (
+	iconSearch  = `<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`
+	iconChevron = `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>`
+	iconPower   = `<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg>`
+)
+
+// listCSS gives the session lists the viewer's quiet header, search field
+// and grouped rows, on the shared tokens.
+const listCSS = `<style>
+  :root{--soft:#eef1ec}
+  @media(prefers-color-scheme:dark){:root{--soft:#1e2620}}
+  .wrap{max-width:860px}
+  .list-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:10px 0 28px}
+  .list-head h1{margin:0;min-width:0;font:500 32px/1.2 var(--serif);letter-spacing:-.02em;overflow-wrap:anywhere}
+  .quiet{display:inline-flex;align-items:center;gap:7px;flex:none;height:34px;padding:0 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--faint);font:13px system-ui,sans-serif;cursor:pointer}
+  .quiet:hover{color:var(--ink)}.quiet:focus-visible,.find:focus-within{outline:none;border-color:var(--signal);box-shadow:0 0 0 2px color-mix(in srgb,var(--signal) 14%,transparent)}
+  .find{display:flex;align-items:center;gap:12px;padding:0 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--faint);box-shadow:0 3px 12px #00000005}
+  .find input{flex:1;min-width:0;padding:15px 0;border:0;outline:none;background:transparent;color:var(--ink);font:15px system-ui,sans-serif}
+  .groups{margin-top:28px}.group{margin:0 0 28px}.group[hidden],.row[hidden]{display:none}
+  .group h2{margin:0 0 10px;font:400 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--faint)}
+  .rows{overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+  .row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 20px;width:100%;padding:15px 18px;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent;color:var(--ink);font:inherit;text-align:left;text-decoration:none;cursor:pointer}
+  .row:first-child{border-top:0}.row:hover{background:var(--soft)}.row:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
+  .row-title{grid-column:1;display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:15px;line-height:1.45;overflow-wrap:anywhere}
+  .row-meta{grid-column:1;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 7px;font-size:12px;color:var(--faint)}
+  .row-meta code{font:11px var(--mono)}.row-meta .live{color:var(--signal)}
+  .row-side{grid-column:2;grid-row:1/span 2;display:flex;align-items:center;gap:10px;color:var(--faint);font:12px var(--mono);white-space:nowrap}
+  .row-open{display:inline-flex;transition:transform .15s,color .15s}
+  .row:hover .row-open,.row:focus-visible .row-open{color:var(--signal);transform:translateX(2px)}
+  .row[aria-busy=true]{opacity:.6;cursor:wait}.row.dead{cursor:default;color:var(--faint)}.row.dead:hover{background:transparent}
+  .list-status{margin:12px 2px 0;font:12px var(--mono);color:var(--faint)}.list-status:empty{display:none}.list-status.err{color:var(--error)}.empty-match{margin-top:28px}
+  .empty-state{margin-top:8px;padding:40px 24px;border:1px dashed var(--line);border-radius:12px;color:var(--faint);text-align:center;line-height:1.7}
+  .empty-state strong{display:block;margin-bottom:4px;color:var(--ink);font:500 19px var(--serif)}.empty-state code{font:12px var(--mono);color:var(--ink)}.stopped{margin-top:18vh}
+  @media(max-width:600px){.wrap{padding:20px 16px 48px}.list-head h1{font-size:26px}.row{padding:14px}.row-side{grid-row:1}}
+</style>`
+
+// listScript filters rows as people type and moves between them with the
+// arrow keys, starting from the search field.
+const listScript = `<script>
+  (()=>{
+    const rows=[...document.querySelectorAll('.row[data-search]')],groups=[...document.querySelectorAll('.group')],search=document.getElementById('search'),noMatch=document.getElementById('no-match');
+    const focusable=()=>rows.filter(r=>!r.hidden&&r.matches('a,button'));
+    if(search){
+      search.oninput=()=>{const q=search.value.trim().toLowerCase();rows.forEach(r=>r.hidden=!r.dataset.search.includes(q));
+        groups.forEach(g=>g.hidden=![...g.querySelectorAll('.row')].some(r=>!r.hidden));if(noMatch)noMatch.hidden=rows.some(r=>!r.hidden);};
+      search.onkeydown=e=>{if(e.key==='ArrowDown'){e.preventDefault();focusable()[0]?.focus();}};
+    }
+    rows.forEach(row=>row.addEventListener('keydown',e=>{
+      if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;e.preventDefault();
+      const visible=focusable(),next=visible[visible.indexOf(row)+(e.key==='ArrowDown'?1:-1)];
+      if(next)next.focus();else if(e.key==='ArrowUp')search?.focus();
+    }));
+  })();
+</script>`
+
+// groupRows renders rows under day headings, in the order days first appear.
+func groupRows(rows []listRow) string {
+	var order []string
+	byDay := map[string]*strings.Builder{}
+	for _, row := range rows {
+		b := byDay[row.day]
+		if b == nil {
+			b = &strings.Builder{}
+			byDay[row.day] = b
+			order = append(order, row.day)
+		}
+		b.WriteString(row.html)
+	}
+	var out strings.Builder
+	for _, day := range order {
+		fmt.Fprintf(&out, `<section class="group" aria-label="%[1]s"><h2>%[1]s</h2><div class="rows">%[2]s</div></section>`, html.EscapeString(day), byDay[day].String())
+	}
+	return out.String()
+}
+
+// dayLabel names the local day of t for list headings.
+func dayLabel(t, now time.Time) string {
+	if t.IsZero() {
+		return "Undated"
+	}
+	t, now = t.Local(), now.Local()
+	day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	switch {
+	case !day.Before(today):
+		return "Today"
+	case day.AddDate(0, 0, 1).Equal(today):
+		return "Yesterday"
+	case day.AddDate(0, 0, 7).After(today):
+		return t.Format("Monday")
+	case t.Year() == now.Year():
+		return t.Format("January 2")
+	}
+	return t.Format("January 2, 2006")
+}
+
+// rowStamp shows how long ago a session from today was active and the time
+// of day for older ones; the title carries the full date.
+func rowStamp(t, now time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	label := t.Local().Format("3:04 PM")
+	if dayLabel(t, now) == "Today" {
+		label = age(t, now)
+	}
+	return `<time datetime="` + t.UTC().Format(time.RFC3339) + `" title="` + html.EscapeString(t.Local().Format("Monday, January 2, 2006 at 3:04 PM")) + `">` + html.EscapeString(label) + `</time>`
+}
+
+// harnessLabel is how people name each agent.
+func harnessLabel(harness string) string {
+	switch harness {
+	case "claude-code":
+		return "Claude Code"
+	case "codex":
+		return "Codex"
+	case "opencode":
+		return "OpenCode"
+	case "hermes":
+		return "Hermes"
+	case "":
+		return "Local capture"
+	}
+	return harness
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }

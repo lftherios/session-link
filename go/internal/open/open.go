@@ -106,7 +106,8 @@ func (s *Server) indexPage() string {
 	}
 	captures := cli.ListCaptures(s.CaptureDir)
 	listed := map[string]bool{}
-	var cards strings.Builder
+	now := time.Now()
+	var rows []listRow
 	for _, c := range captures {
 		listed[filepath.Base(c.File)] = true
 		id := strings.TrimSuffix(filepath.Base(c.File), ".json")
@@ -118,30 +119,30 @@ func (s *Server) indexPage() string {
 		if len(c.Models) > 0 {
 			meta = append(meta, html.EscapeString(strings.Join(c.Models, ", ")))
 		}
-		if c.CreatedAt != "" {
-			meta = append(meta, agoSpan(c.CreatedAt))
-		}
 		if c.InProgress {
-			meta = append(meta, "recording")
+			meta = append(meta, `<span class="live">Recording</span>`)
 		}
-		fmt.Fprintf(&cards, `<a class="card" href="/r/%s"><div class="t">%s</div>
-        <div class="m">%s</div></a>`,
-			id, html.EscapeString(name), strings.Join(meta, " · "))
+		created, _ := time.Parse(time.RFC3339, c.CreatedAt)
+		rows = append(rows, listRow{day: dayLabel(created, now), html: fmt.Sprintf(
+			`<a class="row" href="/r/%s" data-search="%s"><span class="row-title">%s</span><span class="row-meta">%s</span><span class="row-side">%s<span class="row-open">%s</span></span></a>`,
+			id, html.EscapeString(strings.ToLower(name+" "+id+" "+strings.Join(c.Models, " "))), html.EscapeString(name), strings.Join(meta, listDot), rowStamp(created, now), iconChevron)})
 	}
 	// Files the listing had to skip still exist — grey them out rather than
 	// let a local file silently vanish from its own index.
 	for _, d := range skippedCaptures(s.CaptureDir, listed) {
-		fmt.Fprintf(&cards, `<div class="card dead"><div class="t">%s</div>
-        <div class="m">%s</div></div>`, html.EscapeString(d.id), d.meta)
+		rows = append(rows, listRow{day: dayLabel(d.when, now), html: fmt.Sprintf(
+			`<div class="row dead" data-search="%s"><span class="row-title">%s</span><span class="row-meta">%s</span><span class="row-side">%s</span></div>`,
+			html.EscapeString(strings.ToLower(d.id)), html.EscapeString(d.id), d.meta, rowStamp(d.when, now))})
 	}
-	body := cards.String()
-	if body == "" {
-		body = `<p class="note">nothing captured yet — try: slink tap</p>`
+	list := `<div class="empty-state"><strong>Nothing captured yet</strong>Record a session with <code>slink tap</code>.</div>`
+	if len(rows) > 0 {
+		list = `<label class="find">` + iconSearch + `<input type="search" id="search" aria-label="Find a capture" placeholder="Search ` + plural(len(rows), "capture", "captures") + `…" autocomplete="off"></label>
+    <div class="groups">` + groupRows(rows) + `</div>
+    <p id="no-match" class="list-status empty-match" hidden>No captures match this search.</p>`
 	}
-	return page("session.link — local captures",
-		`<p class="eyebrow">session.link · local captures · nothing here has left your machine</p>
-     <h1 style="font-family:var(--serif);font-weight:500">Captured sessions</h1>
-     `+body)
+	return page("Captured sessions · session.link", listCSS+`
+    <header class="list-head"><h1>Captured sessions</h1></header>
+    `+list+listScript)
 }
 
 // deadCard is an index row for a capture the shell cannot render: no link,
@@ -149,6 +150,7 @@ func (s *Server) indexPage() string {
 type deadCard struct {
 	id   string
 	meta string // pre-rendered HTML
+	when time.Time
 }
 
 // skippedCaptures is every .json in the capture dir that the listing had to
@@ -168,11 +170,11 @@ func skippedCaptures(dir string, listed map[string]bool) []deadCard {
 		} else if json.Valid(raw) {
 			note = "can't render — not a session document"
 		}
-		meta := html.EscapeString(note)
+		card := deadCard{id: strings.TrimSuffix(name, ".json"), meta: html.EscapeString(note)}
 		if info, ierr := e.Info(); ierr == nil {
-			meta += " · " + agoSpan(info.ModTime().Format(time.RFC3339))
+			card.when = info.ModTime()
 		}
-		out = append(out, deadCard{id: strings.TrimSuffix(name, ".json"), meta: meta})
+		out = append(out, card)
 	}
 	// Filenames embed the timestamp, so name order is time order (newest first).
 	sort.Slice(out, func(i, j int) bool { return out[i].id > out[j].id })
