@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import type { ContentPart, Message, Run, Span } from "@session-link/format";
 import { ShareView, shareInfo } from "./ShareView";
-import { SessionView, type LocalViewer } from "./SessionView";
+import { SessionView, type LocalViewer, type SessionStats } from "./SessionView";
 import { buildFlow, reasoningUnavailable } from "./session-model";
 import { DocumentText, DOCUMENT_CSS } from "./DocumentText";
 
@@ -1262,7 +1262,7 @@ export function RunViewer({ run, src, local, initialView = "exchange" }: { run?:
               renderPart={(part, full) => <PartView part={part} full={full} />}
               renderSpan={span => <SpanDetail span={span} />}
               renderTree={() => <LoadedViewer run={resolved} initialMode="tree" compact />}
-              details={<SessionMetrics run={resolved} />} />}
+              stats={sessionStats(resolved)} />}
       </Boundary>
     </>
   );
@@ -1272,17 +1272,10 @@ const viewerKeys = new WeakMap<Run, number>();
 let nextViewerKey = 0;
 function viewerKey(run: Run) { if (!viewerKeys.has(run)) viewerKeys.set(run, ++nextViewerKey); return viewerKeys.get(run); }
 
-function SessionMetrics({ run }: { run: Run }) {
-  const idx = useMemo(() => indexRun(run), [run]);
-  return <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 20 }}>
-    <Metric label="recorded spans" value={String(run.spans.length)} />
-    {idx.tokensIn != null && <Metric label="tokens in" value={fmtInt(idx.tokensIn)} />}
-    {idx.tokensOut != null && <Metric label="tokens out" value={fmtInt(idx.tokensOut)} />}
-    {idx.cost != null && <Metric label="cost" value={fmtCost(idx.cost)} />}
-    {idx.durMs != null && <Metric label="duration" value={fmtDur(idx.durMs)} />}
-    {run.source?.fidelity && <Chip>{run.source.fidelity} capture</Chip>}
-    {idx.models.map(model => <Chip key={model}>{model}</Chip>)}
-  </div>;
+// Figures for the session details summary, from the index the trace uses.
+function sessionStats(run: Run): SessionStats {
+  const idx = indexRun(run);
+  return { tokensIn: idx.tokensIn, tokensOut: idx.tokensOut, cost: idx.cost, durMs: idx.durMs, models: idx.models, errors: idx.errors.length, modelCalls: idx.llmCalls.length, toolCalls: run.spans.filter(span => span.type === "tool_call").length };
 }
 
 /** Every visible tree row is exactly this tall — the invariant the

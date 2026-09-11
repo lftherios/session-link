@@ -105,31 +105,38 @@ The browser remembers exchange, mode and scroll position for the saved document.
 Local previews use their content-addressed ID; inline documents use a reading
 fingerprint. Only coordinates and identifiers go into reading-state storage.
 Blocked browser storage does not prevent reading. A replacement document resets
-component state. Metrics and the existing trace/raw viewer are under **Session details**.
+component state. **Session details** closes the page, aligned with the reading
+column, with a one-line synopsis of messages, duration and errors. Expanded, it
+lists the source, project, start time, duration, human input, recorded spans,
+tokens, errors, models and session ID, followed by **Raw data** and **Trace
+explorer** buttons that open dialogs instead of unfolding inline.
 
 ## Selection, annotation and sharing
 
-Content-level **Select** controls appear on hover and keyboard focus, and remain
-available on touch devices. Selected content keeps its indicator while navigating.
-A compact selection bar then offers **Annotate**, **Edit view** and **Clear**.
-The content's small action menu offers **Inspect** and **Copy link**.
-The title is edited in place: click it, or the pencil beside it, type, and
+Messages carry no per-message controls. To share part of a message, select any
+text in it and right-click the selection: a small menu offers **Comment and
+share** and **Copy**. **Comment and share** opens the share panel with exactly
+that passage and the comment field focused. The rendered selection is mapped back
+to the source text, allowing for Markdown syntax, and widened so bold text and
+links it cuts through stay whole. A selection that spans messages, or that can't
+be mapped exactly, leaves the option unavailable rather than sharing different
+text. Right-clicking without a selection keeps the browser's own menu. The title
+is edited in place: click it, or the pencil beside it, type, and
 press Enter or click away to save; Escape cancels. A brief **Saved** note
 confirms the write and an error keeps the edit visible.
 
-**Share this view** opens an in-place panel. With no explicit selection it starts
+**Share this view** opens an in-place panel. It starts
 with the visible exchange's human input and agent response text, opening on the input.
 A trailing failure is included when present. In conversation mode it uses the
-inputs and answers from that conversation. An explicit selection supplies the
-panel instead. Agent activity is separately includable; collapsing or expanding
+inputs and answers from that conversation. Agent activity is separately includable; collapsing or expanding
 it in the reader does not change export scope. Unsupported selected attachments
 are identified rather than silently represented as included.
 
 The panel lists included material, permits removal and changing the starting
 point, and provides an exact source-passage selector. Source offsets continue
 to address original text, not rendered Markdown DOM text. Available source
-reference cards can be explicitly included. Title and annotation fields are
-secondary, initially collapsed unless opened through the selection actions.
+reference cards can be explicitly included. Title and comment fields are
+secondary and initially collapsed.
 Annotations never rewrite the recorded conversation.
 
 **Save locally** writes a distinct immutable view and offers **Open saved view**
@@ -168,8 +175,8 @@ exact download bytes, saved-view recovery and guarded title writes.
 `scripts/check-viewer-browser.mjs` exercises the built CLI with the fictional
 `testdata/viewer/arrival/session.json` fixture, an isolated home and browser profile,
 and an inactive local publishing target. It checks desktop/mobile arrival, explicit
-links, saved reading position, scoped search, detail navigation, hover/keyboard
-selection, annotations, exact passages, saved-view discovery, and exact recipient
+links, saved reading position, scoped search, detail navigation, comments,
+exact passages, right-click passage sharing, saved-view discovery, and exact recipient
 content. Set
 `SLINK_BINARY` and `BROWSER_BINARY` to override the default local binary and Brave
 paths. Screenshots are written into its printed temporary artifact directory.

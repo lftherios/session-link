@@ -54,7 +54,7 @@ try {
   assert.equal(await evaluate("/exchange/i.test(document.querySelector('.sv').innerText)"), false);
   assert.equal(await evaluate("document.querySelector('.sv-reading').textContent.includes('Child result')"), false);
   assert.equal(await evaluate("document.querySelectorAll('.sv-primary').length"), 1);
-  assert.equal(await evaluate("getComputedStyle(document.querySelector('.sv-block-tools')).opacity"), "0");
+  assert.equal(await evaluate("!!document.querySelector('.sv-block-tools, .sv-block-menu, .sv-select, .sv-selection-bar')"), false, "messages carry no per-message controls");
   assert.ok(await evaluate("document.querySelector('.sv-toolbar').getBoundingClientRect().height<50"));
   await evaluate("document.querySelector('.sv-position').click()"); await waitFor("!!document.querySelector('#sv-outline [aria-current=true]')");
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
@@ -67,7 +67,7 @@ try {
   assert.equal(await evaluate("document.querySelectorAll('.sv-thinking').length"), 0);
   assert.equal(await evaluate("document.querySelector('.sv-response-body').textContent.includes('thinking-evidence')"), false);
   await screenshot("arrival-desktop");
-  console.log("PASS: latest input and answer, prominent search, compact navigation, one share CTA, selection unobtrusive");
+  console.log("PASS: latest input and answer, prominent search, compact navigation, one share CTA, no per-message controls");
 
   await evaluate("document.querySelector('.sv-support>summary').click()");
   await waitFor("document.querySelectorAll('.sv-support .sv-thinking').length===5");
@@ -128,10 +128,12 @@ try {
   await navigate(url + "#span=s8"); await waitFor("!!document.querySelector('.sv-response-body table')");
   await evaluate("history.replaceState(null,'',location.pathname);window.scrollTo(0,450)");
   const y = await evaluate("scrollY");
-  await evaluate("document.querySelector('.sv-response .sv-block-menu').open=true;document.querySelector('.sv-response .sv-block-menu button').click()");
+  // A link to a span with no conversation opens the inspector over the page.
+  await evaluate("location.hash='span=child'");
   await waitFor("!!document.querySelector('.sv-dialog[open]')");
   await clickText("Raw data"); await clickText("Close inspection");
   assert.equal(await evaluate("scrollY"), y);
+  await evaluate("history.replaceState(null,'',location.pathname)");
   await reload(); await waitFor("!!document.querySelector('.sv-response-body table')");
   await waitFor(`Math.abs(scrollY-${y})<3`);
   console.log("PASS: conversation navigation, explicit links, detail return and reading position survive");
@@ -163,43 +165,27 @@ try {
   await evaluate("document.querySelector('[aria-label=\"Close share panel\"]').click()");
   console.log("PASS: share panel saves exactly the human input and answer locally; saved views remain discoverable after reload");
 
-  // Use pointer events to reveal the otherwise quiet selection affordance.
+  // Title and comment persist while the reader stays open.
   await evaluate("window.scrollTo(0,0)");
-  const rect = await evaluate("(()=>{const r=document.querySelector('.sv-response .sv-block').getBoundingClientRect();return {x:r.left+10,y:r.top+20};})()");
-  await send("Input.dispatchMouseEvent", { type: "mouseMoved", ...rect });
-  await waitFor("getComputedStyle(document.querySelector('.sv-response .sv-block-tools')).opacity==='1'");
-  await evaluate("document.querySelector('[aria-label=\"Select agent response\"]').click()");
-  await waitFor("document.querySelector('.sv-selection-bar')?.textContent.includes('1 selected')");
-  await clickText("Annotate"); await waitFor("document.activeElement.getAttribute('aria-label')==='Your annotation'");
-  assert.equal(await evaluate("document.querySelectorAll('.sv-included-item').length"), 1);
+  await clickText("Share this view"); await waitFor("document.querySelectorAll('.sv-included-item').length===2");
   assert.equal(await evaluate("document.querySelector('.sv-included').textContent.includes('thinking-evidence')"), false);
-  await setField('[aria-label="Your annotation"]', "Please review the recommendation and the captured evidence.");
+  await evaluate("document.querySelector('.sv-author-fields').open=true");
+  await setField('[aria-label="Your comment"]', "Please review the recommendation and the captured evidence.");
   await setField('[aria-label="View title"]', "Review the onboarding comparison");
   await evaluate("document.querySelector('[aria-label=\"Close share panel\"]').click()");
-  await evaluate("document.querySelector('[aria-label=\"Previous in conversation\"]').click()");
-  await waitFor("document.querySelector('.sv-response-body').textContent.includes('Finding 7')");
-  assert.match(await evaluate("document.querySelector('.sv-selection-bar').textContent"), /1 selected/);
-  await evaluate("document.querySelector('[aria-label=\"Select human input\"]').click()");
-  await clickText("Annotate"); await waitFor("document.querySelectorAll('.sv-included-item').length===2");
-  assert.equal(await evaluate("document.querySelector('[aria-label=\"Your annotation\"]').value"), "Please review the recommendation and the captured evidence.");
-  await evaluate("document.querySelector('[aria-label=\"Close share panel\"]').click()");
-  await evaluate("document.querySelector('[aria-label=\"Deselect human input\"]').click()");
-  await evaluate("document.querySelector('[aria-label=\"Next in conversation\"]').click()");
-  await waitFor("!!document.querySelector('.sv-response-body table')");
-  await clickText("Share this view"); await waitFor("!!document.querySelector('[aria-label=\"Your annotation\"]')");
-  assert.equal(await evaluate("document.querySelector('[aria-label=\"Your annotation\"]').value"), "Please review the recommendation and the captured evidence.");
-  await evaluate("document.querySelector('.sv-included-item').open=true");
-  await clickText("Include human input"); await waitFor("document.querySelectorAll('.sv-included-item').length===2");
-  await clickText("Preview view"); await waitFor("!!document.querySelector('.sh-primary table')");
+  await clickText("Share this view"); await waitFor("!!document.querySelector('[aria-label=\"Your comment\"]')");
+  assert.equal(await evaluate("document.querySelector('[aria-label=\"Your comment\"]').value"), "Please review the recommendation and the captured evidence.");
+  await clickText("Preview view"); await waitFor("!!document.querySelector('.sh-primary') && !!document.querySelector('.sh-card table')");
+  assert.match(await evaluate("document.querySelector('.sh-primary').textContent"), /Human input/);
   assert.equal(await evaluate("window.__RUN__.spans.length"), 4);
   assert.equal(await evaluate("JSON.stringify(window.__RUN__).includes('Earlier recovered failure')"), false);
-  console.log("PASS: hover selects content; annotation follows selection and persists when closed; preview contains only chosen material");
+  console.log("PASS: the comment persists while the reader stays open; preview contains only chosen material");
 
   await navigate(url + "#span=s8"); await waitFor("!!document.querySelector('.sv-response-body table')");
-  await evaluate("document.querySelector('[aria-label=\"Select agent response\"]').focus()");
-  await waitFor("getComputedStyle(document.querySelector('.sv-response .sv-block-tools')).opacity==='1'");
-  await evaluate("document.activeElement.click()"); await clickText("Edit view");
-  await waitFor("!!document.querySelector('.sv-included-item')");
+  await clickText("Share this view"); await waitFor("document.querySelectorAll('.sv-included-item').length===2");
+  // Keep only the agent response, narrowed to an exact passage.
+  await evaluate("(()=>{const input=[...document.querySelectorAll('.sv-included-item')].find(el=>el.querySelector('summary').textContent.includes('Human input'));[...input.querySelectorAll('button')].find(b=>b.textContent==='Remove').click();})()");
+  await waitFor("document.querySelectorAll('.sv-included-item').length===1");
   await evaluate("document.querySelector('.sv-included-item').open=true");
   await clickText("Select passage"); await waitFor("!!document.querySelector('.sv-passage')");
   const chosenPassage = await evaluate("(()=>{const el=document.querySelector('.sv-passage');const start=el.value.indexOf('Atlas');el.focus();el.setSelectionRange(start,start+5);el.dispatchEvent(new KeyboardEvent('keyup',{key:'Shift',bubbles:true}));return el.value.slice(start,start+5);})()");
@@ -211,7 +197,38 @@ try {
   const passageDoc = JSON.parse(await readFile(path.join(home, 'previews', new URL(passageURL).pathname.split('/').pop() + '.json'), 'utf8'));
   assert.equal(passageDoc.spans[1].input.messages[0].content[0].text, chosenPassage);
   assert.equal(passageDoc.extensions['session_link.share.v1'].items[0].passage, true);
-  console.log("PASS: keyboard selection is discoverable and saved passages retain exact source characters");
+  console.log("PASS: the share panel narrows to an exact passage and saved passages retain exact source characters");
+
+  // Right-clicking selected text comments on and shares exactly that passage.
+  await evaluate("document.querySelector('[aria-label=\"Close share panel\"]')?.click()"); await waitFor("!document.querySelector('.sv-share-dialog')");
+  await navigate(url + "#span=s8"); await waitFor("!!document.querySelector('.sv-response-body table')");
+  assert.equal(await evaluate("(()=>{getSelection().removeAllRanges();const el=document.querySelector('.sv-response-body p');const b=el.getBoundingClientRect();return el.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:b.left+4,clientY:b.top+4}));})()"), true, "without a selection the browser menu stays");
+  assert.equal(await evaluate("!!document.querySelector('.sv-context-menu')"), false);
+  const selected = await evaluate("(()=>{const li=[...document.querySelectorAll('.sv-response li')].find(el=>el.textContent.startsWith('Read the'));const walker=document.createTreeWalker(li,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);const first=nodes.find(n=>n.textContent.includes('Read the'));const link=li.querySelector('a').firstChild;const r=document.createRange();r.setStart(first,first.textContent.indexOf('Read the'));r.setEnd(link,link.textContent.length);const s=getSelection();s.removeAllRanges();s.addRange(r);const b=r.getClientRects()[0];const text=s.toString();li.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:b.left+3,clientY:b.top+b.height/2}));return text;})()");
+  assert.equal(selected, "Read the captured documentation");
+  await waitFor("!!document.querySelector('.sv-context-menu')");
+  assert.equal(await evaluate("getSelection().toString()"), "Read the captured documentation", "the selection stays highlighted while the menu is open");
+  await clickText("Comment and share"); await waitFor("document.activeElement?.getAttribute('aria-label')==='Your comment'");
+  assert.equal(await evaluate("document.querySelector('.sv-share-dialog h2').textContent"), "Comment and share");
+  assert.equal(await evaluate("document.querySelectorAll('.sv-included-item').length"), 1);
+  await setField('[aria-label="Your comment"]', "Is this the documentation we should trust?");
+  await clickText("Save locally"); await waitFor("!!document.querySelector('.sv-saved-notice a')");
+  const commentURL = await evaluate("document.querySelector('.sv-saved-notice a').href");
+  const commentDoc = JSON.parse(await readFile(path.join(home, 'previews', new URL(commentURL).pathname.split('/').pop() + '.json'), 'utf8'));
+  const commentItems = commentDoc.extensions['session_link.share.v1'].items;
+  assert.equal(commentItems.length, 1); assert.equal(commentItems[0].passage, true);
+  assert.ok(JSON.stringify(commentDoc).includes("Read the [captured documentation](https://example.test/docs)"));
+  assert.ok(JSON.stringify(commentDoc).includes("Is this the documentation we should trust?"));
+  console.log("PASS: right-clicking selected text comments on and shares exactly that passage");
+
+  // Session details summarize the capture; raw data and the trace open on demand.
+  await evaluate("document.querySelector('[aria-label=\"Close share panel\"]')?.click()"); await waitFor("!document.querySelector('.sv-share-dialog')");
+  await evaluate("document.querySelector('.sv-details > summary').click()"); await waitFor("document.querySelectorAll('.sv-facts .sv-fact').length>=6");
+  assert.equal(await evaluate("!!document.querySelector('.sv-details .rv-tree')"), false, "the trace explorer does not unfold inline");
+  await clickText("Trace explorer"); await waitFor("!!document.querySelector('.sv-trace-dialog[open] .rv-tree')");
+  await evaluate("document.querySelector('.sv-trace-dialog .sv-dialog-head button').click()");
+  await waitFor("!document.querySelector('.sv-trace-dialog') && document.activeElement.textContent==='Trace explorer'");
+  console.log("PASS: session details summarize the capture and open the trace explorer in a dialog");
 
   await navigate(url); await waitFor("!!document.querySelector('.sv h1')");
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "hover", value: "none" }] });

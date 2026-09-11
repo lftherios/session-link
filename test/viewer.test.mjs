@@ -58,8 +58,7 @@ test("arrival: latest input and answer open beneath scoped search and one share 
   assert.match(html, /aria-label="Search scope"/);
   assert.match(html, /Search this view/);
   assert.match(html, /Whole session/);
-  assert.match(html, /aria-label="Select human input"/);
-  assert.match(html, /aria-label="Select agent response"/);
+  assert.doesNotMatch(html, /class="sv-block-tools"|aria-label="(?:Select|Deselect) |aria-label="Content actions"/, "messages carry no selection or action controls");
   assert.match(html, /aria-label="Reading layout"><button aria-pressed="true">Focused<\/button><button aria-pressed="false">Full session<\/button>/);
   assert.match(html, /aria-label="Previous in conversation"/);
   assert.doesNotMatch(html, /class="sv-raw-button"/, "raw session data is offered in the full session layout");
@@ -72,7 +71,8 @@ test("arrival: latest input and answer open beneath scoped search and one share 
   assert.ok(html.indexOf("Share this view") < html.indexOf("Search this view"));
   assert.doesNotMatch(html, /autofocus/i);
   assert.ok(html.indexOf("current-answer") < html.indexOf("Session details"));
-  assert.ok(html.indexOf("Session details") < html.indexOf("2026-09-11"), "provenance lives under session details, not above the title");
+  assert.match(html, /<span class="sv-details-synopsis">2 messages<\/span>/, "session details summarize the capture at the end of the page");
+  assert.doesNotMatch(html, /Explore trace and raw data|class="sv-facts"/, "details stay closed and nothing unfolds inline");
 });
 
 test("navigation: human input is listed by its text or contents, and tool results are not listed", async () => {
@@ -89,6 +89,24 @@ test("navigation: outline previews drop Markdown syntax", async () => {
   const { previewText } = await sessionModel();
   assert.equal(previewText("## Plan\n- **Left, a pager.** Uses ```js\ncode``` and [docs](https://example.test)", 200), "Plan Left, a pager. Uses code and docs");
   assert.equal(previewText("| Before | After |\n| --- | --- |\n| 111 | 13 |", 200), "Before After 111 13");
+});
+
+test("sharing: a rendered selection maps back to its source passage", async () => {
+  const { sourceRange, partUnit } = await sessionModel();
+  const source = "## Recommendation\n\nCompare the two onboarding paths.\n\n| Product | Setup |\n| --- | --- |\n| Atlas | **Self serve** |\n\n- Read the [captured documentation](https://example.test/docs).\n\nRepeat me. Then repeat me.";
+  const passage = (selected, hint) => { const range = sourceRange(source, selected, hint); return range && source.slice(range.start, range.end); };
+  assert.equal(passage("Compare the two  onboarding\npaths."), "Compare the two onboarding paths.");
+  assert.equal(passage("Self serve"), "**Self serve**");
+  assert.equal(passage("Atlas\tSelf serve"), "Atlas | **Self serve**");
+  assert.equal(passage("Read the captured documentation"), "Read the [captured documentation](https://example.test/docs)");
+  assert.equal(passage("captured documentation"), "[captured documentation](https://example.test/docs)");
+  assert.equal(sourceRange(source, "me.", 0.99).start, source.lastIndexOf("me."));
+  assert.equal(sourceRange(source, "me.", 0).start, source.indexOf("me."));
+  assert.equal(sourceRange(source, "not in this text"), null);
+  assert.equal(partUnit({ unitPrefix: "u2-out-0", partIndices: [0, 2] }, 1), "u2-out-0-2");
+  assert.equal(partUnit({ unitPrefix: "u2-out-0", unitPrefixes: ["u2-out-0-5"] }, 0), "u2-out-0-5");
+  const html = render(run([call("s1", [message("user", "Check it")], [message("assistant", "Checked")])]), "exchange", { source: "fixture" });
+  assert.match(html, /data-unit="u1-in-0-0"/); assert.match(html, /data-unit="u1-out-0-0"/);
 });
 
 test("arrival: tool results and harness messages never become human input", async () => {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Run } from "@session-link/format";
 import { DocumentText } from "./DocumentText";
-import { shortText } from "./session-model";
+import { previewText } from "./session-model";
 import { belongsTo, unitLabel, unitsFor, viewRequest, type SavedView, type ViewDraft, type ViewItem, type ViewUnit } from "./view-draft";
 
 type Props = {
@@ -72,14 +72,14 @@ export function ViewDialog({ source, title, prefixes, primary, activity, explici
   const readRange = (el: HTMLTextAreaElement) => setRange(el.selectionEnd > el.selectionStart ? { start: el.selectionStart, end: el.selectionEnd } : null);
   const isSaved = saved?.fingerprint === JSON.stringify(draft);
   return <dialog className="sv-dialog sv-share-dialog" aria-label="Share this view" ref={ref} onCancel={event => { event.preventDefault(); if (!busy) close(); }}>
-    <div className="sv-dialog-head"><h2>{intent === "annotate" ? "Annotate selection" : intent === "edit" ? "Edit view" : "Share this view"}</h2><button className="sv-quiet" aria-label="Close share panel" disabled={busy} onClick={close}>✕</button></div>
+    <div className="sv-dialog-head"><h2>{intent === "annotate" ? "Comment and share" : intent === "edit" ? "Edit view" : "Share this view"}</h2><button className="sv-quiet" aria-label="Close share panel" disabled={busy} onClick={close}>✕</button></div>
     <p className="sv-dialog-intro">{explicit ? "Your selected material" : "The human input and agent response in this view"}. Review what’s included, then save a local copy.</p>
     {error && <p className="sv-notice sv-error" role="alert">{error}{!units && <button onClick={() => setAttempt(value => value + 1)}>Try again</button>}</p>}
     {loading ? <p role="status" className="sv-meta">Loading view…</p> : units && draft && <fieldset disabled={busy}>
       <details className="sv-author-fields" open={details} onToggle={event => setDetails(event.currentTarget.open)}>
-        <summary>Title and annotation{draft.note ? " · note added" : ""}</summary>
+        <summary>Title and comment{draft.note ? " · comment added" : ""}</summary>
         <label>View title<input aria-label="View title" value={draft.title} maxLength={256} onChange={event => change({ ...draft, title: event.target.value })} /></label>
-        <label>Your annotation<textarea ref={note} aria-label="Your annotation" placeholder="What should your colleague look at or help with?" value={draft.note} maxLength={10000} onChange={event => change({ ...draft, note: event.target.value })} /></label>
+        <label>Your comment<textarea ref={note} aria-label="Your comment" placeholder="What should your colleague look at or help with?" value={draft.note} maxLength={10000} onChange={event => change({ ...draft, note: event.target.value })} /></label>
         <p className="sv-meta">Shown separately from the recorded session.</p>
       </details>
       <div className="sv-included-heading"><span className="sv-meta">{selected.length} {selected.length === 1 ? "piece" : "pieces"} included</span>{extras.length > 0 && <button className="sv-quiet" onClick={() => include(extras.map(unit => unit.id))}>Include agent activity ({extras.length})</button>}</div>
@@ -91,7 +91,7 @@ export function ViewDialog({ source, title, prefixes, primary, activity, explici
           const text = item.start == null ? unit.text : unit.text.slice(item.start, item.end);
           const missingPrompts = (unit.prompt_ids ?? []).filter(id => !draft.items.some(item => item.id === id && item.start == null));
           return <details className="sv-included-item" key={unit.id} open={passage === unit.id || undefined}>
-            <summary><span className="sv-meta">{unitLabel(unit)}{item.start != null ? " · passage" : ""}{draft.primary === unit.id ? " · opens first" : ""}</span><span>{shortText(text.split(/\n\s*\n/)[0].replace(/^\s{0,3}#{1,6}\s+/, ""), 150)}</span></summary>
+            <summary><span className="sv-meta">{unitLabel(unit)}{item.start != null ? " · passage" : ""}{draft.primary === unit.id ? " · opens first" : ""}</span><span>{previewText(text.split(/\n\s*\n/)[0], 150)}</span></summary>
             <div className="sv-included-body"><DocumentText text={text} />
               <div className="sv-item-actions"><button onClick={() => change({ ...draft, primary: unit.id })} disabled={draft.primary === unit.id}>Start here</button><button onClick={() => { setPassage(unit.id); setRange(null); }}>Select passage</button>{item.start != null && <button onClick={() => replace(unit.id, { id: unit.id })}>Use full text</button>}<button onClick={() => replace(unit.id)}>Remove</button>{missingPrompts.length > 0 && <button onClick={() => include(missingPrompts)}>Include human input</button>}</div>
               {unit.prompt_incomplete && <p className="sv-meta">Some human input was not captured.</p>}
@@ -102,7 +102,7 @@ export function ViewDialog({ source, title, prefixes, primary, activity, explici
         {selected.length === 0 && <p className="sv-notice">No supported content is included. Return to the session to select material.</p>}
       </div>
       {units.some(unit => unit.kind === "source_reference" && !draft.items.some(item => item.id === unit.id)) && <details className="sv-reference-options"><summary>Available source references</summary>{units.filter(unit => unit.kind === "source_reference" && !draft.items.some(item => item.id === unit.id)).map(unit => <label key={unit.id}><input type="checkbox" onChange={() => include([unit.id])} /><span>{unit.text}</span></label>)}</details>}
-      <div className="sv-share-footer"><p className="sv-meta">Only the included material, title and annotation enter the saved view. Link publishing is not available in this local build.</p><div className="sv-item-actions"><button disabled={!selected.length || !draft.title.trim()} onClick={() => save(true)}>Preview view</button><button className="sv-primary" disabled={!selected.length || !draft.title.trim() || isSaved} onClick={() => save(false)}>{busy ? "Saving…" : isSaved ? "Saved locally" : "Save locally"}</button></div></div>
+      <div className="sv-share-footer"><p className="sv-meta">Only the included material, title and comment enter the saved view. Link publishing is not available in this local build.</p><div className="sv-item-actions"><button disabled={!selected.length || !draft.title.trim()} onClick={() => save(true)}>Preview view</button><button className="sv-primary" disabled={!selected.length || !draft.title.trim() || isSaved} onClick={() => save(false)}>{busy ? "Saving…" : isSaved ? "Saved locally" : "Save locally"}</button></div></div>
       {saved && <div className="sv-saved-notice" role="status"><span>{isSaved ? "View saved locally." : "An earlier version is saved. Save again to keep these changes."}</span><a href={saved.url}>Open saved view</a><button className="sv-quiet" onClick={download}>Download view</button></div>}
     </fieldset>}
     {savedViews.length > 0 && <details className="sv-saved-views"><summary>Saved views · {savedViews.length}</summary>{savedViews.map(view => <a key={view.url} href={view.url}>{view.title}</a>)}</details>}

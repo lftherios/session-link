@@ -1,12 +1,15 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Search, ChevronDown, ChevronLeft, ChevronRight, ArrowLeft, Check, Plus, Share2, MoreHorizontal, Pencil, FileJson } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { Search, ChevronDown, ChevronLeft, ChevronRight, ArrowLeft, Share2, Pencil, FileJson, MessageSquare, Copy, ListTree } from "lucide-react";
 import { ViewDialog } from "./ViewDialog";
 import type { ViewDraft } from "./view-draft";
 import type { ContentPart, Run, Span } from "@session-link/format";
-import { buildFlow, defaultExchange, elapsed, eventTime, exchangesFor, messageText, previewText, promptLabel, promptText, readerFlow, readingKey, readingRole, reasoningUnavailable, responseFor, selectionPrefixes, sessionLabel, sessionTitle, shortText, type Exchange, type MessageBlock } from "./session-model";
+import { buildFlow, defaultExchange, duration, elapsed, eventTime, exchangesFor, harnessName, messageText, previewText, promptLabel, promptText, partUnit, readerFlow, readingKey, readingRole, reasoningUnavailable, responseFor, selectionPrefixes, sessionLabel, sessionTitle, shortText, sourceRange, type Exchange, type MessageBlock } from "./session-model";
 
 export type LocalViewer = { source: string; project?: string; title?: string };
-type Props = { run: Run; local?: LocalViewer; renderPart: (part: ContentPart, full?: boolean) => ReactNode; renderSpan: (span: Span) => ReactNode; renderTree: () => ReactNode; details: ReactNode };
+type Passage = { unit: string; start: number; end: number };
+export type SessionStats = { tokensIn?: number; tokensOut?: number; cost?: number; durMs?: number; models: string[]; errors: number; modelCalls: number; toolCalls: number };
+type Fact = { label: string; value: string; note?: string; title?: string; wide?: boolean; mono?: boolean; error?: boolean };
+type Props = { run: Run; local?: LocalViewer; renderPart: (part: ContentPart, full?: boolean) => ReactNode; renderSpan: (span: Span) => ReactNode; renderTree: () => ReactNode; stats: SessionStats };
 const CSS = `
 .sv{color:var(--rv-ink);font-family:system-ui,sans-serif}.sv :where(button,input,textarea,a){font:inherit}.sv *{box-sizing:border-box}
 .sv button,.sv .sv-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--rv-line);background:var(--rv-panel);color:var(--rv-ink);border-radius:7px;padding:8px 12px;font-size:12px;cursor:pointer;text-decoration:none}
@@ -35,15 +38,17 @@ const CSS = `
 .sv .sv-label-main{display:inline-flex;align-items:baseline;min-width:0}.sv .sv-time{margin-left:10px;padding-left:10px;border-left:1px solid var(--rv-line);font:11px ui-monospace,monospace;letter-spacing:0;text-transform:none;color:var(--rv-faint);font-variant-numeric:tabular-nums;white-space:nowrap}
 .sv .sv-response{overflow-wrap:anywhere}.sv .sv-response-body{font-size:15px;line-height:1.75}
 .sv .sv-thinking{white-space:pre-wrap;font-size:13px;line-height:1.7;color:var(--rv-faint);margin:12px 0}
-.sv .sv-block{position:relative;min-width:0;border-radius:5px;scroll-margin-top:32px}.sv .sv-block-tools{position:absolute;right:0;top:-30px;display:flex;gap:4px;align-items:center;padding-bottom:5px;opacity:0;pointer-events:none;transition:opacity .12s;z-index:2}.sv .sv-block-tools button{font-size:11px;padding:4px 7px;line-height:1.4}.sv .sv-block:hover>.sv-block-tools,.sv .sv-block:focus-within>.sv-block-tools,.sv .sv-block.sv-selected>.sv-block-tools{opacity:1;pointer-events:auto}
-.sv .sv-block:has(.sv-block-menu[open])>.sv-block-tools{opacity:1;pointer-events:auto}.sv .sv-block-menu{position:relative}.sv .sv-block-menu>summary{display:flex;align-items:center;padding:4px;background:var(--rv-panel);border:1px solid var(--rv-line);border-radius:6px;list-style:none}.sv .sv-block-menu>summary::-webkit-details-marker{display:none}.sv .sv-block-menu>div{position:absolute;right:0;top:29px;min-width:170px;display:grid;padding:6px;border:1px solid var(--rv-line);border-radius:8px;background:var(--rv-panel);box-shadow:0 5px 16px #0002;z-index:4}.sv .sv-block-menu button{justify-content:flex-start}
-.sv .sv-selected{outline:1px solid var(--rv-signal);outline-offset:8px}.sv .sv-selected .sv-select{color:var(--rv-signal);border-color:var(--rv-signal)}
+.sv .sv-block{position:relative;min-width:0;border-radius:5px;scroll-margin-top:32px}
 .sv .sv-support{margin:30px 0;border-top:1px solid var(--rv-line);padding-top:16px}.sv summary{cursor:pointer;color:var(--rv-faint);font-size:12px;line-height:1.6}.sv .sv-step{padding:24px 0;border-bottom:1px solid var(--rv-line);overflow-wrap:anywhere}.sv .sv-linked{outline:2px solid var(--rv-signal);outline-offset:7px;border-radius:4px}
 .sv .sv-notice{padding:14px 18px;background:var(--rv-soft);border-radius:7px;font-size:13px;line-height:1.6}.sv .sv-error{color:var(--rv-error);white-space:pre-wrap}
 .sv .sv-outline{border:1px solid var(--rv-line);border-radius:10px;background:var(--rv-panel);padding:10px;margin-top:12px}.sv .sv-outline-list{max-height:340px;overflow:auto;display:grid;gap:4px}.sv .sv-outline-list>button{display:block;text-align:left;border:0;width:100%;padding:11px;background:transparent;line-height:1.5}.sv .sv-outline button[aria-current=true]{background:var(--rv-soft)}.sv .sv-outline .sv-preview{display:block;color:var(--rv-ink);font-size:12px;margin-top:5px;overflow-wrap:anywhere}.sv .sv-child{padding-left:25px!important}.sv .sv-results-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 8px 6px}
 .sv .sv-conversation-card{padding:24px;border:1px solid var(--rv-line);background:var(--rv-panel);border-radius:10px;margin:16px 0;scroll-margin-top:20px}.sv .sv-conversation-card .sv-prompt{margin:16px 0 26px}
-.sv .sv-selection-bar{position:sticky;bottom:18px;z-index:6;display:flex;align-items:center;justify-content:center;gap:12px;width:fit-content;max-width:100%;margin:28px auto 0;border:1px solid var(--rv-line);border-radius:12px;padding:8px 14px;background:var(--rv-panel);box-shadow:0 6px 24px #0002;font-size:12px}.sv .sv-selection-bar>span{color:var(--rv-signal);font-weight:550}
-.sv .sv-details{margin-top:44px;border-top:1px solid var(--rv-line);padding-top:16px}.sv .sv-details-body{padding-top:18px}
+.sv .sv-details{max-width:780px;margin:56px auto 0;border-top:1px solid var(--rv-line)}.sv .sv-details>summary{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;padding:18px 0;list-style:none;color:var(--rv-ink);font-size:13px}.sv .sv-details>summary::-webkit-details-marker{display:none}
+.sv .sv-details-chevron{flex:none;color:var(--rv-faint);transition:transform .15s}.sv .sv-details[open]>summary .sv-details-chevron{transform:rotate(90deg)}.sv .sv-details-title{font-weight:550}.sv .sv-details-synopsis{margin-left:auto;font:12px ui-monospace,monospace;color:var(--rv-faint);font-variant-numeric:tabular-nums}
+.sv .sv-facts{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:22px 28px;margin:0;padding:22px 24px;border:1px solid var(--rv-line);border-radius:12px;background:var(--rv-panel)}.sv .sv-fact{min-width:0}.sv .sv-fact-wide{grid-column:1/-1}
+.sv .sv-fact dt{margin-bottom:6px;font:11px ui-monospace,monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--rv-faint)}.sv .sv-fact dd{margin:0;font-size:14px;line-height:1.45;color:var(--rv-ink);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.sv .sv-fact-mono dd{font:13px/1.55 ui-monospace,monospace}.sv .sv-fact-error dd{color:var(--rv-error)}.sv .sv-fact-note{display:block;margin-top:3px;font:12px/1.45 system-ui,sans-serif;color:var(--rv-faint)}
+.sv .sv-details-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px}.sv .sv-details-actions button{height:34px;padding:0 12px;border-radius:9px;color:var(--rv-faint)}.sv .sv-details-actions button:hover:not(:disabled){background:var(--rv-panel);color:var(--rv-ink)}
+.sv .sv-dialog.sv-trace-dialog{width:min(1240px,calc(100% - 32px));max-width:1240px;overflow:hidden}.sv .sv-trace-dialog[open]{display:flex;flex-direction:column}.sv .sv-trace{flex:1;min-height:0;overflow:auto}
 .sv .sv-dialog{width:min(960px,calc(100% - 32px));max-width:960px;max-height:85vh;overflow:auto;background:var(--rv-panel);color:var(--rv-ink);border:1px solid var(--rv-line);border-radius:14px;padding:22px}.sv .sv-dialog::backdrop{background:#0006;backdrop-filter:blur(3px)}.sv .sv-dialog-head{display:flex;align-items:center;gap:12px;position:sticky;top:-22px;background:var(--rv-panel);padding:6px 0 12px;z-index:8}.sv .sv-dialog-head strong,.sv .sv-dialog-head h2{margin-right:auto;overflow-wrap:anywhere}.sv .sv-dialog-head h2{font:500 25px "Iowan Old Style",Palatino,Georgia,serif;margin-top:0;margin-bottom:0}.sv .sv-dialog pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
 .sv .sv-share-dialog{max-width:680px;padding:26px}.sv .sv-share-dialog .sv-dialog-head{top:-26px}.sv .sv-dialog-intro{font-size:13px;line-height:1.65;color:var(--rv-faint);margin:0 0 20px}.sv .sv-share-dialog fieldset{border:0;padding:0;margin:0;min-width:0}
 .sv .sv-author-fields{padding:14px 0;border-top:1px solid var(--rv-line);border-bottom:1px solid var(--rv-line);margin-bottom:16px}.sv .sv-author-fields label{display:grid;gap:8px;margin-top:16px;font-size:12px}.sv .sv-author-fields textarea{min-height:110px;resize:vertical;font-size:13px;line-height:1.6}.sv .sv-author-fields input{font-size:14px}
@@ -54,9 +59,9 @@ const CSS = `
 .sv .sv-nav-outline .sv-outline-list>button{display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:10px;align-items:baseline;padding:9px 12px;border-radius:8px}.sv .sv-outline-n{font:11px ui-monospace,monospace;color:var(--rv-faint);text-align:right;font-variant-numeric:tabular-nums}.sv .sv-outline-text{min-width:0}
 .sv .sv-outline-prompt{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--rv-ink);font-size:13px;line-height:1.45}.sv .sv-outline.sv-nav-outline .sv-preview{margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--rv-faint)}
 .sv .sv-outline.sv-nav-outline button[aria-current=true]{background:var(--rv-soft);box-shadow:inset 3px 0 0 var(--rv-signal)}.sv .sv-nav-outline button[aria-current=true] .sv-outline-n{color:var(--rv-signal);font-weight:600}
-@media(hover:none){.sv .sv-block-tools{opacity:1;pointer-events:auto}.sv .sv-block-tools button{padding:6px 9px}.sv .sv-block-menu>summary{padding:6px}}
-@media(prefers-reduced-motion:reduce){.sv .sv-block-tools{transition:none}}
-@media(max-width:600px){.sv .sv-header{gap:8px;flex-wrap:wrap;margin-bottom:22px}.sv .sv-heading{flex-basis:100%;order:3}.sv h1,.sv .sv-title-input{font-size:25px}.sv .sv-edit-title{opacity:1}.sv .sv-share{font-size:12px;padding:10px 12px}.sv .sv-search{flex-wrap:wrap;gap:8px;padding:10px 12px}.sv .sv-search input{width:calc(100% - 32px);flex:auto}.sv .sv-search-scope{margin-left:26px}.sv .sv-toolbar{gap:8px}.sv .sv-layout button{padding:0 9px}.sv .sv-raw-label{display:none}.sv .sv-toolbar .sv-raw-button{width:36px;padding:0}.sv .sv-position{padding:0 6px 0 9px!important}.sv .sv-prompt{padding:16px 14px}.sv .sv-conversation-card{padding:16px}.sv .sv-selection-bar{gap:4px;padding:8px;font-size:11px}.sv .sv-selection-bar button{font-size:11px}.sv .sv-dialog{padding:18px;max-height:90vh}.sv .sv-dialog-head,.sv .sv-share-dialog .sv-dialog-head{top:-18px}.sv .sv-dialog-head h2{font-size:22px}.sv .sv-included-heading{flex-wrap:wrap}.sv .sv-label{font-size:10px}}
+.sv .sv-block button{user-select:none}
+.sv .sv-context-menu{position:fixed;z-index:20;display:grid;gap:2px;min-width:210px;max-width:260px;padding:5px;border:1px solid var(--rv-line);border-radius:10px;background:var(--rv-panel);box-shadow:0 12px 32px #00000024,0 2px 6px #0000000f}.sv .sv-context-menu button{justify-content:flex-start;gap:10px;border:0;border-radius:7px;background:transparent;padding:8px 10px;font-size:13px;color:var(--rv-ink)}.sv .sv-context-menu button:disabled{opacity:.45}.sv .sv-context-menu button:hover:not(:disabled),.sv .sv-context-menu button:focus-visible{background:var(--rv-soft);outline:none}.sv .sv-context-menu svg{color:var(--rv-faint)}.sv .sv-context-menu .sv-meta{margin:2px 10px 6px}
+@media(max-width:600px){.sv .sv-header{gap:8px;flex-wrap:wrap;margin-bottom:22px}.sv .sv-heading{flex-basis:100%;order:3}.sv h1,.sv .sv-title-input{font-size:25px}.sv .sv-edit-title{opacity:1}.sv .sv-share{font-size:12px;padding:10px 12px}.sv .sv-search{flex-wrap:wrap;gap:8px;padding:10px 12px}.sv .sv-search input{width:calc(100% - 32px);flex:auto}.sv .sv-search-scope{margin-left:26px}.sv .sv-toolbar{gap:8px}.sv .sv-layout button{padding:0 9px}.sv .sv-facts{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 16px;padding:16px}.sv .sv-details-synopsis{flex-basis:100%;margin-left:25px}.sv .sv-raw-label{display:none}.sv .sv-toolbar .sv-raw-button{width:36px;padding:0}.sv .sv-position{padding:0 6px 0 9px!important}.sv .sv-prompt{padding:16px 14px}.sv .sv-conversation-card{padding:16px}.sv .sv-dialog{padding:18px;max-height:90vh}.sv .sv-dialog-head,.sv .sv-share-dialog .sv-dialog-head{top:-18px}.sv .sv-dialog-head h2{font-size:22px}.sv .sv-included-heading{flex-wrap:wrap}.sv .sv-label{font-size:10px}}
 `;
 
 function Inspector({ span, renderSpan, close }: { span: Span; renderSpan: Props["renderSpan"]; close: () => void }) {
@@ -72,6 +77,17 @@ function Inspector({ span, renderSpan, close }: { span: Span; renderSpan: Props[
 function Stamp({ at, start, seconds = false }: { at?: string; start?: string; seconds?: boolean }) {
   const time = eventTime(at, start, seconds);
   return time ? <time className="sv-time" dateTime={time.iso} title={time.title} suppressHydrationWarning>{time.label}</time> : null;
+}
+
+// The trace explorer, opened from session details rather than unfolding inline.
+function TraceDialog({ render, close }: { render: () => ReactNode; close: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => { ref.current?.showModal(); }, []);
+  const done = () => { ref.current?.close(); close(); };
+  return <dialog className="sv-dialog sv-trace-dialog" ref={ref} onCancel={event => { event.preventDefault(); done(); }} aria-label="Trace explorer">
+    <div className="sv-dialog-head"><h2>Trace explorer</h2><button onClick={done}>Close</button></div>
+    <div className="sv-trace">{render()}</div>
+  </dialog>;
 }
 
 // The whole session document as JSON, opened from the full session.
@@ -90,25 +106,30 @@ function SessionData({ run, close }: { run: Run; close: () => void }) {
   </dialog>;
 }
 
-export function SessionView({ run, local, renderPart, renderSpan, renderTree, details }: Props) {
+export function SessionView({ run, local, renderPart, renderSpan, renderTree, stats }: Props) {
   const exchanges = useMemo(() => exchangesFor(run, readerFlow(buildFlow(run))), [run]);
-  const blocksByKey = useMemo(() => new Map(exchanges.flatMap(exchange => [...exchange.prompts, ...exchange.blocks]).map(block => [block.key, block])), [exchanges]);
+  // Source text for each selectable part, keyed by its share catalog unit.
+  const unitText = useMemo(() => {
+    const texts = new Map<string, string>();
+    for (const block of exchanges.flatMap(exchange => [...exchange.prompts, ...exchange.blocks]))
+      block.msg.content.forEach((part, index) => { if (part.type === "text" || part.type === "thinking") texts.set(partUnit(block, index), part.text); });
+    return texts;
+  }, [exchanges]);
   const initial = defaultExchange(exchanges);
   const [active, setActive] = useState(initial?.id ?? ""), [mode, setMode] = useState<"exchange" | "conversation">("exchange");
   const [outline, setOutline] = useState(false), [query, setQuery] = useState(""), [limit, setLimit] = useState(50);
   const [searchScope, setSearchScope] = useState<"view" | "session">("view"), [searchOpen, setSearchOpen] = useState(false);
   const [searchTarget, setSearchTarget] = useState<{ key: string; query: string } | null>(null);
-  const [selection, setSelection] = useState<string[]>([]);
-  const [panel, setPanel] = useState<"share" | "annotate" | "edit" | null>(null), [viewDraft, setViewDraft] = useState<ViewDraft | null>(null);
-  const [reconcile, setReconcile] = useState(false);
-  const preparedScope = useRef(""), preparedExplicit = useRef(false), preparations = useRef(new Map<string, ViewDraft>());
+  const [panel, setPanel] = useState<"share" | "annotate" | null>(null), [viewDraft, setViewDraft] = useState<ViewDraft | null>(null);
+  const preparedScope = useRef(""), preparations = useRef(new Map<string, ViewDraft>());
   const search = useRef<HTMLInputElement>(null), shareButton = useRef<HTMLButtonElement>(null);
   const navRef = useRef<HTMLDivElement>(null), positionButton = useRef<HTMLButtonElement>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; text: string; passage: Passage | null; keyboard: boolean } | null>(null), [passage, setPassage] = useState<Passage | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [linked, setLinked] = useState<string | null>(null), [inspect, setInspect] = useState<string | null>(null);
   const [title, setTitle] = useState(local?.title || sessionTitle(run, exchanges)), [editing, setEditing] = useState(false), [titleValue, setTitleValue] = useState(title), [titleStatus, setTitleStatus] = useState(""), [titleError, setTitleError] = useState(false);
   const titleSaving = useRef(false), label = sessionLabel(run);
-  const [copy, setCopy] = useState("");
-  const [trace, setTrace] = useState(false), [rawOpen, setRawOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false), [traceOpen, setTraceOpen] = useState(false), [rawOpen, setRawOpen] = useState(false);
   const reading = useRef<HTMLDivElement>(null), focusButton = useRef<HTMLElement | null>(null);
   const jumpTo = useRef<string | null>(null), spyHold = useRef(false);
   const restored = useRef(false), state = useRef({ active, mode }); state.current = { active, mode };
@@ -199,7 +220,7 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
       let node: Node | null;
       while ((node = walker.nextNode())) {
-        if (node.parentElement?.closest("button, .sv-block-tools")) continue;
+        if (node.parentElement?.closest("button")) continue;
         const at = (node.textContent ?? "").toLowerCase().indexOf(searchTarget.query);
         if (at < 0) continue;
         const range = document.createRange();
@@ -209,6 +230,26 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
         break;
       }
   }, [searchTarget, active, linked]);
+
+  // The selection menu closes on a click elsewhere, Escape, scrolling or resizing.
+  useEffect(() => {
+    if (!menu) return;
+    // Keyboard users land on the first item; a mouse keeps the selection highlighted.
+    if (menu.keyboard) menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
+    const close = () => setMenu(null);
+    const away = (event: MouseEvent) => { if (!menuRef.current?.contains(event.target as Node)) close(); };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);
+      const at = items.indexOf(document.activeElement as HTMLButtonElement);
+      items[(at + (event.key === "ArrowDown" ? 1 : items.length - 1) + items.length) % items.length]?.focus();
+    };
+    document.addEventListener("mousedown", away); document.addEventListener("keydown", key);
+    window.addEventListener("scroll", close, { passive: true }); window.addEventListener("resize", close); window.addEventListener("blur", close);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", key); window.removeEventListener("scroll", close); window.removeEventListener("resize", close); window.removeEventListener("blur", close); };
+  }, [menu]);
 
   // The outline is a popover: a click elsewhere or Escape closes it.
   useEffect(() => {
@@ -221,8 +262,8 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
   }, [outline]);
 
   const navigate = (e: Exchange, scroll = true) => {
-    setActive(e.id); setMode("exchange"); setLinked(null); setSearchTarget(null); setCopy(""); setOutline(false);
-    // Browsing doesn't create a deep link; copied links explicitly do.
+    setActive(e.id); setMode("exchange"); setLinked(null); setSearchTarget(null); setOutline(false);
+    // Browsing doesn't create a deep link.
     if (location.hash) history.replaceState(null, "", location.pathname + location.search);
     if (scroll) reading.current?.scrollIntoView({ block: "start" });
   };
@@ -250,10 +291,6 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
     } catch (error) { setTitle(title); setTitleValue(next); setTitleError(true); setTitleStatus(error instanceof Error ? error.message : String(error)); }
     finally { titleSaving.current = false; }
   };
-  const copyLink = async (block: MessageBlock) => {
-    try { const url = new URL(location.href); url.hash = `message=${block.key}`; await navigator.clipboard.writeText(url.href); setCopy(block.key); }
-    catch { setCopy("failed"); }
-  };
   const focusedResponse = current?.blocks.find(block => block.key === linked && block.msg.role === "assistant" && messageText(block.msg)) ?? (current && responseFor(current));
   const visibleExchanges = mode === "conversation" ? exchanges : current ? [current] : [];
   const defaults = visibleExchanges.flatMap(exchange => {
@@ -261,32 +298,83 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
     const failure = exchange.blocks.at(-1);
     return [...exchange.prompts, ...(response ? [response] : []), ...(failure?.err ? [failure] : [])];
   });
-  const prefixes = selection.length ? selection.flatMap(key => { const block = blocksByKey.get(key); return block ? selectionPrefixes(block) : []; }) : defaults.flatMap(selectionPrefixes);
+  const prefixes = defaults.flatMap(selectionPrefixes);
   const activity = visibleExchanges.flatMap(exchange => exchange.blocks).filter(block => !defaults.includes(block)).flatMap(selectionPrefixes);
-  const openPanel = (intent: "share" | "annotate" | "edit", button: HTMLButtonElement) => {
+  // What the capture contains, summarized at the end of the page.
+  const facts = useMemo((): Fact[] => {
+    const meta = (run.metadata ?? {}) as Record<string, unknown>;
+    const text = (value: unknown) => typeof value === "string" && value.trim() ? value : undefined;
+    const exact = (n: number) => n.toLocaleString();
+    const compact = (n: number) => n.toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 });
+    const plural = (n: number, one: string, many: string) => `${exact(n)} ${n === 1 ? one : many}`;
+    const project = local?.project ?? text(meta.cwd), version = text(meta.harness_version), sessionId = text(meta.session_id);
+    const fidelity = ({ exact: "Exact capture", reconstructed: "Reconstructed", partial: "Partial capture" } as Record<string, string>)[String(run.source?.fidelity ?? "")];
+    const started = new Date(run.created_at), valid = !Number.isNaN(started.getTime());
+    const mainCount = exchanges.filter(exchange => !exchange.child).length, subagents = exchanges.length - mainCount;
+    const list: (Fact | false)[] = [
+      { label: "Source", value: harnessName(run), note: [version && `Version ${version}`, fidelity].filter(Boolean).join(" · ") || undefined },
+      !!project && { label: "Project", value: project.split(/[\\/]/).filter(Boolean).at(-1) ?? project, title: project },
+      { label: "Started", value: valid ? started.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : run.created_at, title: valid ? started.toLocaleString(undefined, { dateStyle: "full", timeStyle: "long" }) : undefined },
+      !!duration(stats.durMs ?? 0) && { label: "Duration", value: duration(stats.durMs ?? 0) },
+      { label: "Human input", value: plural(mainCount, "message", "messages"), note: subagents ? `${exact(subagents)} more in subagents` : undefined },
+      { label: "Recorded spans", value: exact(run.spans.length), note: `${plural(stats.modelCalls, "model call", "model calls")} · ${plural(stats.toolCalls, "tool call", "tool calls")}` },
+      (stats.tokensIn != null || stats.tokensOut != null) && { label: "Tokens", value: `${compact(stats.tokensIn ?? 0)} in · ${compact(stats.tokensOut ?? 0)} out`, title: `${exact(stats.tokensIn ?? 0)} in · ${exact(stats.tokensOut ?? 0)} out` },
+      stats.cost != null && { label: "Cost", value: `$${stats.cost < 0.01 ? stats.cost.toFixed(4) : stats.cost.toFixed(2)}` },
+      { label: "Errors", value: stats.errors ? exact(stats.errors) : "None", error: stats.errors > 0 },
+      stats.models.length > 0 && { label: stats.models.length === 1 ? "Model" : "Models", value: stats.models.join(" · "), wide: true, mono: true },
+      !!sessionId && { label: "Session ID", value: sessionId, wide: true, mono: true },
+    ];
+    return list.filter((fact): fact is Fact => !!fact);
+  }, [run, stats, exchanges, local]);
+  const synopsis = [`${main.length} ${main.length === 1 ? "message" : "messages"}`, duration(stats.durMs ?? 0), stats.errors ? `${stats.errors} ${stats.errors === 1 ? "error" : "errors"}` : ""].filter(Boolean).join(" · ");
+  const shareTitle = title || shortText(main.map(promptText).find(Boolean) ?? label, 90);
+  // Maps selected text inside one rendered part to its source passage.
+  const passageFor = (range: Range, text: string): Passage | null => {
+    const elementOf = (node: Node) => node instanceof Element ? node : node.parentElement;
+    const part = elementOf(range.startContainer)?.closest<HTMLElement>("[data-unit]");
+    const unit = part?.dataset.unit, source = unit ? unitText.get(unit) : undefined;
+    if (!part || !unit || source == null || elementOf(range.endContainer)?.closest("[data-unit]") !== part) return null;
+    const before = document.createRange();
+    before.selectNodeContents(part); before.setEnd(range.startContainer, range.startOffset);
+    const found = sourceRange(source, text, before.toString().length / (part.textContent?.length || 1));
+    return found ? { unit, ...found } : null;
+  };
+  // Right-clicking selected text offers to comment on and share that passage.
+  const openMenu = (event: ReactMouseEvent) => {
+    const selection = window.getSelection();
+    if (!local || !selection || selection.isCollapsed || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0), text = selection.toString();
+    const keyboard = event.clientX === 0 && event.clientY === 0;
+    const onSelection = keyboard || Array.from(range.getClientRects()).some(r => event.clientX >= r.left - 2 && event.clientX <= r.right + 2 && event.clientY >= r.top - 2 && event.clientY <= r.bottom + 2);
+    if (!text.trim() || !onSelection) return;
+    event.preventDefault();
+    const box = range.getBoundingClientRect();
+    setMenu({ x: keyboard ? box.left : event.clientX, y: keyboard ? box.bottom : event.clientY, text, passage: passageFor(range, text), keyboard });
+  };
+  const commentOn = (selected: Passage) => {
+    const scope = `passage:${selected.unit}:${selected.start}-${selected.end}`;
+    setViewDraft(preparations.current.get(scope) ?? { title: shareTitle, note: "", items: [{ id: selected.unit, start: selected.start, end: selected.end }], primary: selected.unit });
+    preparedScope.current = scope; setPassage(selected); setMenu(null);
+    focusButton.current = shareButton.current; setPanel("annotate");
+    window.getSelection()?.removeAllRanges();
+  };
+  const copySelection = async (text: string) => {
+    setMenu(null);
+    try { await navigator.clipboard.writeText(text); } catch { /* The browser's own copy shortcut still works. */ }
+  };
+  // Preparations are kept per scope while the reader stays open.
+  const openPanel = (button: HTMLButtonElement) => {
     const scope = JSON.stringify(prefixes);
-    const existing = preparations.current.get(scope);
-    const previous = selection.length > 0 && preparedExplicit.current ? viewDraft : null;
-    setViewDraft(existing ?? previous ?? null); setReconcile(!existing && !!previous);
-    preparedScope.current = scope; preparedExplicit.current = selection.length > 0;
-    focusButton.current = button; setPanel(intent);
+    setViewDraft(preparations.current.get(scope) ?? null);
+    preparedScope.current = scope; setPassage(null);
+    focusButton.current = button; setPanel("share");
   };
   const closePanel = () => { setPanel(null); focusButton.current?.focus({ preventScroll: true }); };
-  const toggleSelection = (block: MessageBlock) => setSelection(previous => previous.includes(block.key) ? previous.filter(key => key !== block.key) : [...previous, block.key]);
-  const openInspector = (block: MessageBlock, button: HTMLButtonElement) => { focusButton.current = button; setInspect(block.spanId); };
   const closeInspector = () => { setInspect(null); focusButton.current?.focus({ preventScroll: true }); };
   const showPart = (part: ContentPart, full = false) => reasoningUnavailable(part, run) ? null : part.type === "thinking" ? <div className="sv-thinking">{part.text}</div> : renderPart(part, full);
-  const showBlock = (block: MessageBlock, full = false, collapsed = false) => <div id={`message-${block.key}`} key={block.key} className={`sv-block${linked === block.key ? " sv-linked" : ""}${selection.includes(block.key) ? " sv-selected" : ""}`}>
-    <div className="sv-block-tools">
-      {local && <button className="sv-select" aria-label={`${selection.includes(block.key) ? "Deselect" : "Select"} ${block.err ? "error" : readingRole(block.msg) === "human" ? "human input" : readingRole(block.msg) === "context" ? "provided context" : block.msg.role === "assistant" && messageText(block.msg) ? "agent response" : "agent activity"}`} aria-pressed={selection.includes(block.key)} onClick={() => toggleSelection(block)}>{selection.includes(block.key) ? <Check size={13} /> : <Plus size={13} />}{selection.includes(block.key) ? "Selected" : "Select"}</button>}
-      <details className="sv-block-menu"><summary aria-label="Content actions"><MoreHorizontal size={16} /></summary><div>
-        <button className="sv-quiet" onClick={event => openInspector(block, event.currentTarget)}>Inspect</button>
-        <button className="sv-quiet" onClick={() => copyLink(block)}>{copy === block.key ? "Copied" : "Copy link"}</button>
-        {copy === "failed" && <span role="status" className="sv-meta">Could not copy the link.</span>}
-      </div></details>
-    </div>
+  const showBlock = (block: MessageBlock, full = false, collapsed = false) => <div id={`message-${block.key}`} key={block.key} className={`sv-block${linked === block.key ? " sv-linked" : ""}`}>
     {block.err && <p className="sv-notice sv-error">{block.err}</p>}
-    {collapsed ? <details open={linked === block.key || undefined}><summary>{shortText(messageText(block.msg), 180)} · Full prompt</summary>{block.msg.content.map((part, i) => <div key={i}>{showPart(part, true)}</div>)}</details> : block.msg.content.map((part, i) => <div key={i}>{showPart(part, full)}</div>)}
+    {collapsed ? <details open={linked === block.key || undefined}><summary>{shortText(messageText(block.msg), 180)} · Full prompt</summary>{block.msg.content.map((part, i) => <div key={i} data-unit={partUnit(block, i)}>{showPart(part, true)}</div>)}</details> : block.msg.content.map((part, i) => <div key={i} data-unit={partUnit(block, i)}>{showPart(part, full)}</div>)}
   </div>;
 
   const exchangeBody = (exchange: Exchange, compact = false) => {
@@ -343,7 +431,7 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
         {local && !editing && <button className="sv-quiet sv-edit-title" aria-label="Edit title" title="Edit title" onClick={startTitle}><Pencil size={14} /></button>}
         {titleStatus && <span className={`sv-meta sv-title-status${titleError ? " sv-error" : ""}`} role="status">{titleStatus}</span>}
       </div>
-      {local && <button ref={shareButton} className="sv-primary sv-share" disabled={!prefixes.length} onClick={event => openPanel("share", event.currentTarget)}><Share2 size={15} />Share this view</button>}
+      {local && <button ref={shareButton} className="sv-primary sv-share" disabled={!prefixes.length} onClick={event => openPanel(event.currentTarget)}><Share2 size={15} />Share this view</button>}
     </header>
     <div className="sv-controls" ref={reading}>
       <div className="sv-search" role="search"><Search size={19} aria-hidden="true" /><input ref={search} type="search" aria-label="Search session content" aria-controls="sv-search-results" aria-expanded={!!query.trim() && searchOpen} placeholder={searchScope === "view" ? "Search this view…" : "Search the whole session…"} value={query} onFocus={() => setSearchOpen(true)} onChange={event => { setQuery(event.target.value); setLimit(50); setSearchOpen(true); setOutline(false); }} onKeyDown={event => { if (event.key === "Escape") { setSearchOpen(false); search.current?.blur(); } if (event.key === "ArrowDown") { event.preventDefault(); document.querySelector<HTMLButtonElement>("#sv-search-results .sv-outline-list button")?.focus(); } }} />
@@ -373,12 +461,26 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
         </div>
       </section>}
     </div>
-    <div className="sv-reading">{mode === "exchange" ? current ? exchangeBody(current) : <p className="sv-notice">No conversation was captured. Open session details to inspect the recorded data.</p> : <Conversation exchanges={exchanges} render={exchangeBody} />}</div>
-    {selection.length > 0 && local && <div className="sv-selection-bar" role="region" aria-label="Selection actions"><span>{selection.length} selected</span><button className="sv-quiet" onClick={event => openPanel("annotate", event.currentTarget)}>Annotate</button><button className="sv-quiet" onClick={event => openPanel("edit", event.currentTarget)}>Edit view</button><button className="sv-quiet" onClick={() => { setSelection([]); setViewDraft(null); preparedScope.current = ""; }}>Clear</button></div>}
-    <details className="sv-details"><summary>Session details</summary><div className="sv-details-body"><p className="sv-meta sv-provenance">{[local?.project ? local.project.split(/[\\/]/).filter(Boolean).at(-1) : "", (run.source as { harness?: string } | undefined)?.harness ?? run.source?.kind ?? "Session", run.created_at.slice(0, 10), local ? "local capture" : ""].filter(Boolean).join(" · ")}</p>{details}<details onToggle={e => setTrace(e.currentTarget.open)}><summary>Explore trace and raw data</summary>{trace && renderTree()}</details></div></details>
-    {panel && local && <ViewDialog source={local.source} title={title || shortText(main.map(promptText).find(Boolean) ?? label, 90)} prefixes={prefixes} primary={prefixes[0]} activity={activity} explicit={selection.length > 0} reconcile={reconcile} intent={panel} draft={viewDraft} onDraft={draft => { setViewDraft(draft); preparations.current.set(preparedScope.current, draft); }} close={closePanel} />}
+    <div className="sv-reading" onContextMenu={openMenu}>{mode === "exchange" ? current ? exchangeBody(current) : <p className="sv-notice">No conversation was captured. Open session details to inspect the recorded data.</p> : <Conversation exchanges={exchanges} render={exchangeBody} />}</div>
+    <details className="sv-details" open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}>
+      <summary><ChevronRight size={15} className="sv-details-chevron" aria-hidden="true" /><span className="sv-details-title">Session details</span><span className="sv-details-synopsis">{synopsis}</span></summary>
+      {detailsOpen && <>
+        <dl className="sv-facts">{facts.map(fact => <div key={fact.label} className={`sv-fact${fact.wide ? " sv-fact-wide" : ""}${fact.mono ? " sv-fact-mono" : ""}${fact.error ? " sv-fact-error" : ""}`}><dt>{fact.label}</dt><dd title={fact.title}>{fact.value}{fact.note && <span className="sv-fact-note">{fact.note}</span>}</dd></div>)}</dl>
+        <div className="sv-details-actions">
+          <button onClick={event => { focusButton.current = event.currentTarget; setRawOpen(true); }}><FileJson size={14} aria-hidden="true" />Raw data</button>
+          <button onClick={event => { focusButton.current = event.currentTarget; setTraceOpen(true); }}><ListTree size={14} aria-hidden="true" />Trace explorer</button>
+        </div>
+      </>}
+    </details>
+    {panel && local && <ViewDialog source={local.source} title={shareTitle} prefixes={panel === "annotate" && passage ? [passage.unit] : prefixes} primary={panel === "annotate" && passage ? passage.unit : prefixes[0]} activity={panel === "annotate" ? [] : activity} explicit={panel === "annotate"} reconcile={false} intent={panel} draft={viewDraft} onDraft={draft => { setViewDraft(draft); preparations.current.set(preparedScope.current, draft); }} close={closePanel} />}
     {inspected && <Inspector key={inspected.id} span={inspected} renderSpan={renderSpan} close={closeInspector} />}
     {rawOpen && <SessionData run={run} close={() => { setRawOpen(false); focusButton.current?.focus({ preventScroll: true }); }} />}
+    {traceOpen && <TraceDialog render={renderTree} close={() => { setTraceOpen(false); focusButton.current?.focus({ preventScroll: true }); }} />}
+    {menu && <div ref={menuRef} className="sv-context-menu" role="menu" aria-label="Selected text" style={{ left: Math.max(8, Math.min(menu.x, window.innerWidth - 268)), top: Math.max(8, Math.min(menu.y, window.innerHeight - 140)) }}>
+      <button role="menuitem" disabled={!menu.passage} onClick={() => { if (menu.passage) commentOn(menu.passage); }}><MessageSquare size={15} aria-hidden="true" />Comment and share</button>
+      <button role="menuitem" onClick={() => copySelection(menu.text)}><Copy size={15} aria-hidden="true" />Copy</button>
+      {!menu.passage && <p className="sv-meta">Select text within one message to share it.</p>}
+    </div>}
   </div>;
 }
 

@@ -27,18 +27,24 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   }}>{status}</button></div><pre>{children}</pre></div>;
 }
 
+// Stable component types. Inline functions would remount links, images and
+// tables on every render, dropping any text selection inside them.
+const MARKDOWN_COMPONENTS: NonNullable<Parameters<typeof Markdown>[0]["components"]> = {
+  a: ({ href, children }) => href ? <a href={href} target={href.startsWith("#") ? undefined : "_blank"} rel="noopener noreferrer">{children}</a> : <span>{children}</span>,
+  img: ({ src, alt }) => src && /^https?:\/\//i.test(src) ? <img src={src} alt={alt ?? ""} loading="lazy" /> : <span>{alt || "Image unavailable"}</span>,
+  pre: CodeBlock,
+  table: ({ children }) => <div className="rv-table"><table>{children}</table></div>,
+};
+const REMARK_PLUGINS = [remarkGfm];
+const safeUrl = (url: string) => /^(?:https?:\/\/|mailto:|#)/i.test(url) ? url : "";
+
 // Raw HTML remains escaped. Relative source paths stay readable as text:
 // they must not become links to arbitrary routes on the hosting application.
 export function DocumentText({ text, definitions = "" }: { text: string; definitions?: string }) {
   const prefix = `note-${useId().replace(/[^a-zA-Z0-9-]/g, "")}-`;
-  return <div className="rv-document"><Markdown remarkPlugins={[remarkGfm]}
+  return <div className="rv-document"><Markdown remarkPlugins={REMARK_PLUGINS}
     remarkRehypeOptions={{ clobberPrefix: prefix }}
-    urlTransform={url => /^(?:https?:\/\/|mailto:|#)/i.test(url) ? url : ""}
-    components={{
-      a: ({ href, children }) => href ? <a href={href} target={href.startsWith("#") ? undefined : "_blank"} rel="noopener noreferrer">{children}</a> : <span>{children}</span>,
-      img: ({ src, alt }) => src && /^https?:\/\//i.test(src) ? <img src={src} alt={alt ?? ""} loading="lazy" /> : <span>{alt || "Image unavailable"}</span>,
-      pre: CodeBlock,
-      table: ({ children }) => <div className="rv-table"><table>{children}</table></div>,
-    }}
+    urlTransform={safeUrl}
+    components={MARKDOWN_COMPONENTS}
   >{definitions ? `${text}\n\n${definitions}` : text}</Markdown></div>;
 }

@@ -97,6 +97,54 @@ export function readerFlow(flow: FlowBlock[]): FlowBlock[] {
 }
 
 export const selectionPrefixes = (block: MessageBlock) => block.unitPrefixes ?? [block.unitPrefix];
+// The share catalog unit that addresses a displayed content part.
+export const partUnit = (block: Pick<MessageBlock, "unitPrefix" | "unitPrefixes" | "partIndices">, index: number) =>
+  block.unitPrefixes?.[index] ?? `${block.unitPrefix}-${block.partIndices?.[index] ?? index}`;
+
+// Finds text selected in the rendered reader within its part's source text,
+// which can still carry Markdown syntax. Offsets address the source, as the
+// share catalog expects. `hint` is the selection's relative position in the
+// rendered part, used to choose between repeated matches.
+export function sourceRange(source: string, selected: string, hint = 0): { start: number; end: number } | null {
+  const needle = selected.replace(/\s+/g, " ").trim();
+  if (!needle || !source) return null;
+  const candidates: { start: number; end: number }[] = [];
+  // An exact match against whitespace-collapsed source, mapped back to offsets.
+  let collapsed = "";
+  const from: number[] = [], to: number[] = [];
+  for (let i = 0; i < source.length; i++) {
+    let j = i;
+    const space = /\s/.test(source[i]);
+    if (space) while (j + 1 < source.length && /\s/.test(source[j + 1])) j++;
+    collapsed += space ? " " : source[i];
+    from.push(i); to.push(j + 1); i = j;
+  }
+  for (let at = collapsed.indexOf(needle); at >= 0; at = collapsed.indexOf(needle, at + 1)) candidates.push({ start: from[at], end: to[at + needle.length - 1] });
+  // Otherwise allow Markdown syntax between the characters that were selected.
+  if (!candidates.length && needle.length <= 2000) {
+    const markup = String.raw`(?:[*_~\x60\\]|!?\[|\]\([^)\s]*\)|\])*`;
+    const gap = String.raw`(?:\s|[*_~\x60\\|>#:-]|!?\[|\]\([^)\s]*\)|\]|\d+[.)](?=\s))+`;
+    const chars = [...needle];
+    const pattern = chars.map((ch, i) => ch === " " ? gap : ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + (i < chars.length - 1 && chars[i + 1] !== " " ? markup : "")).join("");
+    for (const match of source.matchAll(new RegExp(pattern, "g"))) candidates.push({ start: match.index ?? 0, end: (match.index ?? 0) + match[0].length });
+  }
+  if (!candidates.length) return null;
+  let { start, end } = candidates.reduce((best, next) => Math.abs(next.start / source.length - hint) < Math.abs(best.start / source.length - hint) ? next : best);
+  // Keep inline Markdown whole so the passage renders as it did in the reader.
+  for (const marker of ["**", "__", "~~", "`"]) {
+    const size = marker.length;
+    if ((source.slice(start, end).split(marker).length - 1) % 2) {
+      if (source.slice(start - size, start) === marker) start -= size;
+      else if (source.slice(end, end + size) === marker) end += size;
+    } else if (source.slice(start - size, start) === marker && source.slice(end, end + size) === marker) { start -= size; end += size; }
+  }
+  const target = /^\]\([^)\s]*\)/;
+  const passage = source.slice(start, end);
+  if (passage.lastIndexOf("[") > passage.lastIndexOf("]")) { const close = /^[^\]\n]*\]\([^)\s]*\)/.exec(source.slice(end)); if (close) end += close[0].length; }
+  else if (source[start - 1] === "[" && target.test(source.slice(end))) { start -= 1; end += target.exec(source.slice(end))![0].length; }
+  if (/^[^[]*\]\(/.test(source.slice(start, end))) { const open = source.lastIndexOf("[", start); if (open >= 0 && !source.slice(open, start).includes("]")) start = open; }
+  return { start, end };
+}
 
 // Harness wrappers carried in user messages: environment and instruction
 // blocks, reminders and local slash-command records. They are provided
@@ -186,7 +234,12 @@ export function eventTime(at?: string, sessionStart?: string, seconds = false) {
 // Compact elapsed time between two recorded moments, or "" when unknown.
 export function elapsed(from?: string, to?: string): string {
   const ms = from && to ? new Date(to).getTime() - new Date(from).getTime() : NaN;
-  if (!(ms >= 1000)) return "";
+  return ms >= 1000 ? duration(ms) : "";
+}
+// Compact duration: 45s, 2m 8s, 12m, 1h 5m. Empty when unknown.
+export function duration(ms: number): string {
+  if (!(ms > 0)) return "";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
   const s = Math.round(ms / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60);
   return h ? `${h}h ${m % 60}m` : m >= 10 ? `${m}m` : m ? `${m}m ${s % 60}s` : `${s}s`;
 }
