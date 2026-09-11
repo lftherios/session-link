@@ -63,6 +63,7 @@ test("arrival: latest input and answer open beneath scoped search and one share 
   assert.match(html, /aria-label="Reading layout"><button aria-pressed="true">Focused<\/button><button aria-pressed="false">Full session<\/button>/);
   assert.match(html, /aria-label="Previous in conversation"/);
   assert.doesNotMatch(html, /class="sv-raw-button"/, "raw session data is offered in the full session layout");
+  assert.doesNotMatch(html, /class="sv-time"/, "captures without span times show no times");
   assert.doesNotMatch(html, /Share this response|Select a passage|aria-label="Selection actions"/);
   assert.match(html, /Edit title/);
   assert.match(html, /aria-label="All sessions"/);
@@ -221,6 +222,20 @@ test("arrival: a name the importer clipped from the first prompt is not a title"
   assert.match(render(exact, "exchange"), /sv-untitled/);
   const summary = { ...doc, name: "Clean up stale build artifacts" };
   assert.match(render(summary, "exchange"), /<h1>Clean up stale build artifacts<\/h1>/);
+});
+
+test("reading: human input, responses and activity show their recorded times", async () => {
+  const { elapsed } = await sessionModel();
+  const doc = run([
+    call("s1", [message("user", "Check the build")], [{ role: "assistant", content: [{ type: "tool_call", id: "t1", name: "shell", arguments: { command: "make" } }] }], { started_at: "2026-09-11T13:04:00.000Z", ended_at: "2026-09-11T13:04:05.000Z" }),
+    call("s2", [{ role: "tool", content: [{ type: "tool_result", tool_call_id: "t1", content: [{ type: "text", text: "ok" }] }] }], [message("assistant", "The build passes.")], { started_at: "2026-09-11T13:05:30.000Z", ended_at: "2026-09-11T13:06:08.000Z" }),
+  ]);
+  const html = render(doc, "exchange");
+  assert.match(html, /Human input<time class="sv-time" dateTime="2026-09-11T13:04:00\.000Z" title="[^"]+">[^<]+<\/time>/);
+  assert.match(html, /Agent response<time class="sv-time" dateTime="2026-09-11T13:06:08\.000Z" title="[^"]+">[^<]+<\/time>/);
+  assert.match(html, /<summary>Agent activity(?:<!-- -->)? · 2 steps<span class="sv-duration" title="[^"]+"> · (?:<!-- -->)?2m 8s<\/span><\/summary>/);
+  assert.deepEqual([["13:04:00", "13:04:45"], ["13:04:00", "13:16:30"], ["13:04:00", "14:09:10"], ["13:04:00", "13:04:00"]].map(([a, b]) => elapsed(`2026-09-11T${a}Z`, `2026-09-11T${b}Z`)), ["45s", "12m", "1h 5m", ""]);
+  assert.equal(elapsed(undefined, "2026-09-11T13:04:00Z"), "");
 });
 
 test("reading: Markdown headings, tables, lists, citations and inert HTML", () => {

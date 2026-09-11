@@ -2,7 +2,7 @@ import type { ContentPart, Message, Run, Span } from "@session-link/format";
 
 export type FlowBlock =
   | { key: string; kind: "boundary"; spanId: string; scope: string; label: string }
-  | { key: string; kind: "msg"; spanId: string; scope: string; msg: Message; err?: string; unitPrefix: string; partIndices?: number[]; unitPrefixes?: string[] };
+  | { key: string; kind: "msg"; spanId: string; scope: string; msg: Message; err?: string; unitPrefix: string; partIndices?: number[]; unitPrefixes?: string[]; at?: string };
 export type MessageBlock = Extract<FlowBlock, { kind: "msg" }>;
 export type Exchange = { id: string; scope: string; child: boolean; agent?: string; prompts: MessageBlock[]; blocks: MessageBlock[] };
 
@@ -39,7 +39,9 @@ export function buildFlow(run: Run): FlowBlock[] {
     const input = data(s, "input"), output = data(s, "output");
     const ins = (input.messages ?? []) as Message[], outs = (output.messages ?? []) as Message[];
     const error = s.status === "error" ? String(s.error?.message ?? "Recorded error") : undefined;
-    const push = (msg: Message, prefix: string) => {
+    // `at` is when the message was recorded: inputs at the span start,
+    // outputs and results at its end.
+    const push = (msg: Message, prefix: string, at?: string) => {
       // A tool can occur in both its own span and a subsequent model input.
       // Match the complete result, preserving repeated parts inside a result.
       const partIndices: number[] = [];
@@ -54,23 +56,23 @@ export function buildFlow(run: Run): FlowBlock[] {
         }
         partIndices.push(index); return true;
       });
-      if (content.length) blocks.push({ key: prefix, kind: "msg", spanId: s.id, scope, msg: { ...msg, content }, unitPrefix: prefix, partIndices });
+      if (content.length) blocks.push({ key: prefix, kind: "msg", spanId: s.id, scope, msg: { ...msg, content }, unitPrefix: prefix, partIndices, at });
     };
     const previous = histories.get(scope) ?? [];
     const replay = !delta && previous.length > 0 && ins.length >= previous.length && previous.every((m, i) => canonical(m) === canonical(ins[i]));
-    ins.forEach((m, i) => { if (!replay || i >= previous.length) push(m, `u${si}-in-${i}`); });
-    outs.forEach((m, i) => push(m, `u${si}-out-${i}`));
+    ins.forEach((m, i) => { if (!replay || i >= previous.length) push(m, `u${si}-in-${i}`, s.started_at); });
+    outs.forEach((m, i) => push(m, `u${si}-out-${i}`, s.ended_at ?? s.started_at));
     if (ins.length + outs.length) histories.set(scope, [...ins, ...outs]);
     if (s.type === "tool_call") {
       const id = String(input.tool_call_id ?? "");
-      if (input.arguments != null) push({ role: "assistant", content: [{ type: "tool_call", id, name: String(input.name ?? s.name ?? "Tool"), arguments: input.arguments }] } as Message, `u${si}-call`);
+      if (input.arguments != null) push({ role: "assistant", content: [{ type: "tool_call", id, name: String(input.name ?? s.name ?? "Tool"), arguments: input.arguments }] } as Message, `u${si}-call`, s.started_at);
       if (output.result != null) {
         const result = output.result;
         const content = Array.isArray(result) && result[0]?.type ? result : [{ type: "text", text: typeof result === "string" ? result : JSON.stringify(result, null, 2) }];
-        push({ role: "tool", content: [{ type: "tool_result", tool_call_id: id, content, is_error: s.status === "error" }] } as Message, `u${si}-result`);
+        push({ role: "tool", content: [{ type: "tool_result", tool_call_id: id, content, is_error: s.status === "error" }] } as Message, `u${si}-result`, s.ended_at ?? s.started_at);
       }
     }
-    if (error) blocks.push({ key: `u${si}-error`, kind: "msg", spanId: s.id, scope, msg: { role: "system", content: [] }, err: error, unitPrefix: `u${si}-error` });
+    if (error) blocks.push({ key: `u${si}-error`, kind: "msg", spanId: s.id, scope, msg: { role: "system", content: [] }, err: error, unitPrefix: `u${si}-error`, at: s.ended_at ?? s.started_at });
   });
   return blocks;
 }
@@ -166,6 +168,28 @@ export const previewText = (text: string, max = 86) => shortText(text
   .replace(/^\s{0,3}(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s?)/gm, "")
   .replace(/\|?\s*:?-{3,}:?\s*/g, " ").replace(/\|/g, " "), max);
 export const shortText = (text: string, max = 86) => { const clean = text.replace(/\s+/g, " ").trim(); return clean.length > max ? clean.slice(0, max - 1).trimEnd() + "…" : clean; };
+// A recorded time for display: time of day, with the date only when it falls
+// on a different day from the session start. The title carries the full
+// date, time and zone.
+export function eventTime(at?: string, sessionStart?: string, seconds = false) {
+  const date = at ? new Date(at) : null;
+  if (!date || Number.isNaN(date.getTime())) return null;
+  const clock = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}) });
+  const start = sessionStart ? new Date(sessionStart) : null;
+  const sameDay = !!start && !Number.isNaN(start.getTime()) && start.toDateString() === date.toDateString();
+  return {
+    iso: date.toISOString(),
+    label: sameDay ? clock : `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${clock}`,
+    title: date.toLocaleString(undefined, { dateStyle: "full", timeStyle: "long" }),
+  };
+}
+// Compact elapsed time between two recorded moments, or "" when unknown.
+export function elapsed(from?: string, to?: string): string {
+  const ms = from && to ? new Date(to).getTime() - new Date(from).getTime() : NaN;
+  if (!(ms >= 1000)) return "";
+  const s = Math.round(ms / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60);
+  return h ? `${h}h ${m % 60}m` : m >= 10 ? `${m}m` : m ? `${m}m ${s % 60}s` : `${s}s`;
+}
 export const meaningfulTitle = (name?: string) => !!name?.trim() && !/^(?:untitled(?: session)?|session|[a-f\d-]{24,}|rollout-.*|.*\.(?:jsonl?|spool))$/i.test(name.trim()) && !/^[/<]/.test(name.trim());
 // Importers clip the first prompt into `name` when a harness records no
 // summary. That keeps lists readable, but it is not a title: the reader

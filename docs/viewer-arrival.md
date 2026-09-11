@@ -25,6 +25,14 @@ Claude Code importer now records tool results with the tool role, rows Claude
 Code flags as injected metadata with the system role, and synthetic API
 failures such as rate limits as failed spans rather than agent responses.
 
+Recorded times sit beside the labels in a quieter mono style. Human input shows
+when its recorded call began, an agent response when its call ended, and each
+activity step to the second. A date is added only when an event falls on a
+different day from the session start; hovering shows the full date, time and
+time zone. The **Agent activity** summary adds the number of steps and the time
+from the human input to the last recorded step. Times come from span start and
+end times, so captures without them show none.
+
 Each exchange has one collapsed **Agent activity** section. Captured thinking
 and tool work live there even when the harness packages them in the same message
 as the answer. Expanding the section reveals the thinking directly, without a

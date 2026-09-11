@@ -3,7 +3,7 @@ import { Search, ChevronDown, ChevronLeft, ChevronRight, ArrowLeft, Check, Plus,
 import { ViewDialog } from "./ViewDialog";
 import type { ViewDraft } from "./view-draft";
 import type { ContentPart, Run, Span } from "@session-link/format";
-import { buildFlow, defaultExchange, exchangesFor, messageText, previewText, promptLabel, promptText, readerFlow, readingKey, readingRole, reasoningUnavailable, responseFor, selectionPrefixes, sessionLabel, sessionTitle, shortText, type Exchange, type MessageBlock } from "./session-model";
+import { buildFlow, defaultExchange, elapsed, eventTime, exchangesFor, messageText, previewText, promptLabel, promptText, readerFlow, readingKey, readingRole, reasoningUnavailable, responseFor, selectionPrefixes, sessionLabel, sessionTitle, shortText, type Exchange, type MessageBlock } from "./session-model";
 
 export type LocalViewer = { source: string; project?: string; title?: string };
 type Props = { run: Run; local?: LocalViewer; renderPart: (part: ContentPart, full?: boolean) => ReactNode; renderSpan: (span: Span) => ReactNode; renderTree: () => ReactNode; details: ReactNode };
@@ -32,6 +32,7 @@ const CSS = `
 .sv .sv-layout button{padding:0 12px;color:var(--rv-faint)}.sv .sv-layout button:hover:not(:disabled){background:transparent;color:var(--rv-ink)}.sv .sv-layout button[aria-pressed=true],.sv .sv-layout button[aria-pressed=true]:hover{background:var(--rv-panel);color:var(--rv-ink);box-shadow:0 1px 3px #0000001f}
 .sv .sv-reading{max-width:780px;margin:0 auto;min-width:0}.sv .sv-prompt{padding:18px 22px;border-left:3px solid var(--rv-line);background:var(--rv-soft);border-radius:0 8px 8px 0;margin-bottom:32px;overflow-wrap:anywhere}
 .sv .sv-label{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;font:11px ui-monospace,monospace;color:var(--rv-faint);letter-spacing:.08em;text-transform:uppercase}
+.sv .sv-label-main{display:inline-flex;align-items:baseline;min-width:0}.sv .sv-time{margin-left:10px;padding-left:10px;border-left:1px solid var(--rv-line);font:11px ui-monospace,monospace;letter-spacing:0;text-transform:none;color:var(--rv-faint);font-variant-numeric:tabular-nums;white-space:nowrap}
 .sv .sv-response{overflow-wrap:anywhere}.sv .sv-response-body{font-size:15px;line-height:1.75}
 .sv .sv-thinking{white-space:pre-wrap;font-size:13px;line-height:1.7;color:var(--rv-faint);margin:12px 0}
 .sv .sv-block{position:relative;min-width:0;border-radius:5px;scroll-margin-top:32px}.sv .sv-block-tools{position:absolute;right:0;top:-30px;display:flex;gap:4px;align-items:center;padding-bottom:5px;opacity:0;pointer-events:none;transition:opacity .12s;z-index:2}.sv .sv-block-tools button{font-size:11px;padding:4px 7px;line-height:1.4}.sv .sv-block:hover>.sv-block-tools,.sv .sv-block:focus-within>.sv-block-tools,.sv .sv-block.sv-selected>.sv-block-tools{opacity:1;pointer-events:auto}
@@ -65,6 +66,12 @@ function Inspector({ span, renderSpan, close }: { span: Span; renderSpan: Props[
     <div className="sv-dialog-head"><strong>{span.name ?? span.type}</strong><button onClick={() => setRaw(v => !v)}>{raw ? "Formatted" : "Raw data"}</button><button onClick={close}>Close inspection</button></div>
     {raw ? <pre>{JSON.stringify(span, null, 2)}</pre> : renderSpan(span)}
   </dialog>;
+}
+
+// A recorded time beside a label.
+function Stamp({ at, start, seconds = false }: { at?: string; start?: string; seconds?: boolean }) {
+  const time = eventTime(at, start, seconds);
+  return time ? <time className="sv-time" dateTime={time.iso} title={time.title} suppressHydrationWarning>{time.label}</time> : null;
 }
 
 // The whole session document as JSON, opened from the full session.
@@ -293,19 +300,19 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
     const readableReasoning = supporting.some(block => block.msg.content.some(part => part.type === "thinking" && !reasoningUnavailable(part, run)));
     const last = exchange.blocks.at(-1), endedWithError = last?.err && (!response || exchange.blocks.indexOf(last) >= exchange.blocks.indexOf(response));
     return <>
-      {exchange.prompts.length > 0 && <div className="sv-prompt"><p className="sv-label">Human input</p>{exchange.prompts.map(block => {
+      {exchange.prompts.length > 0 && <div className="sv-prompt"><p className="sv-label"><span className="sv-label-main">Human input<Stamp at={exchange.prompts[0].at} start={run.created_at} /></span></p>{exchange.prompts.map(block => {
         const long = messageText(block.msg).length > 600;
         return showBlock(block, true, long);
       })}</div>}
       {!exchange.prompts.length && <p className="sv-meta">Human input not captured.</p>}
       {endedWithError && <p className="sv-notice sv-error">Error: {last.err}</p>}
       {response ? <section className="sv-response" aria-label="Agent response">
-        <div className="sv-label"><span>Agent response</span></div>
+        <div className="sv-label"><span className="sv-label-main">Agent response<Stamp at={response.at} start={run.created_at} /></span></div>
         <div className="sv-response-body">{showBlock(response, !compact)}</div>
       </section> : <div className="sv-notice">No response captured.{run.metadata?.in_progress === true && exchange.id === initial?.id ? " The session was still recording when this snapshot was saved." : ""}</div>}
-      {supporting.length > 0 && <SupportingSteps key={`${exchange.id}-${linked}`} count={visibleSupporting.length} initiallyOpen={supporting.some(b => b.key === linked)} render={() => <>
+      {supporting.length > 0 && <SupportingSteps key={`${exchange.id}-${linked}`} count={visibleSupporting.length} duration={elapsed(exchange.prompts[0]?.at, exchange.blocks.map(block => block.at).filter(Boolean).at(-1))} initiallyOpen={supporting.some(b => b.key === linked)} render={() => <>
         {unavailableReasoning.length > 0 && <p className={`sv-notice sv-reasoning-unavailable${unavailableTarget ? " sv-linked" : ""}`} id={unavailableTarget ? `message-${unavailableTarget.key}` : undefined}>{readableReasoning ? "Some reasoning text isn’t available in this capture." : "Reasoning text isn’t available in this capture."}{encryptedReasoning ? " The source contains encrypted reasoning without a readable summary." : " Reasoning events were recorded without readable text."}</p>}
-        {visibleSupporting.map(block => <div className="sv-step" key={block.key}><div className="sv-label"><span>{block.err ? "Error" : block.msg.content.length > 0 && block.msg.content.every(part => part.type === "thinking") ? "Reasoning" : block.msg.content.some(part => part.type === "tool_call") ? "Tool call" : block.msg.role === "assistant" ? "Agent message" : readingRole(block.msg) === "context" ? "Provided context" : readingRole(block.msg) === "tool" ? "Tool result" : block.msg.role}</span></div>{showBlock(block)}</div>)}
+        {visibleSupporting.map(block => <div className="sv-step" key={block.key}><div className="sv-label"><span className="sv-label-main">{block.err ? "Error" : block.msg.content.length > 0 && block.msg.content.every(part => part.type === "thinking") ? "Reasoning" : block.msg.content.some(part => part.type === "tool_call") ? "Tool call" : block.msg.role === "assistant" ? "Agent message" : readingRole(block.msg) === "context" ? "Provided context" : readingRole(block.msg) === "tool" ? "Tool result" : block.msg.role}<Stamp at={block.at} start={run.created_at} seconds /></span></div>{showBlock(block)}</div>)}
       </>} />}
 
     </>;
@@ -377,9 +384,9 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, de
 
 const canonicalMessage = (block: MessageBlock) => [messageText(block.msg), block.err ?? "", ...block.msg.content.filter(p => p.type !== "text").map(p => JSON.stringify(p))].join("\n");
 
-function SupportingSteps({ count, initiallyOpen, render }: { count: number; initiallyOpen: boolean; render: () => ReactNode }) {
+function SupportingSteps({ count, duration, initiallyOpen, render }: { count: number; duration: string; initiallyOpen: boolean; render: () => ReactNode }) {
   const [open, setOpen] = useState(initiallyOpen);
-  return <details className="sv-support" open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary>Agent activity{count > 0 ? ` · ${count}` : ""}</summary>{open && render()}</details>;
+  return <details className="sv-support" open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary>Agent activity{count > 0 ? ` · ${count} ${count === 1 ? "step" : "steps"}` : ""}{duration && <span className="sv-duration" title="Time from the human input to the last recorded step"> · {duration}</span>}</summary>{open && render()}</details>;
 }
 
 // The full session renders every exchange; it never paginates.
