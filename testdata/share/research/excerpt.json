@@ -1,0 +1,99 @@
+{
+  "schema": "session/v0",
+  "created_at": "2026-09-11T09:00:00Z",
+  "name": "Onboarding comparison: what to verify",
+  "source": {
+    "kind": "import",
+    "label": "session.link excerpt",
+    "fidelity": "partial"
+  },
+  "extensions": {
+    "session_link.share.v1": {
+      "kind": "excerpt",
+      "omissions": true,
+      "original_fidelity": "exact",
+      "note_id": "author-note",
+      "primary_id": "u1-out-0-0-53-300",
+      "items": [
+        {
+          "id": "u1-in-0-0",
+          "kind": "text",
+          "role": "user",
+          "passage": false,
+          "omitted_before": true
+        },
+        {
+          "id": "u1-out-0-0-53-300",
+          "kind": "text",
+          "role": "assistant",
+          "passage": true,
+          "omitted_before": false
+        }
+      ]
+    }
+  },
+  "spans": [
+    {
+      "id": "root",
+      "type": "agent",
+      "name": "Selected session material"
+    },
+    {
+      "id": "author-note",
+      "parent_id": "root",
+      "type": "custom",
+      "name": "Author context",
+      "input": {
+        "messages": [
+          {
+            "role": "author",
+            "content": [
+              {
+                "type": "text",
+                "text": "Please check whether this changes our trial-flow priorities. These are fictional products in a development fixture."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "u1-in-0-0",
+      "parent_id": "root",
+      "type": "custom",
+      "name": "user",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Compare Atlas and Beacon for self-serve onboarding. Use public docs and flag uncertainties."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "u1-out-0-0-53-300",
+      "parent_id": "root",
+      "type": "custom",
+      "name": "assistant",
+      "input": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Atlas documents a self-serve workspace setup. Beacon documents an assisted setup. 🔎 Verify whether that difference applies to trial users. [Atlas docs](https://atlas.example.test/onboarding) · [Beacon docs](https://beacon.example.test/onboarding)"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

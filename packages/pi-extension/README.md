@@ -23,6 +23,19 @@ rather not install `slink` globally, the extension falls back to
 In a pi session:
 
 ```
+/slink view
+```
+
+Opens the current session in a local browser preview and returns control to pi.
+It uses the persisted transcript to include earlier turns in resumed sessions
+(`reconstructed` fidelity), falling back to the live capture for in-memory
+sessions. Nothing is uploaded. Review the saved snapshot and use Publish in
+the browser when ready. Stop the background viewer from its sessions page.
+The current checkout of the CLI is required for this new command.
+
+To publish directly:
+
+```
 /slink
 ```
 

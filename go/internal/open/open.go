@@ -7,6 +7,7 @@ package open
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -19,9 +20,12 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lftherios/session-link/internal/cli"
+	"github.com/lftherios/session-link/internal/handoff"
+	"github.com/lftherios/session-link/internal/share"
 	"github.com/lftherios/session-link/internal/spool"
 )
 
@@ -29,34 +33,38 @@ import (
 var viewerJS []byte
 
 var fileID = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-var routeRe = regexp.MustCompile(`^/(r|api/publish)/([^/]+)$`)
+var routeRe = regexp.MustCompile(`^/(r|p|compose|api/compose|api/title|api/draft|api/export|api/preview|api/publish|api/publish-preview)/([^/]+)$`)
 
 const css = `
   :root{--paper:#f5f6f3;--panel:#fdfdfb;--ink:#17201c;--faint:#5b6660;--line:#d8ddd7;--signal:#0e6f5c;--error:#b3402e;
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  :root{color-scheme:light}
+  @media(prefers-color-scheme:dark){:root{color-scheme:dark;--paper:#101512;--panel:#171d19;--ink:#e3e9e4;--faint:#8f9a93;--line:#2b342d;--signal:#3fae94;--error:#e08070}}
   *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
   .wrap{max-width:1080px;margin:0 auto;padding:28px 24px 64px}
   .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
   a{color:var(--signal)}
   .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-  .pub{display:flex;align-items:center;gap:10px}
+  .pub{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
   .result-row{display:flex;justify-content:flex-end;margin:6px 0 16px}
-  .btn{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:7px 14px;
+  .btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:7px 14px;
     font-family:var(--mono);font-size:12px;cursor:pointer;transition:opacity .15s ease}
   .btn.primary{background:var(--signal);border-color:var(--signal);color:#fff}
   .btn:hover{opacity:.88}
-  .note{font-family:var(--mono);font-size:12px;color:var(--faint)}
-  .result{font-family:var(--mono);font-size:12px}
+  .note{font-family:var(--mono);font-size:12px;color:var(--faint);overflow-wrap:anywhere}
+  .result{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
   .result.err{color:var(--error);white-space:pre-wrap}
+  .session-actions{position:relative}.session-actions summary{cursor:pointer;font-size:12px;color:var(--faint);padding:8px}
+  .session-actions>.pub{position:absolute;right:0;top:36px;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;width:min(340px,calc(100vw - 48px));box-shadow:0 8px 30px #0002}
   .card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:10px;
     padding:14px 18px;margin-bottom:10px;color:var(--ink);text-decoration:none;
     transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}
   .card:hover{border-color:#b9c4bb;box-shadow:0 2px 14px rgba(23,32,28,.07);transform:translateY(-1px)}
   .card:hover .t{color:var(--signal)}
   .card .t{font-family:var(--serif);font-size:18px;margin-bottom:3px}
-  .card .m{font-family:var(--mono);font-size:12px;color:var(--faint)}
+  .card .m{font-family:var(--mono);font-size:12px;color:var(--faint);overflow-wrap:anywhere}
   .card.dead{border-style:dashed;color:var(--faint);cursor:default}
   .card.dead .t{color:var(--faint)}
   .card.dead:hover{border-color:var(--line);box-shadow:none;transform:none}
@@ -81,12 +89,23 @@ func page(title, body string) string {
 
 // Server carries the open UI's state.
 type Server struct {
-	CaptureDir string
-	Target     string // publish server
-	APIKey     string
+	CaptureDir     string
+	Target         string // publish server
+	APIKey         string
+	PreviewDir     string
+	Project        string
+	Warning        string
+	Sources        []handoff.Source
+	OnPublish      func(string)
+	OnStop         func()
+	composeSources sync.Map
+	draftMu        sync.Mutex
 }
 
 func (s *Server) indexPage() string {
+	if s.Project != "" {
+		return s.pickerPage()
+	}
 	captures := cli.ListCaptures(s.CaptureDir)
 	listed := map[string]bool{}
 	var cards strings.Builder
@@ -215,8 +234,18 @@ func displayPath(p string) string {
 var errNotJSON = errors.New("capture is not valid JSON")
 
 func (s *Server) runPage(id string) (string, error) {
+	return s.documentPage(id, false)
+}
+
+func (s *Server) documentPage(id string, preview bool) (string, error) {
 	file := filepath.Join(s.CaptureDir, id+".json")
-	spool.Assemble(file, spool.AssembleOptions{}) // live session: fresh snapshot
+	endpoint := "/api/publish/" + id
+	if preview {
+		file = filepath.Join(s.previewDir(), id+".json")
+		endpoint = "/api/publish-preview/" + id
+	} else {
+		spool.Assemble(file, spool.AssembleOptions{}) // legacy live capture route
+	}
 	raw, err := os.ReadFile(file)
 	if err != nil {
 		return "", err // os.ErrNotExist → the styled 404
@@ -238,7 +267,9 @@ func (s *Server) runPage(id string) (string, error) {
 	meta, _ := run["metadata"].(map[string]any)
 	inProgress, _ := meta["in_progress"].(bool)
 	recNote := ""
-	if inProgress {
+	if preview {
+		recNote = `<div class="kv"><span class="k">status</span><span class="v">saved preview — later session changes are not included</span></div>`
+	} else if inProgress {
 		recNote = `<div class="kv"><span class="k">status</span><span class="v">still recording — a snapshot as of now will be published</span></div>`
 	}
 	absFile, err := filepath.Abs(file)
@@ -249,21 +280,56 @@ func (s *Server) runPage(id string) (string, error) {
 	runJSON := strings.ReplaceAll(string(mustCompact(raw)), "<", `\u003c`)
 	// json.Marshal escapes < > & by default, so this is script-safe as-is.
 	// The file path is only ever read by a human in error text — abbreviated.
-	pubJSON, _ := json.Marshal(map[string]any{"hasKey": s.APIKey != "", "file": displayPath(absFile)})
+	pubJSON, _ := json.Marshal(map[string]any{"hasKey": s.apiKey() != "", "file": displayPath(absFile), "endpoint": endpoint})
 	keyNote, btnLabel := "", "Publish"
-	if s.APIKey == "" {
+	if s.apiKey() == "" {
 		keyNote = " · no API key (slink login)"
 		btnLabel = "Sign in to publish"
 	}
+	previewNote := ""
+	if preview {
+		previewNote = `<p class="note">Saved local preview · later session changes will not appear here.</p>`
+	}
+	composeLink, publishDisabled := "", ""
+	publishTarget := `<span class="note">unlisted → ` + html.EscapeString(s.Target) + keyNote + `</span>`
+	downloadClass, downloadLabel := "btn", "download JSON"
+	if preview {
+		composeLink = `<a class="btn" href="/compose/` + id + `">Choose what to share</a>`
+	}
+	if ext, _ := run["extensions"].(map[string]any); ext[share.Extension] != nil {
+		previewNote = `<p class="note">Excerpt preview · only the selected material and author context are included. Excerpts can currently be downloaded locally.</p>`
+		composeLink = ""
+		if source := s.editSource(id); source != "" {
+			composeLink = `<a class="btn" href="/compose/` + source + `">Edit selection</a>`
+			if record, err := s.viewRecord(id); err == nil && record.Draft != nil {
+				composeLink = `<a class="btn" href="/compose/` + source + `?view=` + id + `">Edit selection</a>`
+			}
+		}
+		publishDisabled, publishTarget = " hidden disabled", ""
+		downloadClass, downloadLabel = "btn primary", "Download excerpt"
+	}
+	localConfig := ""
+	actionsOpen, actionsClose := "", ""
+	if preview && publishDisabled == "" {
+		previewNote = ""
+		composeLink = ""
+		config, _ := json.Marshal(map[string]string{"source": id, "project": s.Project, "title": s.localTitle(id)})
+		localConfig = `<script>window.__LOCAL__=` + string(config) + `</script>`
+		actionsOpen, actionsClose = `<details class="session-actions"><summary>Session actions</summary>`, `</details>`
+		if s.apiKey() != "" {
+			btnLabel = "Publish whole session…"
+		}
+	}
 	return page(name,
 		`<div class="top">
-       <p class="eyebrow" style="margin:0"><a href="/">← captures</a> · local preview</p>
-       <div class="pub">
-         <button class="btn" id="copy" title="copy the page URL, span selection included">copy link</button>
-         <button class="btn" id="dl" title="save the run document as `+id+`.json">download JSON</button>
-         <span class="note">unlisted → `+html.EscapeString(s.Target)+keyNote+`</span>
-         <button class="btn primary" id="pub">`+btnLabel+`</button>
-       </div>
+       <p class="eyebrow" style="margin:0"><a href="/">← sessions</a> · local preview</p>
+       `+actionsOpen+`<div class="pub">
+         `+composeLink+`
+         <button class="btn" id="copy" title="copy this local URL, span selection included; publish to share with a colleague">copy local URL</button>
+         <button class="`+downloadClass+`" id="dl" title="save the run document as `+id+`.json">`+downloadLabel+`</button>
+         `+publishTarget+`
+         <button class="btn primary" id="pub"`+publishDisabled+`>`+btnLabel+`</button>
+       </div>`+actionsClose+`
      </div>
      <div class="result-row"><span class="result" id="out"></span></div>
      <dialog id="confirm">
@@ -278,8 +344,8 @@ func (s *Server) runPage(id string) (string, error) {
          <button class="btn primary" id="go">Publish</button>
        </div>
      </dialog>
-     <div id="root"></div>
-     <script>window.__RUN__=`+runJSON+`</script>
+     `+previewNote+`<div id="root"></div>
+     <script>window.__RUN__=`+runJSON+`</script>`+localConfig+`
      <script>window.__PUB__=`+string(pubJSON)+`</script>
      <script src="/assets/viewer.js"></script>
      <script>
@@ -297,17 +363,18 @@ func (s *Server) runPage(id string) (string, error) {
            btn.disabled=true;btn.textContent="Publishing…";
            let res;
            try{
-             res=await fetch("/api/publish/`+id+`",{method:"POST",headers:{"x-slink":"1"}});
+             res=await fetch(PUB.endpoint,{method:"POST",headers:{"x-slink":"1"}});
            }catch(e){
              out.className="result err";
-             out.textContent="✗ could not reach the local slink server — is `+"`slink open`"+` still running?";
+             out.textContent="✗ could not reach the local slink server — is `+"`slink view`"+` still running?";
              btn.disabled=false;btn.textContent="Publish";
              return;
            }
            const d=await res.json().catch(()=>({}));
            if(d.url){
              const url=d.url+(location.hash||"");
-             try{await navigator.clipboard.writeText(url)}catch{}
+             let copied=false;
+             try{await navigator.clipboard.writeText(url);copied=true}catch{}
              // DOM APIs, not innerHTML: the URL is server-provided bytes and
              // must never be parsed as markup — nor linked unless it is http(s).
              let link=document.createTextNode(url);
@@ -315,7 +382,7 @@ func (s *Server) runPage(id string) (string, error) {
                link=document.createElement("a");
                link.href=url;link.target="_blank";link.rel="noopener";link.textContent=url;
              }
-             out.replaceChildren(link,(d.deduplicated?"  (already published, copied)":"  (copied)")+" — Anyone with this link can view it.");
+             out.replaceChildren(link,(d.deduplicated?"  (already published)":"")+(copied?"  (copied)":"")+" — Anyone with this link can view it.");
              btn.textContent="Published";
            }else{
              out.className="result err";
@@ -335,7 +402,7 @@ func (s *Server) runPage(id string) (string, error) {
        copy.onclick=async()=>{
          try{await navigator.clipboard.writeText(location.href);copy.textContent="copied"}
          catch{copy.textContent="copy failed"}
-         setTimeout(()=>{copy.textContent="copy link"},1200);
+         setTimeout(()=>{copy.textContent="copy local URL"},1200);
        };
        dl.onclick=()=>{
          const u=URL.createObjectURL(new Blob([JSON.stringify(window.__RUN__)],{type:"application/json"}));
@@ -400,7 +467,10 @@ type publishResult struct {
 }
 
 func (s *Server) publish(id string) publishResult {
-	file := filepath.Join(s.CaptureDir, id+".json")
+	return s.publishFile(filepath.Join(s.CaptureDir, id+".json"))
+}
+
+func (s *Server) publishFile(file string) publishResult {
 	ins, err := cli.InspectRunFile(file)
 	if err != nil {
 		return publishResult{400, map[string]any{"error": map[string]any{"message": err.Error()}}}
@@ -422,7 +492,14 @@ func (s *Server) publish(id string) publishResult {
 			"details": ins.Secrets,
 		}}}
 	}
-	res := cli.UploadRun(ins.Text, s.Target, s.APIKey)
+	var document struct {
+		Extensions map[string]any `json:"extensions"`
+	}
+	json.Unmarshal([]byte(ins.Text), &document)
+	if document.Extensions[share.Extension] != nil {
+		return publishResult{409, map[string]any{"error": map[string]any{"message": "Excerpt publishing is not available yet. Download the prepared excerpt locally."}}}
+	}
+	res := cli.UploadRun(ins.Text, s.Target, s.apiKey())
 	if !res.OK {
 		status := res.Status
 		if status == 0 {
@@ -434,10 +511,24 @@ func (s *Server) publish(id string) publishResult {
 		}
 		return publishResult{status, body}
 	}
+	if url, ok := res.Body["url"].(string); ok && s.OnPublish != nil {
+		s.OnPublish(url)
+	}
 	return publishResult{200, map[string]any{"url": res.Body["url"], "deduplicated": res.Body["deduplicated"]}}
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	// A loopback bind alone does not stop a rebinding hostname from reading
+	// local sessions. Browser URLs must use the loopback host we advertise.
+	host, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		host = r.Host
+	}
+	if host != "127.0.0.1" && host != "localhost" {
+		http.Error(w, "use the local URL printed by slink view", http.StatusForbidden)
+		return
+	}
 	send := func(status int, ctype, body string) {
 		w.Header().Set("content-type", ctype)
 		w.WriteHeader(status)
@@ -449,12 +540,38 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		id = m[2]
 	}
 	switch {
+	case m != nil && strings.HasPrefix(m[1], "api/") && (m[1] == "api/compose" || m[1] == "api/title" || m[1] == "api/draft" || m[1] == "api/export") && id != "":
+		s.composeAPI(w, r, m[1], id)
+	case m != nil && m[1] == "compose" && id != "" && r.Method == http.MethodGet:
+		body, err := s.composePage(id)
+		if err != nil {
+			send(404, "text/html", s.missingPage(id))
+		} else {
+			send(200, "text/html", body)
+		}
+	case r.URL.Path == "/api/stop" && r.Method == http.MethodPost:
+		if !localAction(r) {
+			send(403, "application/json", `{"error":{"message":"cross-origin request blocked"}}`)
+			return
+		}
+		send(200, "application/json", `{"ok":true}`)
+		if s.OnStop != nil {
+			s.OnStop()
+		}
 	case r.URL.Path == "/":
 		send(200, "text/html", s.indexPage())
 	case r.URL.Path == "/assets/viewer.js":
 		send(200, "text/javascript", string(viewerJS))
-	case m != nil && m[1] == "r" && id != "" && r.Method == http.MethodGet:
-		body, err := s.runPage(id)
+	case m != nil && m[1] == "api/preview" && id != "" && r.Method == http.MethodPost:
+		if !localAction(r) {
+			send(403, "application/json", `{"error":{"message":"cross-origin request blocked"}}`)
+			return
+		}
+		out := s.prepare(id)
+		b, _ := json.Marshal(out.Body)
+		send(out.Status, "application/json", string(b))
+	case m != nil && (m[1] == "r" || m[1] == "p") && id != "" && r.Method == http.MethodGet:
+		body, err := s.documentPage(id, m[1] == "p")
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			send(404, "text/html", s.missingPage(id))
@@ -465,16 +582,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			send(200, "text/html", body)
 		}
-	case m != nil && m[1] == "api/publish" && id != "" && r.Method == http.MethodPost:
+	case m != nil && (m[1] == "api/publish" || m[1] == "api/publish-preview") && id != "" && r.Method == http.MethodPost:
 		// CSRF guard: the custom header forces a CORS preflight (never
 		// answered), and the Origin must be this server.
-		origin := r.Header.Get("origin")
-		if r.Header.Get("x-slink") != "1" ||
-			(origin != "" && !strings.HasPrefix(origin, "http://127.0.0.1:") && !strings.HasPrefix(origin, "http://localhost:")) {
+		if !localAction(r) {
 			send(403, "application/json", `{"error":{"message":"cross-origin publish blocked"}}`)
 			return
 		}
-		out := s.publish(id)
+		file := filepath.Join(s.CaptureDir, id+".json")
+		if m[1] == "api/publish-preview" {
+			file = filepath.Join(s.previewDir(), id+".json")
+		}
+		out := s.publishFile(file)
 		b, _ := json.Marshal(out.Body)
 		send(out.Status, "application/json", string(b))
 	default:
@@ -493,5 +612,10 @@ func (s *Server) Serve(port int) (string, func(), error) {
 	srv := &http.Server{Handler: s}
 	go srv.Serve(ln)
 	addr := fmt.Sprintf("http://127.0.0.1:%d", ln.Addr().(*net.TCPAddr).Port)
-	return addr, func() { srv.Close() }, nil
+	return addr, func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		srv.Shutdown(ctx)
+		srv.Close()
+	}, nil
 }

@@ -195,7 +195,8 @@ export interface Message {
 
 export type ContentPart =
   | { type: "text"; text: string }
-  | { type: "thinking"; text: string }
+  /** An unavailable reasoning event has empty text; ciphertext is not readable content. */
+  | { type: "thinking"; text: string; unavailable?: boolean; reason?: "encrypted" | "not_recorded" }
   | { type: "image"; attachment?: BlobHash; url?: string; mime?: string }
   | { type: "tool_call"; id: string; name: string; arguments?: unknown }
   | {

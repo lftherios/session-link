@@ -1,0 +1,389 @@
+{
+  "schema": "session/v0",
+  "name": "Onboarding research",
+  "created_at": "2026-09-11T09:00:00Z",
+  "source": {
+    "kind": "import",
+    "harness": "codex",
+    "fidelity": "reconstructed"
+  },
+  "spans": [
+    {
+      "id": "root",
+      "type": "agent",
+      "name": "Onboarding research"
+    },
+    {
+      "id": "s1",
+      "parent_id": "root",
+      "type": "llm_call",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Compare Atlas and Beacon onboarding"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Finding 1: recorded research material."
+              }
+            ]
+          }
+        ]
+      },
+      "model": {
+        "id": "fixture-model"
+      }
+    },
+    {
+      "id": "s2",
+      "parent_id": "root",
+      "type": "llm_call",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Investigate question 2 about onboarding"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": []
+      },
+      "status": "error",
+      "error": {
+        "message": "Earlier recovered failure"
+      },
+      "model": {
+        "id": "fixture-model"
+      }
+    },
+    {
+      "id": "s3",
+      "parent_id": "root",
+      "type": "llm_call",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Investigate question 3 about onboarding"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Finding 3: recorded research material."
+              }
+            ]
+          }
+        ]
+      },
+      "model": {
+        "id": "fixture-model"
+      }
+    },
+    {
+      "id": "s4",
+      "parent_id": "root",
+      "type": "llm_call",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Investigate question 4 about onboarding"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Finding 4: recorded research material."
+              }
+            ]
+          }
+        ]
+      },
+      "model": {
+        "id": "fixture-model"
+      }
+    },
+    {
+      "id": "s5",
+      "parent_id": "root",
+      "type": "llm_call",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Investigate question 5 about onboarding"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Finding 5: recorded research material."
+              }
+            ]
+          }
+        ]
+      },
+      "model": {
+        "id": "fixture-model"
+      }
+    },
+    {
+      "id": "s6",
+      "parent_id": "root",
+      "type": "llm_call",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Investigate question 6 about onboarding"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Finding 6: recorded research material."
+              }
+            ]
+          }
+        ]
+      },
+      "model": {
+        "id": "fixture-model"
+      }
+    },
+    {
+      "id": "s7",
+      "parent_id": "root",
+      "type": "llm_call",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Investigate question 7 about onboarding"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Finding 7: recorded research material."
+              }
+            ]
+          }
+        ]
+      },
+      "model": {
+        "id": "fixture-model"
+      }
+    },
+    {
+      "id": "s8",
+      "parent_id": "root",
+      "type": "llm_call",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Write the recommendation with its evidence"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "text": "[reasoning]"
+              },
+              {
+                "type": "thinking",
+                "text": "",
+                "unavailable": true,
+                "reason": "encrypted"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "text": "[reasoning]"
+              },
+              {
+                "type": "thinking",
+                "text": "Captured reasoning 1: thinking-evidence-1 checks the fictional onboarding evidence."
+              },
+              {
+                "type": "thinking",
+                "text": "Captured reasoning 2: thinking-evidence-2 checks the fictional onboarding evidence."
+              },
+              {
+                "type": "thinking",
+                "text": "",
+                "unavailable": true,
+                "reason": "encrypted"
+              },
+              {
+                "type": "thinking",
+                "text": "Captured reasoning 3: thinking-evidence-3 checks the fictional onboarding evidence."
+              },
+              {
+                "type": "thinking",
+                "text": "Captured reasoning 4: thinking-evidence-4 checks the fictional onboarding evidence."
+              },
+              {
+                "type": "thinking",
+                "text": "Captured reasoning 5: thinking-evidence-5 checks the fictional onboarding evidence."
+              },
+              {
+                "type": "text",
+                "text": "## Recommendation\n\nCompare the two onboarding paths before changing the trial.\n\n| Product | Documented setup |\n| --- | --- |\n| Atlas | **Self serve** |\n| Beacon | Assisted setup |\n\n- Verify which flow applies to trial accounts.\n- Read the [captured documentation](https://example.test/docs).\n\n### Evidence\n\nObservation 1: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 2: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 3: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 4: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 5: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 6: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 7: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 8: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 9: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 10: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 11: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 12: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 13: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 14: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 15: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available.\n\nObservation 16: this fictional example preserves a long response so reading position and inspection can be exercised. The underlying record remains available."
+              }
+            ]
+          }
+        ]
+      },
+      "model": {
+        "id": "fixture-model"
+      }
+    },
+    {
+      "id": "tool",
+      "parent_id": "s8",
+      "type": "tool_call",
+      "name": "checks",
+      "input": {
+        "tool_call_id": "check-1",
+        "arguments": {
+          "command": "check sources"
+        },
+        "name": "checks"
+      },
+      "output": {
+        "result": [
+          {
+            "type": "text",
+            "text": "2 captured sources checked. Searchable evidence marker: source-check-42."
+          }
+        ]
+      }
+    },
+    {
+      "id": "child",
+      "parent_id": "s8",
+      "type": "agent",
+      "name": "Research assistant"
+    },
+    {
+      "id": "child-turn",
+      "parent_id": "child",
+      "type": "llm_call",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Independent follow-up"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Child result should not become the main landing response."
+              }
+            ]
+          }
+        ]
+      },
+      "model": {
+        "id": "fixture-model"
+      }
+    }
+  ]
+}

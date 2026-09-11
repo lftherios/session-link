@@ -13,6 +13,10 @@ import {
   Wrench,
 } from "lucide-react";
 import type { ContentPart, Message, Run, Span } from "@session-link/format";
+import { ShareView, shareInfo } from "./ShareView";
+import { SessionView, type LocalViewer } from "./SessionView";
+import { buildFlow, reasoningUnavailable } from "./session-model";
+import { DocumentText, DOCUMENT_CSS } from "./DocumentText";
 
 /* ---------------------------------------------------------------- tokens */
 
@@ -50,7 +54,7 @@ const spanHue = (s: Span) =>
 const LIGHT_VARS = `--rv-paper:#f5f6f3;--rv-panel:#fdfdfb;--rv-soft:#eef1ec;--rv-ink:#17201c;--rv-faint:#5b6660;--rv-line:#d8ddd7;--rv-signal:#0e6f5c;--rv-error:#b3402e;--rv-hue-llm:#0e6f5c;--rv-hue-tool:#a16418;--rv-hue-ret:#28629c;--rv-hue-agent:#5b4b8a;--rv-selbg:rgba(14,111,92,.08);--rv-selection:rgba(14,111,92,.18);--rv-hover:rgba(23,32,28,.045);--rv-errbg:rgba(179,64,46,.06)`;
 const DARK_VARS = `--rv-paper:#101512;--rv-panel:#171d19;--rv-soft:#1e2620;--rv-ink:#e3e9e4;--rv-faint:#8f9a93;--rv-line:#2b342d;--rv-signal:#3fae94;--rv-error:#e08070;--rv-hue-llm:#3fae94;--rv-hue-tool:#c9924a;--rv-hue-ret:#6aa3d8;--rv-hue-agent:#a08fd0;--rv-selbg:rgba(63,174,148,.12);--rv-selection:rgba(63,174,148,.25);--rv-hover:rgba(227,233,228,.05);--rv-errbg:rgba(224,128,112,.1)`;
 
-const RV_CSS = `
+export const RV_CSS = `
 .rv{${LIGHT_VARS}}
 @media(prefers-color-scheme:dark){.rv{${DARK_VARS}}}
 :root[data-theme="dark"] .rv{${DARK_VARS}}
@@ -60,8 +64,10 @@ const RV_CSS = `
 .rv pre{margin:0}
 .rv ::selection{background:var(--rv-selection)}
 .rv .rv-row:hover{background:var(--rv-hover)}
-.rv .rv-flowblock{border-radius:6px;padding:0 8px;margin:0 -8px;cursor:pointer}
-.rv .rv-flowblock:hover{background:var(--rv-hover)}
+.rv .rv-flowblock{border-radius:6px;padding:0 8px;margin:0 -8px}
+.rv .rv-message{display:grid;grid-template-columns:88px minmax(0,1fr) auto;gap:12px;align-items:start;padding:12px 0;border-top:1px solid var(--rv-line)}
+.rv .rv-message-actions{display:flex;gap:6px;align-items:center;padding-top:2px}
+.rv .rv-metrics{display:flex;flex-wrap:wrap;gap:16px 24px}
 .rv :where(button,[role=button],[role=treeitem]):focus-visible{outline:2px solid var(--rv-signal);outline-offset:2px;border-radius:4px}
 .rv .rv-cols{display:flex;border:1px solid var(--rv-line);border-radius:10px;background:var(--rv-panel);overflow:hidden}
 .rv .rv-tree{width:340px;flex-shrink:0;border-right:1px solid var(--rv-line);display:flex;flex-direction:column}
@@ -72,8 +78,14 @@ const RV_CSS = `
   .rv .rv-cols{flex-direction:column}
   .rv .rv-tree{width:100%;border-right:none;border-bottom:1px solid var(--rv-line)}
 }
+@media(max-width:560px){
+  .rv .rv-message{grid-template-columns:minmax(0,1fr) auto;gap:8px}
+  .rv .rv-message-body{grid-column:1 / -1;grid-row:2}
+  .rv .rv-message-actions{grid-column:2;grid-row:1}
+}
 @media(prefers-reduced-motion:no-preference){.rv .rv-row{transition:background .12s ease}}
 @media(prefers-reduced-motion:reduce){.rv .rv-linked{animation:none;background:var(--rv-selection)}}
+${DOCUMENT_CSS}
 `;
 
 /* --------------------------------------------------------------- helpers */
@@ -505,14 +517,11 @@ function JsonBlock({ value, tall = false }: { value: unknown; tall?: boolean }) 
   );
 }
 
-/* --------------------------------------------------------- markdown-lite */
+/* ------------------------------------------------------- document text */
 
 /**
- * Markdown-lite: fenced code blocks, inline code, and links — the three
- * constructs that make a coding-agent transcript readable. Deliberately not
- * CommonMark. Output is React elements only (never raw HTML), so session
- * content can't inject markup no matter what it contains; links render for
- * http(s) URLs only.
+ * Text is rendered by the shared CommonMark/GFM component. Captured HTML
+ * remains escaped; source bytes stay available through raw inspection.
  */
 function CopyButton({ text, label = "copy" }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -549,128 +558,14 @@ function CopyButton({ text, label = "copy" }: { text: string; label?: string }) 
   );
 }
 
-function InlineMd({ text }: { text: string }) {
-  // Split on inline code first (code wins over links inside it), then
-  // linkify http(s) URLs and [label](url) in the remaining text runs.
-  const out: React.ReactNode[] = [];
-  const codeSplit = text.split(/(`[^`\n]+`)/);
-  codeSplit.forEach((seg, i) => {
-    if (i % 2 === 1) {
-      out.push(
-        <code
-          key={i}
-          style={{
-            fontFamily: T.mono,
-            fontSize: "0.92em",
-            background: T.soft,
-            borderRadius: 4,
-            padding: "1px 5px",
-          }}
-        >
-          {seg.slice(1, -1)}
-        </code>,
-      );
-      return;
-    }
-    const linkRe = /\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s<>"')\]]+)/g;
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = linkRe.exec(seg)) !== null) {
-      if (m.index > last) out.push(seg.slice(last, m.index));
-      const label = m[1] ?? m[3] ?? "";
-      const href = m[2] ?? m[3] ?? "";
-      out.push(
-        <a
-          key={`${i}-${m.index}`}
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: T.signal, textDecorationThickness: 1 }}
-        >
-          {label}
-        </a>,
-      );
-      last = m.index + m[0].length;
-    }
-    if (last < seg.length) out.push(seg.slice(last));
-  });
-  return <>{out}</>;
-}
-
-function MdText({ text }: { text: string }) {
-  // Single-pass line scanner — a backtracking fence regex goes quadratic
-  // on unterminated-opener text (2,000 stray ``` lines froze the tab for
-  // seconds exactly when the reader clicked "show all").
-  const segs: string[] = [];
-  {
-    const lines = text.split("\n");
-    let prose: string[] = [];
-    let i = 0;
-    while (i < lines.length) {
-      const open = lines[i].match(/^```([^\n]*)$/);
-      if (open) {
-        let j = i + 1;
-        while (j < lines.length && !/^```[ \t]*$/.test(lines[j])) j++;
-        if (j < lines.length) {
-          segs.push(prose.join("\n"), open[1], lines.slice(i + 1, j).join("\n"));
-          prose = [];
-          i = j + 1;
-          continue;
-        }
-        // Unterminated fence: it's prose, like the old regex treated it.
-      }
-      prose.push(lines[i]);
-      i++;
-    }
-    segs.push(prose.join("\n"));
-  }
-  const nodes: React.ReactNode[] = [];
-  for (let i = 0; i < segs.length; i += 3) {
-    const prose = segs[i];
-    if (prose && prose.trim()) {
-      nodes.push(
-        <div key={`p${i}`} style={{ whiteSpace: "pre-wrap" }}>
-          <InlineMd text={prose.replace(/^\n+|\n+$/g, "")} />
-        </div>,
-      );
-    }
-    if (i + 2 < segs.length) {
-      const lang = (segs[i + 1] ?? "").trim();
-      const code = (segs[i + 2] ?? "").replace(/\n$/, "");
-      nodes.push(
-        <div key={`c${i}`} style={{ position: "relative" }}>
-          <pre
-            style={{
-              fontFamily: T.mono,
-              fontSize: 12,
-              lineHeight: 1.55,
-              background: T.soft,
-              borderRadius: 6,
-              padding: "10px 12px",
-              overflow: "auto",
-              whiteSpace: "pre",
-            }}
-          >
-            {code}
-          </pre>
-          <div style={{ position: "absolute", top: 6, right: 6, display: "flex", gap: 6, alignItems: "center" }}>
-            {lang && (
-              <span style={{ fontFamily: T.mono, fontSize: 10, color: T.faint }}>{lang}</span>
-            )}
-            <CopyButton text={code} label="copy" />
-          </div>
-        </div>,
-      );
-    }
-  }
-  return <div style={{ display: "grid", gap: 8, fontSize: 13.5, lineHeight: 1.6 }}>{nodes}</div>;
-}
+const MdText = DocumentText;
 
 /* ----------------------------------------------------- message rendering */
 
-function PartView({ part }: { part: ContentPart }) {
+function PartView({ part, full = false }: { part: ContentPart; full?: boolean }) {
   switch (part.type) {
     case "text":
+      if (full) return <MdText text={part.text} />;
       return (
         <ClampedText
           text={part.text}
@@ -678,6 +573,7 @@ function PartView({ part }: { part: ContentPart }) {
         />
       );
     case "thinking":
+      if (reasoningUnavailable(part)) return <p style={{ color: T.faint, fontSize: 12 }}>Reasoning text isn’t available in this capture.</p>;
       return (
         <details>
           <summary
@@ -770,7 +666,7 @@ function PartView({ part }: { part: ContentPart }) {
           src={part.url}
           alt="attachment"
           style={{
-            maxWidth: 360,
+            maxWidth: "min(100%, 360px)",
             borderRadius: 6,
             border: `1px solid ${T.line}`,
             display: "block",
@@ -803,6 +699,10 @@ function PartView({ part }: { part: ContentPart }) {
       /* progressive enhancement in miniature: never drop unknown parts */
       return <JsonBlock value={part} />;
   }
+}
+
+export function ExcerptText({ text }: { text: string }) {
+  return <PartView part={{ type: "text", text }} />;
 }
 
 function RoleGutter({ role }: { role: Message["role"] }) {
@@ -844,27 +744,28 @@ const messageText = (msg: Message): string =>
     .map((p) => p.text)
     .join("\n\n");
 
-function MessageView({ msg }: { msg: Message }) {
+function MessageView({ msg, onInspect }: { msg: Message; onInspect?: () => void }) {
   const txt = messageText(msg);
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: 12,
-        padding: "12px 0",
-        borderTop: `1px solid ${T.line}`,
-        alignItems: "flex-start",
-      }}
-    >
+    <div className="rv-message">
       <RoleGutter role={msg.role} />
-      <div style={{ display: "grid", gap: 10, minWidth: 0, flex: 1 }}>
+      <div className="rv-message-body" style={{ display: "grid", gap: 10, minWidth: 0, overflowWrap: "anywhere" }}>
         {msg.content.map((p, i) => (
           <PartView key={i} part={p} />
         ))}
       </div>
-      {txt && (
-        <div style={{ flexShrink: 0, paddingTop: 2 }}>
-          <CopyButton text={txt} label="copy" />
+      {(txt || onInspect) && (
+        <div className="rv-message-actions">
+          {txt && <CopyButton text={txt} label="copy" />}
+          {onInspect && (
+            <button
+              onClick={onInspect}
+              aria-label="Inspect this turn in the tree"
+              style={{ border: `1px solid ${T.line}`, background: T.panel, borderRadius: 5, padding: "2px 7px", fontFamily: T.mono, fontSize: 10, cursor: "pointer", color: T.faint }}
+            >
+              inspect
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -1284,7 +1185,7 @@ function TreeRow({
  * Passing both is meaningful: `run` wins for rendering (no fetch happens),
  * and `src` gives the crash fallback a raw-JSON link worth showing.
  */
-export function RunViewer({ run, src }: { run?: Run; src?: string }) {
+export function RunViewer({ run, src, local, initialView = "exchange" }: { run?: Run; src?: string; local?: LocalViewer; initialView?: "exchange" | "transcript" | "tree" }) {
   const [fetched, setFetched] = useState<Run | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -1354,10 +1255,34 @@ export function RunViewer({ run, src }: { run?: Run; src?: string }) {
       <Boundary
         fallback={(message) => <ViewerFallback message={message} src={src} />}
       >
-        <LoadedViewer run={resolved} />
+        {shareInfo(resolved)
+          ? <ShareView run={resolved} share={shareInfo(resolved)!} renderText={(text, definitions) => <DocumentText text={text} definitions={definitions} />} />
+          : initialView !== "exchange" ? <LoadedViewer run={resolved} initialMode={initialView} />
+          : <SessionView key={viewerKey(resolved)} run={resolved} local={local}
+              renderPart={(part, full) => <PartView part={part} full={full} />}
+              renderSpan={span => <SpanDetail span={span} />}
+              renderTree={() => <LoadedViewer run={resolved} initialMode="tree" compact />}
+              details={<SessionMetrics run={resolved} />} />}
       </Boundary>
     </>
   );
+}
+
+const viewerKeys = new WeakMap<Run, number>();
+let nextViewerKey = 0;
+function viewerKey(run: Run) { if (!viewerKeys.has(run)) viewerKeys.set(run, ++nextViewerKey); return viewerKeys.get(run); }
+
+function SessionMetrics({ run }: { run: Run }) {
+  const idx = useMemo(() => indexRun(run), [run]);
+  return <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 20 }}>
+    <Metric label="recorded spans" value={String(run.spans.length)} />
+    {idx.tokensIn != null && <Metric label="tokens in" value={fmtInt(idx.tokensIn)} />}
+    {idx.tokensOut != null && <Metric label="tokens out" value={fmtInt(idx.tokensOut)} />}
+    {idx.cost != null && <Metric label="cost" value={fmtCost(idx.cost)} />}
+    {idx.durMs != null && <Metric label="duration" value={fmtDur(idx.durMs)} />}
+    {run.source?.fidelity && <Chip>{run.source.fidelity} capture</Chip>}
+    {idx.models.map(model => <Chip key={model}>{model}</Chip>)}
+  </div>;
 }
 
 /** Every visible tree row is exactly this tall — the invariant the
@@ -1373,13 +1298,12 @@ const PAD_TOP = 6;
  * lives HERE on purpose — a scroll frame re-renders these ~40 rows and
  * never the span-detail panel next door.
  */
-/** Lower-cased searchable text per span: label, preview, type, tool name,
- *  error message, and the first ~1.5KB of message text — enough for a
- *  Cmd+F-style content search without holding the whole run twice. */
+/** Keep both sides of a call searchable. A long replayed input must not
+ *  consume the output's budget or hide the preview shown in the tree. */
 function buildSearchText(idx: RunIndex): Map<string, string> {
   const out = new Map<string, string>();
   for (const s of idx.byId.values()) {
-    let text = `${spanLabel(s)} ${String(s.type)} `;
+    let text = `${spanLabel(s)} ${spanPreview(s)} ${String(s.type)} `;
     if (s.status === "error") text += `error ${String(s.error?.message ?? "")} `;
     if (s.type === "tool_call") {
       const inp = (s as { input?: { name?: unknown; arguments?: unknown } }).input;
@@ -1395,10 +1319,12 @@ function buildSearchText(idx: RunIndex): Map<string, string> {
       }
     }
     const grab = (msgs?: Message[]) => {
-      for (const m of msgs ?? []) {
-        if (text.length > 1500) return;
-        text += messageText(m).slice(0, 400) + " ";
+      let excerpt = "";
+      // Recent context is more useful than the beginning of replayed history.
+      for (let i = (msgs?.length ?? 0) - 1; i >= 0 && excerpt.length < 1500; i--) {
+        excerpt += messageText(msgs![i]).slice(0, 400) + " ";
       }
+      text += excerpt;
     };
     if (s.type === "llm_call") {
       grab((s as { input?: { messages?: Message[] } }).input?.messages);
@@ -1444,7 +1370,6 @@ function TreeColumn({
         if (errOnly && s.status !== "error") continue;
         if (q && !(searchText.get(s.id) ?? "").includes(q)) continue;
         out.push({ span: s, depth: 0 });
-        if (out.length >= 500) break;
       }
       return out;
     }
@@ -1681,8 +1606,9 @@ function TreeColumn({
               treeRef.current?.focus({ preventScroll: true });
             }
           }}
-          placeholder="search spans and messages"
+          placeholder="search spans and previews"
           aria-label="Search spans and messages"
+          title="Search span names, tool previews, and excerpts from recent messages"
           style={{
             flex: 1,
             minWidth: 0,
@@ -1742,7 +1668,7 @@ function TreeColumn({
             borderBottom: `1px solid ${T.line}`,
           }}
         >
-          {rows.length === 500 ? "500+" : rows.length} match{rows.length === 1 ? "" : "es"} ·{" "}
+          {fmtInt(rows.length)} match{rows.length === 1 ? "" : "es"} ·{" "}
           <button
             onClick={clearFilters}
             style={{ border: "none", background: "none", padding: 0, font: "inherit", color: T.signal, cursor: "pointer", textDecoration: "underline" }}
@@ -1840,75 +1766,6 @@ const errNavBtn: React.CSSProperties = {
 
 /* ------------------------------------------------------- transcript flow */
 
-type FlowBlock =
-  | { key: string; kind: "boundary"; spanId: string; label: string }
-  | { key: string; kind: "msg"; spanId: string; msg: Message; err?: string };
-
-/**
- * The session as a conversation: every llm_call's messages in document
- * order. Full-history inputs (an exact proxy capture resends the whole
- * conversation each call) collapse via POSITIONAL prefix-echo matching —
- * input[i] is skipped only while it matches the i-th message already
- * rendered, so a genuinely repeated turn ("continue" twice) or a turn
- * sharing a long prefix with another still renders; a replayed history
- * never does. Delta-style inputs (reconstructed imports) pass through
- * untouched. Subagent spans reset the echo cursor (their histories are
- * their own) and become section boundaries; errored calls that add no
- * new messages still surface their error as a block.
- */
-function buildFlow(run: Run, idx: RunIndex): FlowBlock[] {
-  const blocks: FlowBlock[] = [];
-  // Length + head: collision-safe in practice without hashing megabytes.
-  const fp = (m: Message) => {
-    const str = stringify(m.content);
-    return `${m.role}|${str.length}|${str.slice(0, 600)}`;
-  };
-  let emitted: string[] = []; // fingerprints of rendered msgs, in order
-  for (const s of run.spans) {
-    if (s.type === "agent" && s.parent_id && idx.byId.has(s.parent_id)) {
-      blocks.push({ key: `b:${s.id}`, kind: "boundary", spanId: s.id, label: spanLabel(s) });
-      emitted = []; // a subagent's history is its own conversation
-      continue;
-    }
-    const err = s.status === "error" ? String(s.error?.message ?? "error") : undefined;
-    // Trailing user messages (importers store them as custom spans with
-    // messages) belong in the transcript too — read any span carrying
-    // input.messages, not just llm_calls.
-    const input = (s as { input?: { messages?: Message[] } }).input?.messages ?? [];
-    const output = (s as { output?: { messages?: Message[] } }).output?.messages ?? [];
-    if (s.type !== "llm_call" && input.length === 0 && output.length === 0) continue;
-
-    let errPending = err;
-    const push = (msg: Message, f: string) => {
-      blocks.push({ key: `${s.id}:${blocks.length}`, kind: "msg", spanId: s.id, msg, err: errPending });
-      emitted.push(f);
-      errPending = undefined;
-    };
-    let echo = 0; // how far input replays what's already on screen
-    for (let i = 0; i < input.length; i++) {
-      const f = fp(input[i]);
-      if (i === echo && echo < emitted.length && f === emitted[echo]) {
-        echo++;
-        continue;
-      }
-      push(input[i], f);
-    }
-    for (const m of output) push(m, fp(m));
-    if (errPending) {
-      // The call added nothing new (a failed retry) — the error must not
-      // vanish with it.
-      blocks.push({
-        key: `${s.id}:err`,
-        kind: "msg",
-        spanId: s.id,
-        msg: { role: "system", content: [] } as unknown as Message,
-        err: errPending,
-      });
-    }
-  }
-  return blocks;
-}
-
 const FLOW_PAGE = 120;
 
 function FlowView({
@@ -1920,7 +1777,7 @@ function FlowView({
   idx: RunIndex;
   onInspect: (spanId: string) => void;
 }) {
-  const blocks = useMemo(() => buildFlow(run, idx), [run, idx]);
+  const blocks = useMemo(() => buildFlow(run), [run, idx]);
   const [shown, setShown] = useState(FLOW_PAGE);
 
   if (blocks.length === 0) {
@@ -1934,11 +1791,16 @@ function FlowView({
     <div style={{ maxWidth: 780, margin: "0 auto", padding: "8px 20px 24px" }}>
       {blocks.slice(0, shown).map((b) =>
         b.kind === "boundary" ? (
-          <div
+          <button
             key={b.key}
             onClick={() => onInspect(b.spanId)}
-            title="inspect in tree"
+            aria-label={`Inspect ${b.label} in the tree`}
             style={{
+              width: "100%",
+              border: "none",
+              background: "none",
+              padding: 0,
+              textAlign: "left",
               display: "flex",
               alignItems: "center",
               gap: 8,
@@ -1953,19 +1815,11 @@ function FlowView({
           >
             <Bot size={12} /> {b.label}
             <span style={{ flex: 1, borderTop: `1px solid ${T.line}` }} />
-          </div>
+          </button>
         ) : (
           <div
             key={b.key}
             className="rv-flowblock"
-            onClick={(e) => {
-              // Reading is the job — only the gutter click inspects, so
-              // text selection and link clicks stay undisturbed.
-              if ((e.target as HTMLElement).closest("a,button,summary,input")) return;
-              if (window.getSelection()?.toString()) return;
-              onInspect(b.spanId);
-            }}
-            title="click to inspect this turn in the tree"
           >
             {b.err && (
               <div
@@ -1983,7 +1837,7 @@ function FlowView({
                 {b.err}
               </div>
             )}
-            <MessageView msg={b.msg} />
+            <MessageView msg={b.msg} onInspect={() => onInspect(b.spanId)} />
           </div>
         ),
       )}
@@ -2015,7 +1869,7 @@ function FlowView({
 const smartDefault = (idx: RunIndex): string | null =>
   idx.errors[0] ?? idx.llmCalls[0] ?? idx.roots[0]?.id ?? null;
 
-function LoadedViewer({ run }: { run: Run }) {
+function LoadedViewer({ run, initialMode, compact = false }: { run: Run; initialMode?: "transcript" | "tree"; compact?: boolean }) {
   const idx = useMemo(() => indexRun(run), [run]);
   const [sel, setSel] = useState<string | null>(() => smartDefault(idx));
   const [closed, setClosed] = useState<Set<string>>(new Set());
@@ -2024,7 +1878,7 @@ function LoadedViewer({ run }: { run: Run }) {
   /* Transcript is the default for agent sessions — the audience reads
      first (deep links flip to the tree below, where the span lives). */
   const [mode, setMode] = useState<"transcript" | "tree">(() =>
-    idx.llmCalls.length > 0 && idx.roots[0]?.type === "agent" ? "transcript" : "tree",
+    initialMode ?? (idx.llmCalls.length > 0 && idx.roots[0]?.type === "agent" ? "transcript" : "tree"),
   );
   const [linked, setLinked] = useState<string | null>(null);
 
@@ -2070,9 +1924,10 @@ function LoadedViewer({ run }: { run: Run }) {
     } catch {
       /* keep relative anchor */
     }
-    navigator.clipboard?.writeText(text).catch(() => {});
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    }).catch(() => {});
   };
 
   const selected = sel ? idx.byId.get(sel) : undefined;
@@ -2086,6 +1941,7 @@ function LoadedViewer({ run }: { run: Run }) {
         {selected ? `${spanLabel(selected)} · ${String(selected.type)}` : ""}
       </div>
 
+      <div hidden={compact}>
       {/* ------------------------------------------------------- header */}
       <Eyebrow>
         run · {run.source?.label ?? run.source?.kind ?? "upload"} ·{" "}
@@ -2113,7 +1969,7 @@ function LoadedViewer({ run }: { run: Run }) {
         >
           {run.name ?? "Untitled session"}
         </h1>
-        <div style={{ display: "flex", gap: 24 }}>
+        <div className="rv-metrics">
           {idx.tokensIn != null && (
             <Metric label="tokens in" value={fmtInt(idx.tokensIn)} />
           )}
@@ -2225,6 +2081,7 @@ function LoadedViewer({ run }: { run: Run }) {
         </div>
       </div>
 
+      </div>
       {mode === "transcript" ? (
         <div className="rv-cols" style={{ display: "block" }}>
           <FlowView

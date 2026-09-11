@@ -183,8 +183,33 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("slink", {
-    description: "Publish the current pi session to a session.link URL",
-    handler: async (_args: string, ctx: ExtensionCommandContext): Promise<void> => {
+    description: "Publish this session, or use /slink view for a local web preview",
+    handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+      if (args.trim() === "view") {
+        // Prefer the persisted transcript so a resumed session includes its
+        // earlier turns. Pin the path: never fall back to another recent session.
+        const sessionFile = ctx.sessionManager.getSessionFile();
+        flush();
+        const source = sessionFile || (capture && capture.llmCalls > 0 ? captureFile : null);
+        if (!source) {
+          ctx.ui.notify("session.link: no session to preview yet", "error");
+          return;
+        }
+        ctx.ui.notify("session.link: opening a local preview…", "info");
+        const result = await slink(["view", "--from", "pi", "--session", source, "--background"]);
+        if (result.missing) {
+          ctx.ui.notify("session.link: `slink` not found — install it with `npm i -g session.link`", "error");
+        } else if (result.code !== 0) {
+          ctx.ui.notify(`session.link: preview failed — ${result.stderr.trim()}`, "error");
+        } else {
+          ctx.ui.notify(`session.link: local preview → ${lastLine(result.stdout)} (nothing uploaded)`, "info");
+        }
+        return;
+      }
+      if (args.trim()) {
+        ctx.ui.notify("session.link: use /slink to publish, or /slink view to preview locally", "error");
+        return;
+      }
       // Preferred path: publish the live, exact capture we've been building.
       if (capture && capture.llmCalls > 0 && captureFile) {
         flush(); // snapshot; the run keeps accumulating after this

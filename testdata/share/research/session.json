@@ -1,0 +1,176 @@
+{
+  "schema": "session/v0",
+  "created_at": "2026-09-11T09:00:00Z",
+  "id": "OMITTED_INTERNAL_STRATEGY",
+  "name": "OMITTED_INTERNAL_STRATEGY",
+  "source": {
+    "kind": "proxy",
+    "fidelity": "exact",
+    "label": "OMITTED_INTERNAL_STRATEGY",
+    "path": "OMITTED_INTERNAL_STRATEGY"
+  },
+  "group": {
+    "id": "OMITTED_INTERNAL_STRATEGY"
+  },
+  "tags": [
+    "OMITTED_INTERNAL_STRATEGY"
+  ],
+  "metadata": {
+    "private": "OMITTED_INTERNAL_STRATEGY"
+  },
+  "extensions": {
+    "private.v1": {
+      "copy": "OMITTED_INTERNAL_STRATEGY"
+    }
+  },
+  "attachments": {
+    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+      "mime": "text/plain",
+      "bytes": 42,
+      "name": "OMITTED_INTERNAL_STRATEGY",
+      "url": "https://example.test/OMITTED_INTERNAL_STRATEGY"
+    }
+  },
+  "spans": [
+    {
+      "id": "root",
+      "type": "agent",
+      "name": "OMITTED_INTERNAL_STRATEGY",
+      "metadata": {
+        "secret": "OMITTED_INTERNAL_STRATEGY"
+      }
+    },
+    {
+      "id": "research",
+      "parent_id": "root",
+      "type": "llm_call",
+      "name": "OMITTED_INTERNAL_STRATEGY",
+      "model": {
+        "id": "fixture",
+        "private_extra": "OMITTED_INTERNAL_STRATEGY"
+      },
+      "input": {
+        "system": "OMITTED_INTERNAL_STRATEGY",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Compare Atlas and Beacon for self-serve onboarding. Use public docs and flag uncertainties.",
+                "private_extra": "OMITTED_INTERNAL_STRATEGY"
+              }
+            ],
+            "private_extra": "OMITTED_INTERNAL_STRATEGY"
+          }
+        ],
+        "tools": [
+          {
+            "name": "OMITTED_INTERNAL_STRATEGY"
+          }
+        ],
+        "private_extra": "OMITTED_INTERNAL_STRATEGY"
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "A comparison of the two fictional products follows.\n\nAtlas documents a self-serve workspace setup. Beacon documents an assisted setup. 🔎 Verify whether that difference applies to trial users. [Atlas docs](https://atlas.example.test/onboarding) · [Beacon docs](https://beacon.example.test/onboarding)\n\nInternal planning: OMITTED_INTERNAL_STRATEGY",
+                "private_extra": "OMITTED_INTERNAL_STRATEGY"
+              }
+            ],
+            "private_extra": "OMITTED_INTERNAL_STRATEGY"
+          }
+        ]
+      },
+      "params": {
+        "hidden": "OMITTED_INTERNAL_STRATEGY"
+      },
+      "raw": {
+        "request": {
+          "messages": [
+            "Compare Atlas and Beacon for self-serve onboarding. Use public docs and flag uncertainties.",
+            "A comparison of the two fictional products follows.\n\nAtlas documents a self-serve workspace setup. Beacon documents an assisted setup. 🔎 Verify whether that difference applies to trial users. [Atlas docs](https://atlas.example.test/onboarding) · [Beacon docs](https://beacon.example.test/onboarding)\n\nInternal planning: OMITTED_INTERNAL_STRATEGY",
+            "OMITTED_INTERNAL_STRATEGY"
+          ]
+        },
+        "response": {
+          "text": "A comparison of the two fictional products follows.\n\nAtlas documents a self-serve workspace setup. Beacon documents an assisted setup. 🔎 Verify whether that difference applies to trial users. [Atlas docs](https://atlas.example.test/onboarding) · [Beacon docs](https://beacon.example.test/onboarding)\n\nInternal planning: OMITTED_INTERNAL_STRATEGY"
+        }
+      },
+      "metadata": {
+        "private": "OMITTED_INTERNAL_STRATEGY"
+      },
+      "usage": {
+        "input_tokens": 100,
+        "output_tokens": 50
+      }
+    },
+    {
+      "id": "later",
+      "parent_id": "root",
+      "type": "llm_call",
+      "model": {
+        "id": "fixture"
+      },
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Compare Atlas and Beacon for self-serve onboarding. Use public docs and flag uncertainties.",
+                "private_extra": "OMITTED_INTERNAL_STRATEGY"
+              }
+            ],
+            "private_extra": "OMITTED_INTERNAL_STRATEGY"
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "A comparison of the two fictional products follows.\n\nAtlas documents a self-serve workspace setup. Beacon documents an assisted setup. 🔎 Verify whether that difference applies to trial users. [Atlas docs](https://atlas.example.test/onboarding) · [Beacon docs](https://beacon.example.test/onboarding)\n\nInternal planning: OMITTED_INTERNAL_STRATEGY",
+                "private_extra": "OMITTED_INTERNAL_STRATEGY"
+              }
+            ],
+            "private_extra": "OMITTED_INTERNAL_STRATEGY"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "OMITTED_INTERNAL_STRATEGY",
+                "private_extra": "OMITTED_INTERNAL_STRATEGY"
+              }
+            ],
+            "private_extra": "OMITTED_INTERNAL_STRATEGY"
+          }
+        ]
+      },
+      "output": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "OMITTED_INTERNAL_STRATEGY",
+                "private_extra": "OMITTED_INTERNAL_STRATEGY"
+              }
+            ],
+            "private_extra": "OMITTED_INTERNAL_STRATEGY"
+          }
+        ]
+      },
+      "raw": {
+        "request": "OMITTED_INTERNAL_STRATEGY"
+      }
+    }
+  ]
+}

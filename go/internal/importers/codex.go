@@ -110,34 +110,35 @@ func codexMapContent(content any) []any {
 	return out
 }
 
-// codexReasoningText mirrors reasoningText.
+// Prefer a readable summary, falling back to recorded content. Encrypted data
+// signals that a reasoning event exists; it is not readable reasoning text.
 func codexReasoningText(p map[string]any) string {
-	var parts []any
-	if a, ok := p["summary"].([]any); ok {
-		parts = a
-	} else if a, ok := p["content"].([]any); ok {
-		parts = a
-	}
-	pieces := make([]string, 0, len(parts))
-	for _, s := range parts {
-		if sv, ok := str(s); ok {
-			pieces = append(pieces, sv)
-			continue
+	for _, field := range []string{"summary", "content"} {
+		parts, _ := p[field].([]any)
+		pieces := make([]string, 0, len(parts))
+		for _, s := range parts {
+			if sv, ok := str(s); ok {
+				pieces = append(pieces, sv)
+			} else if v := m(s)["text"]; v != nil {
+				pieces = append(pieces, codexString(v))
+			}
 		}
-		if v := m(s)["text"]; v != nil { // s?.text ?? ""
-			pieces = append(pieces, codexString(v))
-		} else {
-			pieces = append(pieces, "")
+		if text := strings.TrimSpace(strings.Join(pieces, "\n")); text != "" {
+			return text
 		}
-	}
-	text := strings.TrimSpace(strings.Join(pieces, "\n"))
-	if text != "" {
-		return text
-	}
-	if codexTruthy(p["encrypted_content"]) {
-		return "[reasoning]"
 	}
 	return ""
+}
+
+func codexReasoningPart(p map[string]any) map[string]any {
+	part := map[string]any{"type": "thinking", "text": codexReasoningText(p)}
+	if part["text"] == "" {
+		part["unavailable"], part["reason"] = true, "not_recorded"
+		if codexTruthy(p["encrypted_content"]) {
+			part["reason"] = "encrypted"
+		}
+	}
+	return part
 }
 
 // codexUsageMap mirrors codexUsage.
@@ -346,7 +347,7 @@ func codexRolloutToRun(lines []string, fallbackName string) map[string]any {
 		output             any
 	}
 	pending := []any{}
-	reasoningBuf := []string{}
+	reasoningBuf := []any{}
 	toolBuf := []*codexTool{}
 	var lastUsage any
 	turnStartTs := createdAt
@@ -356,11 +357,7 @@ func codexRolloutToRun(lines []string, fallbackName string) map[string]any {
 	flush := func(assistantContent []any, model any, endedTs any) {
 		seq++
 		out := []any{}
-		for _, r := range reasoningBuf {
-			if r != "" {
-				out = append(out, map[string]any{"type": "thinking", "text": r})
-			}
-		}
+		out = append(out, reasoningBuf...)
 		out = append(out, assistantContent...)
 		for _, tb := range toolBuf {
 			out = append(out, map[string]any{"type": "tool_call", "id": tb.callID, "name": tb.name, "arguments": tb.args})
@@ -414,7 +411,7 @@ func codexRolloutToRun(lines []string, fallbackName string) map[string]any {
 			})
 		}
 		pending = []any{}
-		reasoningBuf = []string{}
+		reasoningBuf = []any{}
 		toolBuf = []*codexTool{}
 		lastUsage = nil
 		turnStartTs = endedTs
@@ -475,7 +472,7 @@ func codexRolloutToRun(lines []string, fallbackName string) map[string]any {
 				}
 			}
 		case "reasoning":
-			reasoningBuf = append(reasoningBuf, codexReasoningText(p))
+			reasoningBuf = append(reasoningBuf, codexReasoningPart(p))
 		}
 		lastTs = ts
 	}

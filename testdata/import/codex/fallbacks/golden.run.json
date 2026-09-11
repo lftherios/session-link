@@ -63,7 +63,9 @@
             "content": [
               {
                 "type": "thinking",
-                "text": "[reasoning]"
+                "text": "",
+                "unavailable": true,
+                "reason": "encrypted"
               },
               {
                 "type": "text",

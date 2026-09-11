@@ -14,7 +14,9 @@
   "scripts": {
     "test": "node --test",
     "validate": "node packages/format/validate.mjs",
-    "build:viewer": "node scripts/build-viewer.mjs"
+    "build:viewer": "node scripts/build-viewer.mjs",
+    "check:viewer": "tsc -p packages/viewer/tsconfig.json",
+    "dev:viewer": "node scripts/dev-viewer.mjs"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",

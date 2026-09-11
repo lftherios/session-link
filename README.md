@@ -35,19 +35,40 @@ npm i -g session.link                              # or `npx session.link`
 ## Quickstart
 
 ```bash
-# 1. Import — your coding agent's newest session for this repo. No re-run.
-slink import
+# Open this project's agent sessions in the browser. Nothing is uploaded.
+slink view
 
-# 2. Share — review the selection, confirm, sign in (GitHub) when asked.
-slink share
-# → https://session.link/r/9f3kx2mvq7wtd4   (copied to your clipboard)
+# Choose a session, review the saved preview, then use Publish to share it.
+# Run `slink login` in another terminal when needed, then reload the preview.
 ```
 
-That's it — no code changes, no SDK, nothing to re-run. `import` reconstructs the session straight from Claude Code, Codex, opencode, pi, or Hermes history ([details below](#works-with-the-agent-you-already-use)). Capturing needs no account at all; `login` (free, GitHub) is only for publishing, so sessions are attributed and deletable by you.
+No code changes, SDK, or re-run are required. `view` discovers Claude Code, Codex, opencode, pi, and Hermes history for this project ([details below](#works-with-the-agent-you-already-use)). Multiple sessions open a searchable picker; explicit session references never silently select a different session. Previewing needs no account; `login` (free, GitHub) is for publishing, so sessions are attributed and deletable by you. The existing `slink import` and terminal publishing command `slink share` remain available.
+
+```bash
+slink view --from codex --session <session-id>
+slink view --session /path/to/transcript.jsonl
+slink view /path/to/session.json --span s1
+slink view --pick                         # always show the session picker
+slink view --background                   # return control to the harness
+slink view --no-browser --port 4400        # manual browser / SSH forwarding
+```
+
+In pi, `/slink view` opens the current session locally; `/slink` publishes it.
+Previews are saved independently in `~/.slink/previews`, so continuing the agent
+session cannot change the material being reviewed. Reopen one later with
+`slink view ~/.slink/previews/<id>.json`. A local URL works on this machine;
+use Publish to get a link for a colleague. Foreground viewers stop with Ctrl-C;
+background viewers have a **Stop viewer** button on the sessions page.
+
+The default port is chosen automatically. For SSH, run
+`slink view --no-browser --port 4400` remotely, then
+`ssh -N -L 4400:127.0.0.1:4400 <host>` on your computer and open the printed
+URL. Keep the tunnel and viewer running. There is no hosted relay in this flow.
 
 - **Recording fresh instead?** `slink record -- python agent.py` — or `-- node agent.js`, anything that speaks the Anthropic or OpenAI API. It points `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` at a local recording proxy, runs your command, and writes each call to `~/.slink` as it happens — streaming passed through untouched and reassembled, wire-exact.
 - **Local models?** The proxy can point at any compatible upstream: `SLINK_UPSTREAM_OPENAI=http://localhost:11434 slink record -- …` records Ollama sessions too. And if your shell already has `OPENAI_BASE_URL` pointed somewhere custom, `slink on` keeps forwarding there — your traffic is never silently rerouted.
-- **Review before sharing?** `slink view` browses your sessions locally in the exact viewer the hosted site renders, Publish button included.
+- **Pick up where you left off.** `slink view` opens the latest exchange with its prompt. Search this view or the whole session, navigate earlier exchanges, or expand agent activity without losing your place. Edit the local title under **Session details**; it is saved separately and used for new views. See the [viewer arrival design](docs/viewer-arrival.md).
+- **Share an outcome with context?** Choose **Share this view** to preview the current prompt and answer, then save the view locally. Hover over content to select particular messages or passages, then add a title or annotation. Saved views can be reopened and edited later. Whole-session publishing is under **Session actions**; excerpt publishing awaits hosted integration. See the [excerpt contract and limits](docs/share-excerpt-v1.md).
 
 ## Always on (optional)
 
@@ -131,6 +152,12 @@ Today, one link lets you **inspect**. Next, anchored to the same URLs:
 ## Contributing
 
 Issues and PRs welcome. The CLI is Go — `cd go && go test ./...`. For the format and viewer packages, `npm install` then `npm test`; `npm run build:viewer` rebuilds the bundle the Go CLI embeds. The demo GIF regenerates from a checked-in [VHS](https://github.com/charmbracelet/vhs) tape: `vhs assets/demo.tape`.
+
+For viewer design, start with the [viewer content model](docs/viewer-model.md).
+For viewer work, run `npm run dev:viewer` and open `http://127.0.0.1:4173`.
+The preview uses checked-in sessions, includes a theme selector, and rebuilds
+when you refresh. Go is not required. Run `npm run check:viewer` for TypeScript
+checks and `npm test` for the transcript regression tests.
 
 The hosted service lives at **[session.link](https://session.link)**; this repo is the open client and format.
 

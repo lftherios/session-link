@@ -10,59 +10,13 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/lftherios/session-link/internal/cli"
-	"github.com/lftherios/session-link/internal/open"
 	"github.com/lftherios/session-link/internal/tap"
 )
-
-func runOpen(args []string) {
-	fs := flag.NewFlagSet("view", flag.ExitOnError)
-	port := fs.Int("port", 4400, "listen port")
-	noBrowser := fs.Bool("no-browser", false, "don't open the browser")
-	setUsage(fs, "slink view [flags] [session-id]",
-		"Browse local sessions at 127.0.0.1 in the same viewer the hosted site\n  uses. With an id, opens that session. The Publish button runs the same\n  validate + secret-scan gate as push.",
-		"slink view 2a9a48")
-	parseReordered(fs, args)
-
-	// `slink view <id>` — the instruction import prints — must actually
-	// land on that session, and an unknown id must say so, not silently
-	// serve the index.
-	focus := ""
-	if ref := fs.Arg(0); ref != "" {
-		file, err := resolveCapture(ref)
-		if err != nil {
-			die(err.Error())
-		}
-		focus = "/r/" + strings.TrimSuffix(filepath.Base(file), ".json")
-	}
-
-	target, apiKey := cli.ResolveTarget("", "")
-	srv := &open.Server{CaptureDir: cli.CaptureDir(), Target: target, APIKey: apiKey}
-	addr, _, err := srv.Serve(*port)
-	if err != nil {
-		if strings.Contains(err.Error(), "address already in use") {
-			die(fmt.Sprintf("✗ can't listen on 127.0.0.1:%d — that port is in use\n\n  another viewer may already be open — reuse it, or: slink view --port <port>", *port))
-		}
-		die(err.Error())
-	}
-	fmt.Fprintln(os.Stderr, "local viewer running")
-	if focus != "" {
-		fmt.Fprintf(os.Stderr, "    session:    %s%s\n", addr, focus)
-	} else {
-		fmt.Fprintf(os.Stderr, "    browse:     %s\n", addr)
-	}
-	fmt.Fprintf(os.Stderr, "    publishes:  %s\n", target)
-	fmt.Fprintln(os.Stderr, "\n  Ctrl-C to stop")
-	if !*noBrowser {
-		cli.OpenBrowser(addr + focus)
-	}
-	select {} // serve until interrupted
-}
 
 // runDev is wrapper mode: record one session around a command (or until
 // Ctrl-C without one), then finalize and summarize.

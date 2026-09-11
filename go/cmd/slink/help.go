@@ -24,9 +24,9 @@ Usage:
   slink <command> [flags]
 
 Quickstart:
-  slink import                      # 1. your coding agent's newest session
-  slink view                        # 2. review it locally
-  slink share                       # 3. publish → https://session.link/r/…
+  slink view                        # choose a session and preview locally
+  (use Publish in the browser when ready to share)
+  slink share                       # or publish directly from the terminal
   (nothing to import? record fresh: slink record -- python agent.py)
 
 Record (local — nothing leaves your machine)
@@ -38,7 +38,7 @@ Record (local — nothing leaves your machine)
 
 Review
   list               your local sessions, newest first (ids in column one)
-  view               browse them in the local viewer  (alias: open)
+  view               agent sessions → saved local web preview (alias: open)
   status             recorder, routing, upstreams, account, sessions
 
 Share

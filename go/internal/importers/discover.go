@@ -274,7 +274,11 @@ func latestOpencode(cwd string) (*Found, bool) {
 }
 
 func loadOpencode(id string) (Input, error) {
-	db, err := openDB(opencodeDBPath())
+	return loadOpencodeAt(opencodeDBPath(), id)
+}
+
+func loadOpencodeAt(path, id string) (Input, error) {
+	db, err := openDB(path)
 	if err != nil {
 		return Input{}, err
 	}
@@ -284,10 +288,16 @@ func loadOpencode(id string) (Input, error) {
 		return Input{}, err
 	}
 	if len(sessions) == 0 {
-		return Input{}, fmt.Errorf("opencode session %q not found in %s", id, opencodeDBPath())
+		return Input{}, fmt.Errorf("opencode session %q not found in %s", id, path)
 	}
-	msgRows, _ := queryRows(db, "SELECT id, time_created, data FROM message WHERE session_id = ? ORDER BY time_created, id", id)
-	partRows, _ := queryRows(db, "SELECT message_id, time_created, data FROM part WHERE session_id = ? ORDER BY time_created, id", id)
+	msgRows, err := queryRows(db, "SELECT id, time_created, data FROM message WHERE session_id = ? ORDER BY time_created, id", id)
+	if err != nil {
+		return Input{}, fmt.Errorf("cannot read opencode messages: %w", err)
+	}
+	partRows, err := queryRows(db, "SELECT message_id, time_created, data FROM part WHERE session_id = ? ORDER BY time_created, id", id)
+	if err != nil {
+		return Input{}, fmt.Errorf("cannot read opencode message parts: %w", err)
+	}
 	partsByMsg := map[string][]any{}
 	for _, p := range partRows {
 		mid, _ := p["message_id"].(string)
@@ -323,7 +333,11 @@ func latestHermes(cwd string) (*Found, bool) {
 }
 
 func loadHermes(id string) (Input, error) {
-	db, err := openDB(hermesDBPath())
+	return loadHermesAt(hermesDBPath(), id)
+}
+
+func loadHermesAt(path, id string) (Input, error) {
+	db, err := openDB(path)
 	if err != nil {
 		return Input{}, err
 	}
@@ -333,9 +347,12 @@ func loadHermes(id string) (Input, error) {
 		return Input{}, err
 	}
 	if len(sessions) == 0 {
-		return Input{}, fmt.Errorf("hermes session %q not found in %s", id, hermesDBPath())
+		return Input{}, fmt.Errorf("hermes session %q not found in %s", id, path)
 	}
-	messages, _ := queryRows(db, "SELECT "+hermesMessageCols+" FROM messages WHERE session_id = ? ORDER BY id", id)
+	messages, err := queryRows(db, "SELECT "+hermesMessageCols+" FROM messages WHERE session_id = ? ORDER BY id", id)
+	if err != nil {
+		return Input{}, fmt.Errorf("cannot read hermes messages: %w", err)
+	}
 	msgs := make([]any, len(messages))
 	for i, mm := range messages {
 		msgs[i] = mm
@@ -442,6 +459,18 @@ func peekTranscript(file string, maxLines int) (cwd, title string) {
 			title = strOr(e["summary"], "")
 		} else if t == "user" {
 			users = append(users, e)
+		} else if t == "message" && m(e["message"])["role"] == "user" {
+			users = append(users, map[string]any{"type": "user", "message": e["message"]})
+		} else if t == "response_item" && m(e["payload"])["role"] == "user" {
+			msg := m(e["payload"])
+			var text strings.Builder
+			for _, p := range arr(msg["content"]) {
+				part := m(p)
+				if part["type"] == "input_text" || part["type"] == "text" {
+					text.WriteString(strOr(part["text"], ""))
+				}
+			}
+			users = append(users, map[string]any{"type": "user", "message": map[string]any{"content": text.String()}})
 		}
 	}
 	if title == "" {

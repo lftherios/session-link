@@ -1,0 +1,15 @@
+{
+  "title": "Onboarding comparison: what to verify",
+  "note": "Please check whether this changes our trial-flow priorities. These are fictional products in a development fixture.",
+  "items": [
+    {
+      "id": "u1-out-0-0",
+      "start": 53,
+      "end": 300
+    },
+    {
+      "id": "u1-in-0-0"
+    }
+  ],
+  "primary": "u1-out-0-0"
+}

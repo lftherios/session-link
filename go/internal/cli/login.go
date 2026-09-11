@@ -144,7 +144,7 @@ func BrowserLogin(server string, notify func(string)) (*LoginResult, error) {
 }
 
 // OpenBrowser is best-effort — the URL is always printed too.
-func OpenBrowser(url string) {
+func OpenBrowser(url string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
@@ -154,5 +154,9 @@ func OpenBrowser(url string) {
 	default:
 		cmd = exec.Command("xdg-open", url)
 	}
-	cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go cmd.Wait()
+	return nil
 }
