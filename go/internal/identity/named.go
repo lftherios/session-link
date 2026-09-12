@@ -461,10 +461,20 @@ func (c Client) NamedShares(ctx context.Context, revokeID, invitationID string, 
 		return nil, err
 	}
 	defer release()
-	// No network when this machine has never created named shares.
+	if revokeID != "" && !namedID.MatchString(revokeID) {
+		return nil, errors.New("invalid share id")
+	}
+	if revokeID != "" && invitationID == "" {
+		return nil, errors.New("invalid invitation id")
+	}
+	// No network when this machine has never created named shares, unless a
+	// revocation was requested: that must reach the server or fail loudly.
 	entries, err := os.ReadDir(filepath.Join(c.Home, "named-shares"))
 	if os.IsNotExist(err) {
-		return []NamedResult{}, nil
+		if revokeID == "" {
+			return []NamedResult{}, nil
+		}
+		entries, err = nil, nil
 	}
 	if err != nil {
 		return nil, err
@@ -474,9 +484,6 @@ func (c Client) NamedShares(ctx context.Context, revokeID, invitationID string, 
 		return nil, err
 	}
 	if revokeID != "" {
-		if !namedID.MatchString(revokeID) {
-			return nil, errors.New("invalid share id")
-		}
 		if err = c.namedPost(ctx, revokeID, map[string]any{"action": "revoke", "invite_id": invitationID}, nil); err != nil {
 			return nil, err
 		}

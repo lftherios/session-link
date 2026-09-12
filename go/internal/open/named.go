@@ -31,6 +31,11 @@ func (s *Server) namedAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	revoke := ""
 	if in.Action == "revoke" {
+		// A revocation missing either id must not degrade into a status listing.
+		if in.ID == "" || in.Invitation == "" {
+			http.Error(w, `{"error":{"message":"share and invitation ids are required"}}`, 400)
+			return
+		}
 		revoke = in.ID
 	}
 	result, err := (identity.Client{Home: cli.Home(), Server: s.Target, APIKey: s.apiKey()}).NamedShares(r.Context(), revoke, in.Invitation, true)

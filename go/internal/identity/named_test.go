@@ -87,3 +87,27 @@ func TestNamedGrantRequiresInvitationProofAndApprovedHistory(t *testing.T) {
 		t.Fatal("recipient cannot decrypt content key", err)
 	}
 }
+func TestRevokeWithoutLocalOutboxIsNotSilentlyDropped(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Write([]byte(`{"account":"usr_owner"}`))
+	}))
+	defer server.Close()
+	c := Client{Home: t.TempDir(), Server: server.URL, APIKey: "rk_fixture"}
+	ctx := context.Background()
+	if shares, err := c.NamedShares(ctx, "", "", true); err != nil || len(shares) != 0 || requests != 0 {
+		t.Fatal("listing without a local outbox should stay offline", err)
+	}
+	if _, err := c.NamedShares(ctx, "not-a-share", "invite", true); err == nil || requests != 0 {
+		t.Fatal("invalid share id accepted")
+	}
+	if _, err := c.NamedShares(ctx, "23456789abcdef", "", true); err == nil || requests != 0 {
+		t.Fatal("revocation without an invitation accepted")
+	}
+	// Without a local outbox the old shortcut answered success before the
+	// server ever heard about the revocation.
+	if _, err := c.NamedShares(ctx, "23456789abcdef", "invite", true); err == nil || requests == 0 {
+		t.Fatal("revocation reported success without reaching the server", err)
+	}
+}
