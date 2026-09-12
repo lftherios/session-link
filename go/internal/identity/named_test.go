@@ -111,3 +111,38 @@ func TestRevokeWithoutLocalOutboxIsNotSilentlyDropped(t *testing.T) {
 		t.Fatal("revocation reported success without reaching the server", err)
 	}
 }
+func TestUnverifiableOutboxFilesNeverBlockVaultBackup(t *testing.T) {
+	c := Client{Home: t.TempDir(), Server: "https://example.test"}
+	state := State{Account: "usr_owner", Root: enc.EncodeToString(random(32))}
+	invite, secret := enc.EncodeToString(random(24)), random(32)
+	current := outbox{Server: c.Server, Account: state.Account, Root: state.Root, ID: "23456789abcdef", SHA256: strings.Repeat("a", 64), Key: enc.EncodeToString(random(32)), Invitations: []Invitation{{ID: invite, Email: "recipient@example.test", Commitment: digest(secret)}}, Secrets: map[string]string{invite: enc.EncodeToString(secret)}}
+	// A share left behind by an identity this account has since replaced.
+	previous := current
+	previous.Root, previous.SHA256, previous.ID = enc.EncodeToString(random(32)), strings.Repeat("b", 64), "23456789abcdeg"
+	for _, item := range []outbox{current, previous} {
+		if err := privateWrite(c.outboxFile(item.SHA256), item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := privateWrite(c.outboxFile(strings.Repeat("c", 64)), []int{1}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := c.readOutbox(state.Account, state.Root)
+	if err != nil || len(items) != 1 || items[0].SHA256 != current.SHA256 {
+		t.Fatal("stale or corrupt files were not isolated from the verified outbox", err, len(items))
+	}
+	data, err := c.merge(contents{Version: 2}, state, nil)
+	if err != nil || len(data.Named) != 1 {
+		t.Fatal("stale local files changed the vault backup", err, len(data.Named))
+	}
+	// merge must never hand commit a backup it would reject.
+	for _, item := range data.Named {
+		if !validOutbox(item, c.Server, state.Account, state.Root) {
+			t.Fatal("merged an entry that commit rejects")
+		}
+	}
+	replaced := State{Account: state.Account, Root: enc.EncodeToString(random(32))}
+	if data, err := c.merge(contents{}, replaced, nil); err != nil || len(data.Named) != 0 || data.Version != 1 {
+		t.Fatal("previous-identity shares leaked into a fresh vault", err, len(data.Named))
+	}
+}

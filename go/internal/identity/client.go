@@ -289,7 +289,7 @@ func (c Client) decrypt(key []byte, state State, v Vault) (contents, error) {
 	}
 	return data, nil
 }
-func (c Client) merge(data contents, account string, owned []OwnedShare) (contents, error) {
+func (c Client) merge(data contents, state State, owned []OwnedShare) (contents, error) {
 	entries, err := os.ReadDir(filepath.Join(c.Home, "shares"))
 	if err != nil && !os.IsNotExist(err) {
 		return data, err
@@ -315,38 +315,30 @@ func (c Client) merge(data contents, account string, owned []OwnedShare) (conten
 		if receipt.Account == "" && receipt.Server == c.Server {
 			for _, share := range owned {
 				if receipt.SHA256 == share.SHA256 && receipt.URL == c.Server+"/s/"+share.ID+"#key="+receipt.Key {
-					receipt.Account = account
+					receipt.Account = state.Account
 					break
 				}
 			}
 		}
-		if validReceipt(receipt, c.Server, account) {
+		if validReceipt(receipt, c.Server, state.Account) {
 			byURL[receipt.URL] = receipt
 		}
 	}
 	if data.Version == 0 {
 		data.Version = 1
 	}
+	// Back up only the private shares commit() will accept for this identity;
+	// a stale or corrupt local file must never block a vault write.
+	saved, err := c.readOutbox(state.Account, state.Root)
+	if err != nil {
+		return data, err
+	}
 	named := map[string]outbox{}
 	for _, item := range data.Named {
 		named[item.SHA256] = item
 	}
-	files, err := os.ReadDir(filepath.Join(c.Home, "named-shares"))
-	if err != nil && !os.IsNotExist(err) {
-		return data, err
-	}
-	for _, entry := range files {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), "pending-") {
-			continue
-		}
-		raw, err := os.ReadFile(filepath.Join(c.Home, "named-shares", entry.Name()))
-		if err != nil {
-			return data, err
-		}
-		var item outbox
-		if json.Unmarshal(raw, &item) == nil && item.Server == c.Server && item.Account == account && namedID.MatchString(item.ID) && len(item.Envelope) == 0 {
-			named[item.SHA256] = item
-		}
+	for _, item := range saved {
+		named[item.SHA256] = item
 	}
 	data.Named = nil
 	for _, item := range named {
@@ -511,7 +503,7 @@ func (c Client) handle(ctx context.Context, action string, in Input) (Status, er
 		if err != nil {
 			return result, err
 		}
-		data, err := c.merge(contents{}, state.Account, remote.Owned)
+		data, err := c.merge(contents{}, state, remote.Owned)
 		if err != nil {
 			return result, err
 		}
@@ -604,7 +596,7 @@ func (c Client) handle(ctx context.Context, action string, in Input) (Status, er
 		if err != nil {
 			return result, err
 		}
-		data, err = c.merge(data, state.Account, remote.Owned)
+		data, err = c.merge(data, state, remote.Owned)
 		if err != nil {
 			return result, err
 		}
@@ -672,7 +664,7 @@ func (c Client) handle(ctx context.Context, action string, in Input) (Status, er
 	if action != "sync" && action != "approve" && action != "revoke" && action != "sharing" {
 		return result, errors.New("unknown device action")
 	}
-	data, err = c.merge(data, state.Account, remote.Owned)
+	data, err = c.merge(data, state, remote.Owned)
 	if err != nil {
 		return result, err
 	}

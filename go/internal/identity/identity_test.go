@@ -71,15 +71,15 @@ func TestReceiptMigrationRequiresExactAccountOwnership(t *testing.T) {
 	if err := privateWrite(filepath.Join(c.Home, "shares", "other.json"), other); err != nil {
 		t.Fatal(err)
 	}
-	data, err := c.merge(contents{}, "usr_me", nil)
+	data, err := c.merge(contents{}, State{Account: "usr_me"}, nil)
 	if err != nil || len(data.Shares) != 0 {
 		t.Fatal("unscoped keys crossed into an unverified account", err)
 	}
-	data, err = c.merge(contents{}, "usr_me", []OwnedShare{{ID: "23456789abcdef", SHA256: strings.Repeat("b", 64)}})
+	data, err = c.merge(contents{}, State{Account: "usr_me"}, []OwnedShare{{ID: "23456789abcdef", SHA256: strings.Repeat("b", 64)}})
 	if err != nil || len(data.Shares) != 0 {
 		t.Fatal("wrong ciphertext hash migrated", err)
 	}
-	data, err = c.merge(contents{}, "usr_me", []OwnedShare{{ID: "23456789abcdef", SHA256: legacy.SHA256}, {ID: "23456789abcdeg", SHA256: other.SHA256}})
+	data, err = c.merge(contents{}, State{Account: "usr_me"}, []OwnedShare{{ID: "23456789abcdef", SHA256: legacy.SHA256}, {ID: "23456789abcdeg", SHA256: other.SHA256}})
 	if err != nil || len(data.Shares) != 1 || data.Shares[0].Account != "usr_me" || data.Shares[0].URL != legacy.URL {
 		t.Fatal("verified migration failed or included another account", err)
 	}
@@ -240,6 +240,20 @@ func TestRecoveryDeviceIntegration(t *testing.T) {
 	altered.Root = enc.EncodeToString(random(32))
 	if err := a.pin(local, *latest.Record, altered, latestVault); err == nil {
 		t.Fatal("root replacement accepted")
+	}
+	// A stale or corrupt saved private share must never lock this device out of
+	// vault writes or hide the rest of its shares.
+	stale := outbox{Server: a.Server, Account: initial.Account, Root: enc.EncodeToString(random(32)), ID: "23456789abcdef", SHA256: strings.Repeat("d", 64), Key: enc.EncodeToString(random(32)), Invitations: []Invitation{{ID: enc.EncodeToString(random(24)), Email: "recipient@example.test"}}}
+	if err := privateWrite(a.outboxFile(stale.SHA256), stale); err != nil {
+		t.Fatal(err)
+	}
+	if err := privateWrite(a.outboxFile(strings.Repeat("e", 64)), []int{1}); err != nil {
+		t.Fatal(err)
+	}
+	addReceipt(a, "23456789abcdej")
+	call(a, "sync", Input{})
+	if shares, err := a.NamedShares(ctx, "", "", true); err != nil || len(shares) != 0 {
+		t.Fatal("unverifiable saved shares blocked the listing", err)
 	}
 	// Server storage contains wrappers and public metadata only.
 	filepath.WalkDir(server.Dir, func(file string, entry os.DirEntry, err error) error {

@@ -125,8 +125,11 @@ through at most eight pending shares every fifteen seconds. Recipient histories
 are fetched individually so ten invitations do not multiply one response's bound.
 Existing limits of 32 active devices, 512 events and 4 MiB vault plaintext still
 apply. Version-2 vaults retain historical incoming keys and up to 10,000 outbox
-entries within that byte limit. Version-1 accounts explicitly enroll their first
-incoming key with a signed `sharing` event; legacy clients reject version 2.
+entries within that byte limit. Saved private shares that cannot be verified for
+the current identity, for example after the account is set up again, stay on
+disk but are left out of listings, background grants and vault backups.
+Version-1 accounts explicitly enroll their first incoming key with a signed
+`sharing` event; legacy clients reject version 2.
 
 ## Verification
 

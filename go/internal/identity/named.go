@@ -241,6 +241,35 @@ func namedContext(sha, account, root string, epoch int) string {
 func (c Client) outboxFile(hash string) string {
 	return filepath.Join(c.Home, "named-shares", hash+".json")
 }
+
+// readOutbox loads the private shares this machine saved for the current
+// identity. Files for other servers or accounts are ignored, and unreadable,
+// malformed or previous-identity files are skipped, so one bad file can never
+// block a listing, the grant loop or a vault write.
+func (c Client) readOutbox(account, root string) ([]outbox, error) {
+	entries, err := os.ReadDir(filepath.Join(c.Home, "named-shares"))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var items []outbox
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), "pending-") {
+			continue
+		}
+		var item outbox
+		raw, err := os.ReadFile(filepath.Join(c.Home, "named-shares", entry.Name()))
+		if err != nil || json.Unmarshal(raw, &item) != nil || item.Server != c.Server || item.Account != account {
+			continue
+		}
+		if validOutbox(item, c.Server, account, root) {
+			items = append(items, item)
+		}
+	}
+	return items, nil
+}
 func (o outbox) result() NamedResult {
 	out := NamedResult{ID: o.ID, URL: o.Server + "/n/" + o.ID, Recipients: []NamedRecipient{}}
 	for _, recipient := range o.Invitations {
@@ -469,15 +498,8 @@ func (c Client) NamedShares(ctx context.Context, revokeID, invitationID string, 
 	}
 	// No network when this machine has never created named shares, unless a
 	// revocation was requested: that must reach the server or fail loudly.
-	entries, err := os.ReadDir(filepath.Join(c.Home, "named-shares"))
-	if os.IsNotExist(err) {
-		if revokeID == "" {
-			return []NamedResult{}, nil
-		}
-		entries, err = nil, nil
-	}
-	if err != nil {
-		return nil, err
+	if _, err := os.Stat(filepath.Join(c.Home, "named-shares")); os.IsNotExist(err) && revokeID == "" {
+		return []NamedResult{}, nil
 	}
 	keys, err := c.nativeKeys(ctx, false)
 	if err != nil {
@@ -488,32 +510,22 @@ func (c Client) NamedShares(ctx context.Context, revokeID, invitationID string, 
 			return nil, err
 		}
 	}
+	items, err := c.readOutbox(keys.state.Account, keys.state.Root)
+	if err != nil {
+		return nil, err
+	}
 	results := []NamedResult{}
 	// Rotate a bounded background batch so unanswered invitations cannot
 	// starve later recipients or exhaust the hosted read limit.
-	if !refresh && len(entries) > 0 {
-		start := int(time.Now().Unix()/15*8) % len(entries)
-		entries = append(entries[start:], entries[:start]...)
+	if !refresh && len(items) > 0 {
+		start := int(time.Now().Unix()/15*8) % len(items)
+		if start < 0 {
+			start += len(items)
+		}
+		items = append(items[start:], items[:start]...)
 	}
 	processed := 0
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), "pending-") {
-			continue
-		}
-		raw, err := os.ReadFile(filepath.Join(c.Home, "named-shares", entry.Name()))
-		if err != nil {
-			return nil, err
-		}
-		var saved outbox
-		if json.Unmarshal(raw, &saved) != nil {
-			return nil, errors.New("cannot read saved private share")
-		}
-		if saved.Server != c.Server || saved.Account != keys.state.Account {
-			continue
-		}
-		if !validOutbox(saved, c.Server, keys.state.Account, keys.state.Root) {
-			return nil, errors.New("invalid saved private share")
-		}
+	for _, saved := range items {
 		terminal := len(saved.Status) == len(saved.Invitations)
 		for _, value := range saved.Status {
 			if value != "ready" && value != "revoked" && value != "expired" {
