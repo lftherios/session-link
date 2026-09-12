@@ -1,6 +1,14 @@
 # session.link product plan
 
-Working draft · 2026-09-11 · based on the planning conversation.
+Working draft · updated 2026-09-12 · based on the planning conversation.
+
+The [success criteria](success-criteria.md) record the nine agreed requirements:
+easy installation anywhere, a tiny and efficient daemon, current and dependable
+harness integrations, an inviting viewer, user control of data, and simple
+sharing, plus trustworthy records, uninterrupted agent work, and immediate
+recipient value. The [KPI scorecard](kpis.md) proposes targets and measurement
+methods. Encrypted sharing with chosen peers remains an open design question.
+Use these criteria to prioritize the work below.
 
 The [viewer content model](viewer-model.md) is the agreed reference for session
 metadata, human input, agent responses, agent activity, context and exchanges.
@@ -72,8 +80,9 @@ Working assumptions to revisit after trying the first prototype:
   context. The full session remains available locally.
 - Recipients respond through their existing conversation or review system,
   using precise links back to the shared material.
-- Start with the current unlisted-link access model and make its audience
-  explicit. Requirements for restricted recipient access need validation.
+- The current hosted flow uses unlisted links. Make that audience explicit
+  while investigating a private sharing model for chosen peers, including
+  encryption, as recorded in the success criteria.
 
 | Handoff | Recipient starts with | Supporting material | Successful outcome |
 | --- | --- | --- | --- |
@@ -310,7 +319,8 @@ integrations by actual usage and apply the same quality requirements.
 Remaining decisions are deliberately visible: the native invocation for
 each harness, remote/headless transport, the preferred Git baseline, how
 much supporting context to suggest, whether author editing should later
-extend to source outputs, and whether colleagues need restricted access.
+extend to source outputs, and the access and encryption model for sharing
+with chosen peers.
 Resolve invocation and transport during the initial journey design;
 prototype the remaining choices with the three examples. Calendar estimates
 should follow that design and the hosted-service check.
