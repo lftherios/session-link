@@ -2,10 +2,13 @@ package open
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +16,7 @@ import (
 
 	"github.com/lftherios/session-link/internal/cli"
 	"github.com/lftherios/session-link/internal/handoff"
+	"github.com/lftherios/session-link/internal/sealed"
 	"github.com/lftherios/session-link/internal/share"
 )
 
@@ -91,6 +95,7 @@ func TestLocalTitlePersistsWithoutRewritingSourceOrDraft(t *testing.T) {
 }
 
 func TestComposeDraftPersistenceAndExactExport(t *testing.T) {
+	t.Setenv("SLINK_HOME", t.TempDir())
 	s := &Server{PreviewDir: t.TempDir(), Target: "http://127.0.0.1:1"}
 	source, draft := researchSource(t, s)
 	if w := action(s, "GET", "/compose/"+source, "", ""); w.Code != 200 || !strings.Contains(w.Body.String(), "__COMPOSE__") {
@@ -142,29 +147,31 @@ func TestComposeDraftPersistenceAndExactExport(t *testing.T) {
 	if s.editSource(id) != source {
 		t.Fatal("local edit provenance lost")
 	}
-	// The public upload route stays closed for the new envelope until hosted
-	// compatibility is verified. Whole-session publishing keeps its own tests.
-	w = action(s, "POST", "/api/publish-preview/"+id, "", "1")
-	if w.Code != 409 {
-		t.Fatalf("excerpt publishing was enabled: %d %s", w.Code, w.Body)
-	}
-	// Validate the prepared bytes against the existing upload contract using
-	// only a mock receiver; excluded data must not reach that receiver either.
+	// Publishing transmits only the encrypted selected excerpt.
 	var received []byte
 	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		received, _ = io.ReadAll(r.Body)
-		io.WriteString(w, `{"url":"https://example.test/r/excerpt"}`)
+		hash := sha256.Sum256(received)
+		json.NewEncoder(w).Encode(map[string]any{"id": "23456789abcdef", "sha256": hex.EncodeToString(hash[:])})
 	}))
 	defer receiver.Close()
 	ins, err := cli.InspectRunFile(file)
 	if err != nil || len(ins.Errors) != 0 || len(ins.Secrets) != 0 {
 		t.Fatalf("inspection: %+v %v", ins, err)
 	}
-	if uploaded := cli.UploadRun(ins.Text, receiver.URL, "fixture-key"); !uploaded.OK {
-		t.Fatal(uploaded)
+	s.Target, s.APIKey = receiver.URL, "fixture-key"
+	resultUpload := s.publishFile(file)
+	if resultUpload.Status != 200 {
+		t.Fatal(resultUpload)
 	}
-	if !bytes.Equal(received, exported) {
-		t.Fatal("upload bytes differ from the prepared excerpt")
+	link, _ := url.Parse(resultUpload.Body["url"].(string))
+	fragment, _ := url.ParseQuery(link.Fragment)
+	plain, err := sealed.Decrypt(received, fragment.Get("key"))
+	if err != nil || !bytes.Equal(plain, exported) {
+		t.Fatal("encrypted upload changed prepared excerpt", err)
+	}
+	if bytes.Contains(received, []byte("OMITTED_INTERNAL_STRATEGY")) {
+		t.Fatal("source leaked in upload")
 	}
 	// Editing and exporting again creates another preview, leaving this one intact.
 	draft.Note = "A revised request for review"

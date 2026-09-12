@@ -189,10 +189,10 @@ func publishFile(file, target, apiKey string, yes bool) {
 		}
 		as := ""
 		if login := cli.ReadConfig().Login; login != "" {
-			as = " as @" + login
+			as = " as " + login
 		}
 		fmt.Fprintf(os.Stderr, "\nready to publish to %s%s\n", target, as)
-		fmt.Fprintln(os.Stderr, "  unlisted — anyone with the link can view it")
+		fmt.Fprintln(os.Stderr, "  encrypted — anyone with the complete link can view it")
 		fmt.Fprint(os.Stderr, "\nPublish? [y/N] ")
 		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 		if l := strings.ToLower(strings.TrimSpace(line)); l != "y" && l != "yes" {
@@ -211,7 +211,7 @@ func publishFile(file, target, apiKey string, yes bool) {
 		}
 		switch {
 		case res.Status == 0: // transport failure — no HTTP happened at all
-			die(fmt.Sprintf("✗ can't reach %s (%s)\n    nothing was uploaded", target, transportCause(msg)))
+			die(fmt.Sprintf("✗ publish failed for %s (%s)\n    retry to resume any pending encrypted upload", target, transportCause(msg)))
 		case res.Status == 401:
 			die(fmt.Sprintf("✗ the server refused the upload — not signed in (HTTP 401)\n\n  sign in:  slink login\n  or pass:  --key rk_…"))
 		default:
@@ -231,7 +231,7 @@ func publishFile(file, target, apiKey string, yes bool) {
 	fmt.Println(url)
 	fmt.Fprintln(os.Stderr, "  anyone with this link can view it")
 	if id := publishedID(url); id != "" {
-		fmt.Fprintf(os.Stderr, "\n  take offline:  slink delete %s\n", id)
+		fmt.Fprintf(os.Stderr, "\n  take offline:  slink delete s/%s\n", id)
 	}
 }
 
@@ -262,9 +262,11 @@ func gateSummary(ins *cli.Inspection) string {
 }
 
 // publishedID extracts the run id from a published URL (…/r/<id>).
-func publishedID(url string) string {
-	if i := strings.LastIndex(url, "/r/"); i >= 0 {
-		return url[i+3:]
+func publishedID(link string) string {
+	for _, prefix := range []string{"/r/", "/s/"} {
+		if i := strings.LastIndex(link, prefix); i >= 0 {
+			return strings.TrimRight(strings.SplitN(strings.SplitN(link[i+3:], "#", 2)[0], "?", 2)[0], "/")
+		}
 	}
 	return ""
 }

@@ -7,7 +7,8 @@ easy installation anywhere, a tiny and efficient daemon, current and dependable
 harness integrations, an inviting viewer, user control of data, and simple
 sharing, plus trustworthy records, uninterrupted agent work, and immediate
 recipient value. The [KPI scorecard](kpis.md) proposes targets and measurement
-methods. Encrypted sharing with chosen peers remains an open design question.
+methods. The selected encrypted-sharing prototype direction is iroh-blobs with
+a persistent hosted provider and browser decryption; recovery and device approval are implemented locally; named-recipient sharing remains separate work. See [identity and encryption](identity-encryption.md).
 Use these criteria to prioritize the work below.
 
 The [viewer content model](viewer-model.md) is the agreed reference for session
@@ -18,7 +19,8 @@ Execution update: CLI-to-web handoff and local excerpt composition are
 implemented in this checkout. See [handoff design and verification](handoff-design.md)
 for the journeys and harness matrix, and the [excerpt contract](share-excerpt-v1.md)
 for selection, author context, saved drafts, recipient preview and omission
-checks. Excerpt publishing is gated pending hosted-service verification.
+checks. Encrypted excerpt publishing is implemented and locally verified against
+the sibling hosted service; production rollout remains pending.
 The [viewer arrival slice](viewer-arrival.md) adds the latest-exchange landing,
 local titles, compact navigation, prominent scoped search, hover selection,
 annotation, local saved views and Markdown document rendering. Saved diffs and
@@ -26,6 +28,14 @@ real handoff pilots remain open.
 
 Integration TODO:
 
+- [x] Build the first encrypted-link prototype using iroh-blobs FsStore, durable
+  hosted retention and HTTPS browser delivery, with email/GitHub authentication.
+- [x] Resume the prepared excerpt through viewer sign-in; add encrypted key backup,
+  recovery-secret enrollment, device approval and revocation with vault rotation.
+- [ ] Resolve iroh version support, verify Docker/Fly deployment and volume backup
+  restoration, and independently review the recovery/device protocol before production;
+  use the [verification notes](identity-encryption.md#verification-and-deployment).
+- [ ] Design named-recipient sharing separately from account and device recovery.
 - [ ] Build the [DeepSeek Harness (`dsh`)](https://github.com/deepseek-ai/deepseek-harness)
   integration. Verify its session storage and active-session identity against a
   pinned version; add discovery and import support that preserve prompts, outputs,
@@ -81,8 +91,8 @@ Working assumptions to revisit after trying the first prototype:
 - Recipients respond through their existing conversation or review system,
   using precise links back to the shared material.
 - The current hosted flow uses unlisted links. Make that audience explicit
-  while investigating a private sharing model for chosen peers, including
-  encryption, as recorded in the success criteria.
+  while prototyping encrypted sharing with iroh-blobs. Account access, device
+  approval and content-key grants remain separate design responsibilities.
 
 | Handoff | Recipient starts with | Supporting material | Successful outcome |
 | --- | --- | --- | --- |
@@ -256,9 +266,11 @@ agent change. Missing change data produces an honest unavailable state.
 **6. Verify consistency across harnesses and pilot all three handoffs.**
 
 Complete hosted integration checks before enabling the new export flow.
-Confirm that preview, published rendering, and downloads
-use the same selected content and that the existing validation, secret
-scanning, ownership, and deletion behavior apply to the new documents.
+Confirm that preview, published rendering, and downloads use the same selected
+content and preserve ownership and documented deletion behavior. For encrypted
+shares, validate and scan before encryption, validate after decryption, and
+limit server checks to the envelope and service policy; the server cannot
+scan or render private content.
 
 Extend the handoff to all five currently supported harnesses and report
 verified capabilities individually. Run common semantic and interaction

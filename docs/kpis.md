@@ -81,12 +81,13 @@ opened alone does not establish a useful handoff.
   Ask pilot users who can read a share before they publish. Test stop-capture,
   retention, export, and deletion against their documented behavior. Measure
   withdrawing access and physical erasure separately; current tombstoning
-  must not be reported as a purge. Peer-only encryption remains an open design
-  milestone, not a satisfied KPI; define its threat model and acceptance
-  checks before claiming that capability.
+  must not be reported as a purge. Encrypted sharing has a locally tested
+  [iroh-blobs prototype](identity-encryption.md). Deployment, recipient-key
+  recovery and broader operational checks remain; local test success alone
+  does not satisfy the production KPI.
 - **Sharing:** measure signed-in, standard-size whole-session publishing from
   final confirmation until the returned URL successfully serves the intended
-  document. Keep first-share sign-in time, larger files, and future excerpt
+  document. Keep first-share sign-in time, larger files, and excerpt
   publishing as separate measurements. Count required actions after choosing
   material; do not count optional editing or reward skipping review. Preserve
   user cancellations as a separate outcome. A reported success with a broken

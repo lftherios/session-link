@@ -13,6 +13,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { ContentPart, Message, Run, Span } from "@session-link/format";
+import { withAnchor } from "./encryption";
 import { ShareView, shareInfo } from "./ShareView";
 import { SessionView, type LocalViewer, type SessionStats } from "./SessionView";
 import { buildFlow, reasoningUnavailable } from "./session-model";
@@ -1922,7 +1923,7 @@ function LoadedViewer({ run, initialMode, compact = false }: { run: Run; initial
     setSel(id);
     setCopied(false);
     try {
-      history.replaceState(null, "", `#span=${id}`);
+      history.replaceState(null, "", withAnchor(window.location.href, id));
     } catch {
       /* ignore in sandboxes */
     }
@@ -1933,7 +1934,7 @@ function LoadedViewer({ run, initialMode, compact = false }: { run: Run; initial
     let text = `#span=${sel}`;
     try {
       const u = new URL(window.location.href);
-      u.hash = `span=${sel}`;
+      u.hash = new URL(withAnchor(u.href, sel)).hash;
       text = u.toString();
     } catch {
       /* keep relative anchor */

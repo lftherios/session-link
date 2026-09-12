@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Search, ChevronDown, ChevronLeft, ChevronRight, ArrowLeft, Share2, Pencil, FileJson, MessageSquare, Copy, ListTree } from "lucide-react";
 import { ViewDialog } from "./ViewDialog";
+import { withAnchor } from "./encryption";
 import type { ViewDraft } from "./view-draft";
 import type { ContentPart, Run, Span } from "@session-link/format";
 import { buildFlow, defaultExchange, duration, elapsed, eventTime, exchangesFor, harnessName, messageText, previewText, promptLabel, promptText, partUnit, readerFlow, readingKey, readingRole, reasoningUnavailable, responseFor, selectionPrefixes, sessionLabel, sessionTitle, shortText, sourceRange, type Exchange, type MessageBlock } from "./session-model";
@@ -291,7 +292,7 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
   const navigate = (e: Exchange, scroll = true) => {
     setActive(e.id); setMode("exchange"); setLinked(null); setSearchTarget(null); setOutline(false);
     // Browsing doesn't create a deep link.
-    if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+    if (location.hash) history.replaceState(null, "", withAnchor(location.href, ""));
     if (scroll) reading.current?.scrollIntoView({ block: "start" });
   };
   const startTitle = () => { setTitleValue(title); setTitleStatus(""); setTitleError(false); setEditing(true); };

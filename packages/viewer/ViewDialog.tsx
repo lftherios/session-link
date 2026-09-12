@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Run } from "@session-link/format";
+import { PublishPanel } from "./PublishPanel";
 import { DocumentText } from "./DocumentText";
 import { previewText } from "./session-model";
 import { belongsTo, unitLabel, unitsFor, viewRequest, type SavedView, type ViewDraft, type ViewItem, type ViewUnit } from "./view-draft";
@@ -18,6 +19,7 @@ export function ViewDialog({ source, title, prefixes, primary, activity, explici
   const [details, setDetails] = useState(intent !== "share"), [passage, setPassage] = useState("");
   const [range, setRange] = useState<{ start: number; end: number } | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [publishing, setPublishing] = useState(false);
   const [omitted, setOmitted] = useState(0);
   const [missingReasoning, setMissingReasoning] = useState(false);
   useEffect(() => { ref.current?.showModal(); }, []);
@@ -43,19 +45,20 @@ export function ViewDialog({ source, title, prefixes, primary, activity, explici
   }, [source, attempt]);
   useEffect(() => { if (intent === "annotate" && units) note.current?.focus(); }, [intent, units]);
 
-  const change = (value: ViewDraft) => { setError(""); onDraft(value); };
+  const change = (value: ViewDraft) => { setPublishing(false); setError(""); onDraft(value); };
   const replace = (id: string, selection?: ViewItem) => {
     if (!draft) return;
     const items = draft.items.filter(item => item.id !== id); if (selection) items.push(selection);
     change({ ...draft, items, primary: items.some(item => item.id === draft.primary) ? draft.primary : items[0]?.id ?? "" });
   };
   const include = (ids: string[]) => { if (draft) change({ ...draft, items: [...draft.items.filter(item => !ids.includes(item.id)), ...ids.map(id => ({ id }))] }); };
-  const save = async (preview: boolean) => {
+  const save = async (preview: boolean, publish = false) => {
     if (!draft) return;
     setBusy(true); setError("");
     try {
       const result = await viewRequest<{ url: string; document: Run }>(`/api/export/${source}`, "POST", draft);
       setSaved({ ...result, fingerprint: JSON.stringify(draft) });
+      setPublishing(publish);
       setSavedViews(old => [{ url: result.url, title: draft.title }, ...old.filter(view => view.url !== result.url)]);
       if (preview) location.assign(result.url);
     } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
@@ -73,7 +76,7 @@ export function ViewDialog({ source, title, prefixes, primary, activity, explici
   const isSaved = saved?.fingerprint === JSON.stringify(draft);
   return <dialog className="sv-dialog sv-share-dialog" aria-label="Share this view" ref={ref} onCancel={event => { event.preventDefault(); if (!busy) close(); }}>
     <div className="sv-dialog-head"><h2>{intent === "annotate" ? "Comment and share" : intent === "edit" ? "Edit view" : "Share this view"}</h2><button className="sv-quiet" aria-label="Close share panel" disabled={busy} onClick={close}>✕</button></div>
-    <p className="sv-dialog-intro">{explicit ? "Your selected material" : "The human input and agent response in this view"}. Review what’s included, then save a local copy.</p>
+    <p className="sv-dialog-intro">{explicit ? "Your selected material" : "The human input and agent response in this view"}. Review what’s included, then publish an encrypted link or save a local copy.</p>
     {error && <p className="sv-notice sv-error" role="alert">{error}{!units && <button onClick={() => setAttempt(value => value + 1)}>Try again</button>}</p>}
     {loading ? <p role="status" className="sv-meta">Loading view…</p> : units && draft && <fieldset disabled={busy}>
       <details className="sv-author-fields" open={details} onToggle={event => setDetails(event.currentTarget.open)}>
@@ -102,9 +105,10 @@ export function ViewDialog({ source, title, prefixes, primary, activity, explici
         {selected.length === 0 && <p className="sv-notice">No supported content is included. Return to the session to select material.</p>}
       </div>
       {units.some(unit => unit.kind === "source_reference" && !draft.items.some(item => item.id === unit.id)) && <details className="sv-reference-options"><summary>Available source references</summary>{units.filter(unit => unit.kind === "source_reference" && !draft.items.some(item => item.id === unit.id)).map(unit => <label key={unit.id}><input type="checkbox" onChange={() => include([unit.id])} /><span>{unit.text}</span></label>)}</details>}
-      <div className="sv-share-footer"><p className="sv-meta">Only the included material, title and comment enter the saved view. Link publishing is not available in this local build.</p><div className="sv-item-actions"><button disabled={!selected.length || !draft.title.trim()} onClick={() => save(true)}>Preview view</button><button className="sv-primary" disabled={!selected.length || !draft.title.trim() || isSaved} onClick={() => save(false)}>{busy ? "Saving…" : isSaved ? "Saved locally" : "Save locally"}</button></div></div>
+      <div className="sv-share-footer"><p className="sv-meta">Only the included material, title and comment enter the saved view. The rest of your session stays local.</p><div className="sv-item-actions"><button disabled={!selected.length || !draft.title.trim()} onClick={() => save(true)}>Preview view</button><button disabled={!selected.length || !draft.title.trim() || isSaved} onClick={() => save(false)}>{busy ? "Saving…" : isSaved ? "Saved locally" : "Save locally"}</button><button className="sv-primary" disabled={!selected.length || !draft.title.trim()} onClick={() => save(false, true)}>Publish link</button></div></div>
       {saved && <div className="sv-saved-notice" role="status"><span>{isSaved ? "View saved locally." : "An earlier version is saved. Save again to keep these changes."}</span><a href={saved.url}>Open saved view</a><button className="sv-quiet" onClick={download}>Download view</button></div>}
     </fieldset>}
+    {publishing && saved && isSaved && <PublishPanel key={saved.url} endpoint={`/api/publish-preview/${saved.url.split("/").pop()}`} title={draft?.title ?? title} ready />}
     {savedViews.length > 0 && <details className="sv-saved-views"><summary>Saved views · {savedViews.length}</summary>{savedViews.map(view => <a key={view.url} href={view.url}>{view.title}</a>)}</details>}
   </dialog>;
 }

@@ -1,7 +1,7 @@
 {
   "name": "@session-link/viewer",
   "version": "0.4.0",
-  "description": "The session.link viewer — renders a session/v0 document as an interactive trace tree. React component; consume with a bundler that transpiles the package (e.g. Next transpilePackages).",
+  "description": "The session.link viewer \u2014 renders a session/v0 document as an interactive trace tree. React component; consume with a bundler that transpiles the package (e.g. Next transpilePackages).",
   "homepage": "https://session.link",
   "license": "MIT",
   "type": "module",
@@ -21,7 +21,14 @@
     "view-draft.ts",
     "DocumentText.tsx",
     "session-model.ts",
-    "viewer-entry.tsx"
+    "viewer-entry.tsx",
+    "EncryptedView.tsx",
+    "encryption.ts",
+    "validate-session.js",
+    "validate-session.d.ts",
+    "LocalLogin.tsx",
+    "PublishPanel.tsx",
+    "IdentitySettings.tsx"
   ],
   "dependencies": {
     "@session-link/format": "0.1.0",

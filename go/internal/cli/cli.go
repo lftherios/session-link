@@ -4,8 +4,6 @@
 package cli
 
 import (
-	"bytes"
-	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -24,6 +22,7 @@ import (
 
 // Config is ~/.slink/config.json, written by `slink login`.
 type Config struct {
+	UserID string `json:"user_id,omitempty"`
 	APIKey string `json:"api_key"`
 	Server string `json:"server"`
 	Login  string `json:"login,omitempty"` // GitHub handle, when browser login minted the key
@@ -233,39 +232,6 @@ type UploadResult struct {
 	OK     bool
 	Status int
 	Body   map[string]any
-}
-
-// UploadRun POSTs to the ingest API, gzipping anything over 64KB.
-func UploadRun(text, server, apiKey string) UploadResult {
-	body := []byte(text)
-	headers := map[string]string{"content-type": "application/json"}
-	if apiKey != "" {
-		headers["authorization"] = "Bearer " + apiKey
-	}
-	if len(body) > 64*1024 {
-		var buf bytes.Buffer
-		zw := gzip.NewWriter(&buf)
-		zw.Write(body)
-		zw.Close()
-		body = buf.Bytes()
-		headers["content-encoding"] = "gzip"
-	}
-	req, err := http.NewRequest(http.MethodPost, server+"/api/runs", bytes.NewReader(body))
-	if err != nil {
-		return UploadResult{Body: errBody("unreachable", err.Error())}
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	client := &http.Client{Timeout: 5 * time.Minute}
-	res, err := client.Do(req)
-	if err != nil {
-		return UploadResult{Body: errBody("unreachable", fmt.Sprintf("cannot reach %s: %v", server, err))}
-	}
-	defer res.Body.Close()
-	var out map[string]any
-	json.NewDecoder(res.Body).Decode(&out)
-	return UploadResult{OK: res.StatusCode >= 200 && res.StatusCode < 300, Status: res.StatusCode, Body: out}
 }
 
 func errBody(code, message string) map[string]any {

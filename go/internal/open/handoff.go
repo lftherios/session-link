@@ -25,8 +25,8 @@ func (s *Server) previewDir() string {
 	return filepath.Join(filepath.Dir(s.CaptureDir), "previews")
 }
 
-// Signing in from another terminal should unlock publishing after a reload,
-// without replacing the preview or restarting the viewer.
+// The native sign-in poller and terminal login both update config. Resolve it
+// on each action without replacing the preview or restarting the viewer.
 func (s *Server) apiKey() string {
 	target, key := cli.ResolveTarget("", "")
 	if target == s.Target && key != "" {

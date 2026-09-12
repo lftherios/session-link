@@ -1,9 +1,8 @@
 package cli
 
 import (
-	"compress/gzip"
+	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -96,35 +95,6 @@ func TestScanParityWithJS(t *testing.T) {
 	}
 }
 
-func TestUploadRunGzipsAndAuths(t *testing.T) {
-	var gotAuth, gotEncoding string
-	var gotBody []byte
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("authorization")
-		gotEncoding = r.Header.Get("content-encoding")
-		body, _ := io.ReadAll(r.Body)
-		if gotEncoding == "gzip" {
-			zr, _ := gzip.NewReader(strings.NewReader(string(body)))
-			body, _ = io.ReadAll(zr)
-		}
-		gotBody = body
-		w.WriteHeader(201)
-		json.NewEncoder(w).Encode(map[string]any{"id": "x", "url": "https://s/r/x"})
-	}))
-	defer ts.Close()
-
-	small := `{"schema":"session/v0"}`
-	res := UploadRun(small, ts.URL, "rk_test")
-	if !res.OK || gotAuth != "Bearer rk_test" || gotEncoding != "" || string(gotBody) != small {
-		t.Fatalf("small upload: %+v auth=%q enc=%q", res, gotAuth, gotEncoding)
-	}
-	big := `{"pad":"` + strings.Repeat("x", 70*1024) + `"}`
-	res = UploadRun(big, ts.URL, "")
-	if !res.OK || gotEncoding != "gzip" || string(gotBody) != big {
-		t.Fatalf("big upload must gzip and round-trip: enc=%q ok=%v", gotEncoding, res.OK)
-	}
-}
-
 func TestPlanPruneParity(t *testing.T) {
 	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
 	caps := []Capture{
@@ -194,8 +164,8 @@ func TestBrowserLoginPollFlow(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == "POST" && r.URL.Path == "/api/auth/cli":
-			json.NewEncoder(w).Encode(map[string]any{"code": "c1", "user_code": "AB-12", "url": "https://x/cli/c1"})
-		case r.URL.Path == "/api/auth/cli/c1":
+			json.NewEncoder(w).Encode(map[string]any{"code": strings.Repeat("A", 43), "user_code": "AB-12", "url": "https://x/cli/c1"})
+		case r.URL.Path == "/api/auth/cli/"+strings.Repeat("A", 43):
 			polls++
 			if polls < 2 {
 				w.WriteHeader(202)
@@ -208,8 +178,14 @@ func TestBrowserLoginPollFlow(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	var notes []string
-	r, err := BrowserLogin(ts.URL, func(s string) { notes = append(notes, s) })
+	attempt, err := BeginLogin(context.Background(), ts.URL, "viewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempt.UserCode != "AB-12" || attempt.URL != ts.URL+"/cli/"+strings.Repeat("A", 43) {
+		t.Fatal("sign-in must use the configured origin and surface the confirmation code")
+	}
+	r, err := WaitLogin(context.Background(), attempt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +200,5 @@ func TestBrowserLoginPollFlow(t *testing.T) {
 	if st.Mode().Perm() != 0o600 {
 		t.Fatalf("config perms: %v", st.Mode().Perm())
 	}
-	if len(notes) == 0 || !strings.Contains(notes[1], "AB-12") {
-		t.Fatalf("user code must be surfaced: %v", notes)
-	}
+
 }

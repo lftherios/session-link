@@ -43,8 +43,8 @@ more dependable, or more trustworthy.
    what is recorded, retained, included in a share, and published, and understand
    who can read it. Make stopping capture, exporting, changing retention, and
    deleting data understandable. Local files and the open format should remain
-   useful independently of the hosted service. Explore encryption that limits
-   shared content to the sender and chosen peers; that design is still open.
+   useful independently of the hosted service. Prototype encrypted sharing
+   using iroh-blobs, with locally tested recovery and device approval; access for named recipients remains future work.
 
 6. **Sharing is super simple.** Move from the intended session or passage to
    a useful link with minimal steps. A whole-session share should be easy;
@@ -72,15 +72,17 @@ more dependable, or more trustworthy.
    exchanges: can the recipient answer the question or take the next action
    without asking the sender to reconstruct the story?
 
-## Open decision: private sharing with chosen peers
+## Encrypted-sharing prototype and remaining decisions
 
-Local-first use is an agreed requirement. Peer-only encrypted sharing is a
-direction to investigate, not a selected architecture or current capability.
-Decide who can decrypt a share, whether the service operator can read it, how
-recipients receive access, and what happens when a link is forwarded. Also
-resolve key recovery, device changes, and what revocation or deletion can
-actually promise after someone has received a copy. Direct peer-to-peer
-delivery and end-to-end encryption are separate design decisions.
+Local-first use is an agreed requirement. The selected prototype direction is
+client encryption with iroh-blobs, a persistent hosted provider and ordinary
+browser access. The service should hold ciphertext without content keys.
+See [identity and encryption](identity-encryption.md) for the accepted scope
+and proposed sign-in model. This is not a current capability or production
+dependency decision. Resolve recipient key verification, forwarded links,
+key recovery, device changes, and what revocation or deletion can promise
+after someone has received a copy. Direct peer-to-peer delivery and
+end-to-end encryption are separate design decisions.
 
 The current hosted flow uses unlisted links readable by anyone who has the
 link. The server can read uploaded content; local captures are plaintext.

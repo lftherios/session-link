@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Run } from "@session-link/format";
+import { withAnchor } from "./encryption";
 
 export const SHARE_EXTENSION = "session_link.share.v1";
 type Item = { id: string; kind: string; role: string; passage?: boolean; omitted_before?: boolean; prompt_missing?: boolean; tool_call_missing?: boolean };
@@ -40,8 +41,7 @@ function ExcerptCard({ run, item, primary, renderText }: { run: Run; item: Item;
   const [copy, setCopy] = useState("Copy link");
   const copyLink = async () => {
     try {
-      const url = new URL(location.href); url.hash = `span=${item.id}`;
-      await navigator.clipboard.writeText(url.href); setCopy("Copied");
+      await navigator.clipboard.writeText(withAnchor(location.href, item.id)); setCopy("Copied");
     } catch { setCopy("Copy failed"); }
   };
   return <article className={`sh-card${primary ? " sh-primary" : ""}`} id={`span=${item.id}`}>
@@ -58,7 +58,7 @@ export function ShareView({ run, share, renderText }: { run: Run; share: Share; 
   const definitions = share.items.filter(i => i.kind === "source_reference").map(i => spanText(run, i.id)).join("\n");
   const renderIncluded = (text: string) => renderText(text, definitions);
   useEffect(() => {
-    const scroll = () => { const id = location.hash.slice(1); if (/^span=[\w.-]+$/.test(id)) document.getElementById(id)?.scrollIntoView({ block: "start" }); };
+    const scroll = () => { const id = new URLSearchParams(location.hash.slice(1)).get("span"); if (id && /^[\w.-]+$/.test(id)) document.getElementById(`span=${id}`)?.scrollIntoView({ block: "start" }); };
     scroll(); window.addEventListener("hashchange", scroll); return () => window.removeEventListener("hashchange", scroll);
   }, [run]);
   return <div className="rv sh">

@@ -5,6 +5,9 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { context } from "esbuild";
+import { buildValidator } from "./viewer-validator.mjs";
+
+await buildValidator();
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const fixtures = new Map([

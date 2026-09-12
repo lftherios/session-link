@@ -6,12 +6,18 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { RunViewer } from "./RunViewer";
 import { ShareComposer } from "./ShareComposer";
+import { IdentitySettings } from "./IdentitySettings";
+import { PublishPanel } from "./PublishPanel";
+import { EncryptedView } from "./EncryptedView";
 import type { Run } from "@session-link/format";
 import type { LocalViewer } from "./SessionView";
 
 declare global {
   interface Window {
     __RUN__: Run;
+    __IDENTITY__?: boolean;
+    __PUB__?: { endpoint: string; title: string };
+    __SEALED__?: { id: string };
     __COMPOSE__?: { source: string };
     __LOCAL__?: LocalViewer;
     // Set when the page carries the reading copy: recorded tool output waits
@@ -35,4 +41,7 @@ function LocalSession({ reading, full, local }: { reading: Run; full?: string; l
 }
 
 const el = document.getElementById("root");
-if (el) createRoot(el).render(window.__COMPOSE__ ? <ShareComposer source={window.__COMPOSE__.source} /> : <LocalSession reading={window.__RUN__} full={window.__FULL__} local={window.__LOCAL__} />);
+if (el) createRoot(el).render(window.__IDENTITY__ ? <IdentitySettings /> : window.__SEALED__ ? <EncryptedView id={window.__SEALED__.id} /> : window.__COMPOSE__ ? <ShareComposer source={window.__COMPOSE__.source} /> : <LocalSession reading={window.__RUN__} full={window.__FULL__} local={window.__LOCAL__} />);
+
+const publish = document.getElementById("publish-control");
+if (publish && window.__PUB__) createRoot(publish).render(<PublishPanel {...window.__PUB__} />);

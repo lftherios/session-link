@@ -25,7 +25,6 @@ import (
 
 	"github.com/lftherios/session-link/internal/cli"
 	"github.com/lftherios/session-link/internal/handoff"
-	"github.com/lftherios/session-link/internal/share"
 	"github.com/lftherios/session-link/internal/spool"
 )
 
@@ -97,6 +96,9 @@ type Server struct {
 	OnStop         func()
 	composeSources sync.Map
 	draftMu        sync.Mutex
+	loginMu        sync.Mutex
+	login          *viewerLogin
+	identityMu     sync.Mutex
 }
 
 func (s *Server) indexPage() string {
@@ -245,11 +247,11 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 	} else {
 		spool.Assemble(file, spool.AssembleOptions{}) // legacy live capture route
 	}
-	info, err := os.Stat(file)
+	_, err := os.Stat(file)
 	if err != nil {
 		return "", err // os.ErrNotExist → the styled 404
 	}
-	size, fullURL := int(info.Size()), ""
+	fullURL := ""
 	var doc sessionPage
 	// The reading copy leaves out recorded tool output, which the reader only
 	// shows once someone opens a step. The whole document follows over the
@@ -272,12 +274,6 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 	if name == "" {
 		name = id
 	}
-	recNote := ""
-	if preview {
-		recNote = `<div class="kv"><span class="k">status</span><span class="v">saved preview — later session changes are not included</span></div>`
-	} else if doc.inProgress {
-		recNote = `<div class="kv"><span class="k">status</span><span class="v">still recording — a snapshot as of now will be published</span></div>`
-	}
 	absFile, err := filepath.Abs(file)
 	if err != nil {
 		absFile = file
@@ -286,12 +282,7 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 	runJSON := strings.ReplaceAll(string(doc.json), "<", `\u003c`)
 	// json.Marshal escapes < > & by default, so this is script-safe as-is.
 	// The file path is only ever read by a human in error text — abbreviated.
-	pubJSON, _ := json.Marshal(map[string]any{"hasKey": s.apiKey() != "", "file": displayPath(absFile), "endpoint": endpoint})
-	keyNote, btnLabel := "", "Publish"
-	if s.apiKey() == "" {
-		keyNote = " · no API key (slink login)"
-		btnLabel = "Sign in to publish"
-	}
+	pubJSON, _ := json.Marshal(map[string]any{"hasKey": s.apiKey() != "", "file": displayPath(absFile), "endpoint": endpoint, "title": name})
 	previewNote := ""
 	if preview {
 		previewNote = `<p class="note">Saved local preview · later session changes will not appear here.</p>`
@@ -301,14 +292,14 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 		address, _ := json.Marshal(fullURL)
 		fullScript = `<script>window.__FULL__=` + string(address) + `</script>`
 	}
-	composeLink, publishDisabled := "", ""
-	publishTarget := `<span class="note">unlisted → ` + html.EscapeString(s.Target) + keyNote + `</span>`
+	composeLink := ""
+	publishTarget := `<span class="note">encrypted → ` + html.EscapeString(s.Target) + `</span>`
 	downloadClass, downloadLabel := "btn", "download JSON"
 	if preview {
 		composeLink = `<a class="btn" href="/compose/` + id + `">Choose what to share</a>`
 	}
 	if doc.excerpt {
-		previewNote = `<p class="note">Excerpt preview · only the selected material and the author note are included. Excerpts can currently be downloaded locally.</p>`
+		previewNote = `<p class="note">Excerpt preview · only the selected material and the author note are included. Publishing encrypts this excerpt locally.</p>`
 		composeLink = ""
 		if source := s.editSource(id); source != "" {
 			composeLink = `<a class="btn" href="/compose/` + source + `">Edit selection</a>`
@@ -316,8 +307,7 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 				composeLink = `<a class="btn" href="/compose/` + source + `?view=` + id + `">Edit selection</a>`
 			}
 		}
-		publishDisabled, publishTarget = " hidden disabled", ""
-		downloadClass, downloadLabel = "btn primary", "Download excerpt"
+		downloadClass, downloadLabel = "btn", "Download excerpt"
 	}
 	localConfig := ""
 	tools := `<div class="pub">
@@ -325,14 +315,14 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
          <button class="btn" id="copy" title="copy this local URL, span selection included; publish to share with a colleague">copy local URL</button>
          <button class="` + downloadClass + `" id="dl" title="save the run document as ` + id + `.json">` + downloadLabel + `</button>
          ` + publishTarget + `
-         <button class="btn primary" id="pub"` + publishDisabled + `>` + btnLabel + `</button>
+         <div id="publish-control"></div>
        </div>`
 	top := `<div class="top">
        <p class="eyebrow" style="margin:0"><a href="/">← sessions</a></p>
        ` + tools + `
      </div>
      <div class="result-row"><span class="result" id="out"></span></div>`
-	if preview && publishDisabled == "" {
+	if preview && !doc.excerpt {
 		// The reading view owns its header: back link, editable title and one
 		// primary action. Whole-session publishing has no chrome here yet.
 		previewNote = ""
@@ -341,75 +331,11 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 		top = ""
 	}
 	return page(name,
-		top+`
-     <dialog id="confirm">
-       <p class="eyebrow" style="margin:0 0 12px">Publish this capture?</p>
-       <div class="kv"><span class="k">server</span><span class="v">`+html.EscapeString(s.Target)+`</span></div>
-       <div class="kv"><span class="k">title</span><span class="v">`+html.EscapeString(name)+`</span></div>
-       <div class="kv"><span class="k">spans</span><span class="v">`+fmt.Sprintf("%d", doc.spans)+`</span></div>
-       <div class="kv"><span class="k">size</span><span class="v">~`+approxSize(size)+`</span></div>`+recNote+`
-       <p class="dlg-warn">Unlisted is not private — anyone with the link can view it.</p>
-       <div class="dlg-actions">
-         <button class="btn" id="cancel">Cancel</button>
-         <button class="btn primary" id="go">Publish</button>
-       </div>
-     </dialog>
-     `+previewNote+`<div id="root"></div>
+		top+previewNote+`<div id="root"></div>
      <script type="application/json" id="run-data">`+runJSON+`</script><script>window.__RUN__=JSON.parse(document.getElementById("run-data").textContent)</script>`+fullScript+localConfig+`
      <script>window.__PUB__=`+string(pubJSON)+`</script>
      <script src="/assets/viewer.js"></script>
      <script>
-       const PUB=window.__PUB__,btn=document.getElementById("pub"),out=document.getElementById("out"),
-             dlg=document.getElementById("confirm");
-       const LOGIN="Not signed in — run `+"`slink login`"+` in a terminal, then reload this page.";
-       const hits=d=>d.error?.details?"\n"+d.error.details.map(h=>"  "+(h.pattern??h)+"  "+(h.preview??"")).join("\n"):"";
-       if(!btn){
-         // The reading view renders no whole-session tools.
-       }else if(!PUB.hasKey){
-         btn.onclick=()=>{out.className="result err";out.textContent=LOGIN};
-       }else{
-         btn.onclick=()=>{out.className="result";out.textContent="";dlg.showModal()};
-         document.getElementById("cancel").onclick=()=>dlg.close();
-         document.getElementById("go").onclick=async()=>{
-           dlg.close();
-           btn.disabled=true;btn.textContent="Publishing…";
-           let res;
-           try{
-             res=await fetch(PUB.endpoint,{method:"POST",headers:{"x-slink":"1"}});
-           }catch(e){
-             out.className="result err";
-             out.textContent="✗ could not reach the local slink server — is `+"`slink view`"+` still running?";
-             btn.disabled=false;btn.textContent="Publish";
-             return;
-           }
-           const d=await res.json().catch(()=>({}));
-           if(d.url){
-             const url=d.url+(location.hash||"");
-             let copied=false;
-             try{await navigator.clipboard.writeText(url);copied=true}catch{}
-             // DOM APIs, not innerHTML: the URL is server-provided bytes and
-             // must never be parsed as markup — nor linked unless it is http(s).
-             let link=document.createTextNode(url);
-             if(/^https?:\/\//i.test(url)){
-               link=document.createElement("a");
-               link.href=url;link.target="_blank";link.rel="noopener";link.textContent=url;
-             }
-             out.replaceChildren(link,(d.deduplicated?"  (already published)":"")+(copied?"  (copied)":"")+" — Anyone with this link can view it.");
-             btn.textContent="Published";
-           }else{
-             out.className="result err";
-             if(res.status===401){
-               out.textContent=LOGIN;
-             }else if(d.error?.code==="secrets_detected"){
-               out.textContent="✗ "+(d.error?.message??"publish blocked — credentials detected")+
-                 "\nredact the local file: "+(d.error?.path??PUB.file)+hits(d);
-             }else{
-               out.textContent="✗ "+(d.error?.message??"failed")+hits(d);
-             }
-             btn.disabled=false;btn.textContent="Publish";
-           }
-         };
-       }
        const copy=document.getElementById("copy"),dl=document.getElementById("dl");
        if(copy)copy.onclick=async()=>{
          try{await navigator.clipboard.writeText(location.href);copy.textContent="copied"}
@@ -423,18 +349,6 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
          setTimeout(()=>URL.revokeObjectURL(u),1000);
        };
      </script>`), nil
-}
-
-// approxSize renders a byte count the way the dialog wants it: rough, human.
-func approxSize(n int) string {
-	switch {
-	case n < 1024:
-		return fmt.Sprintf("%d B", n)
-	case n < 1024*1024:
-		return fmt.Sprintf("%.1f KB", float64(n)/1024)
-	default:
-		return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
-	}
 }
 
 func mustCompact(raw []byte) []byte {
@@ -504,13 +418,6 @@ func (s *Server) publishFile(file string) publishResult {
 			"details": ins.Secrets,
 		}}}
 	}
-	var document struct {
-		Extensions map[string]any `json:"extensions"`
-	}
-	json.Unmarshal([]byte(ins.Text), &document)
-	if document.Extensions[share.Extension] != nil {
-		return publishResult{409, map[string]any{"error": map[string]any{"message": "Excerpt publishing is not available yet. Download the prepared excerpt locally."}}}
-	}
 	res := cli.UploadRun(ins.Text, s.Target, s.apiKey())
 	if !res.OK {
 		status := res.Status
@@ -526,7 +433,7 @@ func (s *Server) publishFile(file string) publishResult {
 	if url, ok := res.Body["url"].(string); ok && s.OnPublish != nil {
 		s.OnPublish(url)
 	}
-	return publishResult{200, map[string]any{"url": res.Body["url"], "deduplicated": res.Body["deduplicated"]}}
+	return publishResult{200, map[string]any{"url": res.Body["url"], "deduplicated": res.Body["deduplicated"], "backup": res.Body["backup"]}}
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -552,6 +459,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		id = m[2]
 	}
 	switch {
+	case r.URL.Path == "/settings" && r.Method == "GET":
+		send(200, "text/html", page("Recovery and devices", `<a href="/">← Sessions</a><div id="root"></div><script>window.__IDENTITY__=true</script><script src="/assets/viewer.js"></script>`))
+	case r.URL.Path == "/api/identity":
+		s.identityAPI(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/login/"):
+		s.loginAPI(w, r)
 	case m != nil && strings.HasPrefix(m[1], "api/") && (m[1] == "api/compose" || m[1] == "api/title" || m[1] == "api/draft" || m[1] == "api/export") && id != "":
 		s.composeAPI(w, r, m[1], id)
 	case m != nil && m[1] == "compose" && id != "" && r.Method == http.MethodGet:
@@ -632,6 +545,11 @@ func (s *Server) Serve(port int) (string, func(), error) {
 	go srv.Serve(ln)
 	addr := fmt.Sprintf("http://127.0.0.1:%d", ln.Addr().(*net.TCPAddr).Port)
 	return addr, func() {
+		s.loginMu.Lock()
+		if s.login != nil {
+			s.login.cancel()
+		}
+		s.loginMu.Unlock()
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		srv.Shutdown(ctx)

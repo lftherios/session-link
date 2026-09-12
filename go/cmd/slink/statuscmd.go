@@ -261,6 +261,7 @@ func runDelete(args []string) {
 	}
 	// Browser-copied URLs carry query strings, fragments, trailing slashes.
 	id := ref
+	encrypted := strings.Contains(ref, "/s/") || strings.HasPrefix(ref, "s/")
 	for _, sep := range []string{"?", "#"} {
 		if i := strings.Index(id, sep); i >= 0 {
 			id = id[:i]
@@ -269,6 +270,10 @@ func runDelete(args []string) {
 	if i := strings.LastIndex(id, "/r/"); i >= 0 {
 		id = id[i+3:]
 	}
+	if i := strings.LastIndex(id, "/s/"); i >= 0 {
+		id = id[i+3:]
+	}
+	id = strings.TrimPrefix(id, "s/")
 	id = strings.TrimSuffix(id, "/")
 	if id == "" || strings.ContainsAny(id, "/?#") {
 		die(fmt.Sprintf("%q doesn't look like a published URL or id", ref))
@@ -284,7 +289,7 @@ func runDelete(args []string) {
 		if !term.IsTerminal(int(os.Stdin.Fd())) {
 			die("not a TTY — pass --yes to delete from scripts")
 		}
-		fmt.Fprintf(os.Stderr, "about to take %s/r/%s offline\n", target, id)
+		fmt.Fprintf(os.Stderr, "about to take published session %s on %s offline\n", id, target)
 		fmt.Fprintln(os.Stderr, "  the link stops working immediately")
 		fmt.Fprint(os.Stderr, "\nTake it offline? [y/N] ")
 		var line string
@@ -294,12 +299,28 @@ func runDelete(args []string) {
 			os.Exit(1)
 		}
 	}
-	status, body := cli.DeleteRun(target, apiKey, id)
+	var status int
+	var body string
+	if encrypted {
+		status, body = cli.DeleteShare(target, apiKey, id)
+	} else {
+		status, body = cli.DeleteRun(target, apiKey, id)
+		if status == 404 {
+			status, body = cli.DeleteShare(target, apiKey, id)
+			encrypted = status != 404
+		}
+	}
 	switch {
 	case status >= 200 && status < 300 || status == 410:
 		fmt.Fprintln(os.Stderr, "✓ taken offline — the page now shows a deletion notice")
-		fmt.Fprintf(os.Stderr, "    url:  %s/r/%s\n", target, id)
-		fmt.Fprintln(os.Stderr, "\n  note: publishing the identical session again would revive this URL")
+		route := "r"
+		if encrypted {
+			route = "s"
+		}
+		fmt.Fprintf(os.Stderr, "    url:  %s/%s/%s\n", target, route, id)
+		if !encrypted {
+			fmt.Fprintln(os.Stderr, "\n  note: publishing the identical session again would revive this URL")
+		}
 	case status == 0:
 		die(fmt.Sprintf("✗ can't reach %s (%s)\n    nothing was deleted", target, transportCause(body)))
 	case status == 401:

@@ -8,8 +8,10 @@ import { fileURLToPath } from "node:url";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import esbuild from "esbuild";
+import { buildValidator } from "./viewer-validator.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+await buildValidator();
 
 const result = await esbuild.build({
   entryPoints: [path.join(root, "packages", "viewer", "viewer-entry.tsx")],
@@ -21,10 +23,18 @@ const result = await esbuild.build({
   alias: { "@": root },
   define: { "process.env.NODE_ENV": '"production"' },
   logLevel: "warning",
+
 });
 
 const js = result.outputFiles[0].text;
 const out = path.join(root, "go", "internal", "open", "viewer.js");
+const hostedArg = process.argv.indexOf("--hosted-output");
+if (hostedArg !== -1) {
+  const hosted = process.argv[hostedArg + 1];
+  if (!hosted) throw new Error("--hosted-output requires a file path");
+  await mkdir(path.dirname(hosted), { recursive: true });
+  await writeFile(hosted, js);
+}
 await mkdir(path.dirname(out), { recursive: true });
 await writeFile(out, js);
 const branding = path.join(root, "go", "internal", "open", "branding");

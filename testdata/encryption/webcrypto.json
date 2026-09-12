@@ -1,0 +1,5 @@
+{
+  "key": "p8yb4b6vUIYVrLX7XkD1avyZHQskf4oLe2Lsbt363V8",
+  "envelope": "U0xJTktFAAEAAAAAEQEjcrBoxFgSF7h0speLN1cQ4LdUYTZAQn6xMFo5DUOPa13fLznMHTFApHzAxVSvncDbBo50ZSPv8COsWyY5DwBb5h8ewiMX3+tSxrC1685vhHn3CpHsLv7jls3kN4oKHlQumVZeuR4WKtXsNpvu3Nvz1S5CNpuEjFok9mwbmEU7CPnaeB0hbjfV5WXRi2zvemJty0DaypTD1hXHQbPVXT3Q04KC0A+Z0JQLAoF5wq8OkRg8PLX42dzSdAnx",
+  "plaintext": "{\"schema\":\"session/v0\",\"created_at\":\"2026-09-12T00:00:00Z\",\"name\":\"PRIVATE_INTEROP_SENTINEL\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\",\"raw\":{\"unicode\":\"αβ🎉\"}}]}"
+}

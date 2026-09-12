@@ -2,6 +2,8 @@ package open
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -13,6 +15,8 @@ import (
 
 	"github.com/lftherios/session-link/internal/cli"
 	"github.com/lftherios/session-link/internal/handoff"
+	"github.com/lftherios/session-link/internal/sealed"
+	"net/url"
 )
 
 func action(s *Server, method, path, origin, header string) *httptest.ResponseRecorder {
@@ -34,12 +38,13 @@ func previewFixture(t *testing.T) []byte {
 }
 
 func TestPreviewSelectionAndPublishUseSavedBytes(t *testing.T) {
+	t.Setenv("SLINK_HOME", t.TempDir())
 	data := previewFixture(t)
 	reads, uploads := 0, 0
 	var received []byte
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		uploads++
-		if r.URL.Path != "/api/runs" || r.Header.Get("Authorization") != "Bearer fixture-key" {
+		if r.URL.Path != "/api/shares" || r.Header.Get("Authorization") != "Bearer fixture-key" {
 			t.Errorf("unexpected upload %v", r)
 		}
 		received, _ = io.ReadAll(r.Body)
@@ -48,7 +53,8 @@ func TestPreviewSelectionAndPublishUseSavedBytes(t *testing.T) {
 			io.WriteString(w, `{"error":{"message":"Retry later"}}`)
 			return
 		}
-		io.WriteString(w, `{"url":"https://example.test/r/saved"}`)
+		hash := sha256.Sum256(received)
+		json.NewEncoder(w).Encode(map[string]any{"id": "23456789abcdef", "sha256": hex.EncodeToString(hash[:])})
 	}))
 	defer upstream.Close()
 	var published string
@@ -109,11 +115,21 @@ func TestPreviewSelectionAndPublishUseSavedBytes(t *testing.T) {
 		if w.Code != want {
 			t.Fatalf("publish: %d %s", w.Code, w.Body)
 		}
-		if !bytes.Equal(saved, received) {
-			t.Fatal("uploaded bytes differ from preview")
+		if bytes.Contains(received, []byte("notes.txt")) {
+			t.Fatal("plaintext reached hosted server")
+		}
+		if want == 200 {
+			var response struct{ URL string }
+			json.Unmarshal(w.Body.Bytes(), &response)
+			link, _ := url.Parse(response.URL)
+			fragment, _ := url.ParseQuery(link.Fragment)
+			plain, err := sealed.Decrypt(received, fragment.Get("key"))
+			if err != nil || !bytes.Equal(saved, plain) {
+				t.Fatal("encrypted upload changed saved preview", err)
+			}
 		}
 	}
-	if reads != 1 || published != "https://example.test/r/saved" {
+	if reads != 1 || !strings.HasPrefix(published, upstream.URL+"/s/23456789abcdef#key=") {
 		t.Fatalf("read=%d published=%q", reads, published)
 	}
 	for _, origin := range []string{"http://127.0.0.1:4401", "https://example.test"} {

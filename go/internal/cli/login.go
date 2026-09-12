@@ -1,13 +1,20 @@
 package cli
 
 import (
+	"bytes"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -22,10 +29,9 @@ func WriteConfig(c Config) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(file, append(b, '\n'), 0o600); err != nil {
+	if err := WritePrivate(file, append(b, '\n')); err != nil {
 		return "", err
 	}
-	os.Chmod(file, 0o600) // mode only applies on create
 	return file, nil
 }
 
@@ -43,6 +49,7 @@ func LoginWithKey(key, server string) (*LoginResult, error) {
 	}
 	c := ReadConfig()
 	c.APIKey = key
+	c.Login, c.UserID = "", ""
 	if server != "" {
 		c.Server = server
 	}
@@ -53,94 +60,109 @@ func LoginWithKey(key, server string) (*LoginResult, error) {
 	return &LoginResult{ConfigPath: file}, nil
 }
 
-// BrowserLogin mirrors the JS flow: mint a code, open the approve page,
-// poll until the key drops out. notify receives progress lines for stderr.
-func BrowserLogin(server string, notify func(string)) (*LoginResult, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-	res, err := client.Post(server+"/api/auth/cli", "application/json", nil)
-	if err != nil {
-		return nil, fmt.Errorf("cannot reach %s: %v", server, err)
+// LoginAttempt contains a short-lived grant; it must never be logged in full.
+type LoginAttempt struct {
+	Code     string `json:"-"`
+	UserCode string `json:"user_code"`
+	URL      string `json:"url"`
+	Server   string `json:"-"`
+}
+
+func loginClient() *http.Client {
+	return &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
+func BeginLogin(ctx context.Context, server, source string) (*LoginAttempt, error) {
+	u, err := url.Parse(server)
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+		(u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "localhost" || net.ParseIP(u.Hostname()).IsLoopback()))) {
+		return nil, fmt.Errorf("sign-in requires an HTTPS server (or localhost)")
 	}
+	server = strings.TrimRight(server, "/")
+	body, _ := json.Marshal(map[string]string{"source": source})
+	req, err := http.NewRequestWithContext(ctx, "POST", server+"/api/auth/cli", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("content-type", "application/json")
+	res, err := loginClient().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("cannot reach the sign-in server")
+	}
+	defer res.Body.Close()
 	var out struct {
 		Code     string `json:"code"`
 		UserCode string `json:"user_code"`
-		URL      string `json:"url"`
-		Error    *struct {
-			Message string `json:"message"`
-		} `json:"error"`
 	}
-	json.NewDecoder(res.Body).Decode(&out)
-	res.Body.Close()
-	if res.StatusCode == 503 {
-		msg := "browser login isn't configured on this server — pass --key rk_…"
-		if out.Error != nil && out.Error.Message != "" {
-			msg = out.Error.Message
-		}
-		return nil, fmt.Errorf("%s", msg)
+	if json.NewDecoder(io.LimitReader(res.Body, 8192)).Decode(&out) != nil || res.StatusCode != 200 || len(out.Code) != 43 || out.UserCode == "" {
+		return nil, fmt.Errorf("cannot start sign-in (HTTP %d); check that email or GitHub login is configured", res.StatusCode)
 	}
-	if res.StatusCode < 200 || res.StatusCode >= 300 || out.Code == "" {
-		if out.Error != nil {
-			return nil, fmt.Errorf("login failed — %s", out.Error.Message)
-		}
-		return nil, fmt.Errorf("login failed — HTTP %d", res.StatusCode)
+	if raw, err := base64.RawURLEncoding.DecodeString(out.Code); err != nil || len(raw) != 32 || base64.RawURLEncoding.EncodeToString(raw) != out.Code {
+		return nil, fmt.Errorf("invalid sign-in response")
 	}
+	// Use the configured server; never follow an arbitrary response URL.
+	return &LoginAttempt{Code: out.Code, UserCode: out.UserCode, URL: server + "/cli/" + out.Code, Server: server}, nil
+}
 
-	notify(fmt.Sprintf("Opening %s", out.URL))
-	if out.UserCode != "" {
-		notify(fmt.Sprintf("  confirm this code in the browser: %s", out.UserCode))
-	}
-	notify("  if the browser doesn't open, visit the URL yourself")
-	OpenBrowser(out.URL)
-
-	deadline := time.Now().Add(10 * time.Minute)
-	misses := 0
-	for time.Now().Before(deadline) {
-		time.Sleep(2 * time.Second)
-		poll, err := client.Get(server + "/api/auth/cli/" + out.Code)
+func WaitLogin(ctx context.Context, attempt *LoginAttempt) (*LoginResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("sign-in expired or was cancelled; try again")
+		case <-ticker.C:
+		}
+		req, err := http.NewRequestWithContext(ctx, "GET", attempt.Server+"/api/auth/cli/"+attempt.Code, nil)
 		if err != nil {
-			// Keep polling through blips, but don't pretend all is well forever.
-			if misses++; misses == 5 {
-				notify(fmt.Sprintf("  still trying to reach %s (%v)…", server, err))
-			}
+			return nil, err
+		}
+		res, err := loginClient().Do(req)
+		if err != nil {
 			continue
-		}
-		misses = 0
-		if poll.StatusCode == http.StatusAccepted {
-			poll.Body.Close()
-			continue
-		}
-		if poll.StatusCode == http.StatusNotFound {
-			poll.Body.Close()
-			return nil, fmt.Errorf("login code expired — run `slink login` again")
-		}
-		if poll.StatusCode < 200 || poll.StatusCode >= 300 {
-			poll.Body.Close()
-			return nil, fmt.Errorf("login failed — HTTP %d", poll.StatusCode)
 		}
 		var grant struct {
 			Key   string `json:"key"`
 			Login string `json:"login"`
+			UID   string `json:"uid"`
 		}
-		json.NewDecoder(poll.Body).Decode(&grant)
-		poll.Body.Close()
-		if grant.Key == "" {
-			return nil, fmt.Errorf("login failed — unexpected response from the server; run `slink login` again")
+		decodeErr := json.NewDecoder(io.LimitReader(res.Body, 8192)).Decode(&grant)
+		res.Body.Close()
+		if res.StatusCode == http.StatusAccepted {
+			continue
+		}
+		if res.StatusCode == 404 {
+			return nil, fmt.Errorf("sign-in expired; try again")
+		}
+		if decodeErr != nil || res.StatusCode != 200 || !strings.HasPrefix(grant.Key, "rk_") {
+			return nil, fmt.Errorf("sign-in failed (HTTP %d)", res.StatusCode)
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 		c := ReadConfig()
 		prev := c.Server
-		c.APIKey = grant.Key
-		c.Server = server
-		c.Login = grant.Login // shown at the publish gate: "as @login"
+		c.APIKey, c.Server, c.Login, c.UserID = grant.Key, attempt.Server, grant.Login, grant.UID
 		file, err := WriteConfig(c)
 		if err != nil {
 			return nil, err
 		}
 		return &LoginResult{ConfigPath: file, Login: grant.Login, PrevServer: prev}, nil
 	}
-	if misses >= 5 {
-		return nil, fmt.Errorf("timed out — never reached %s; check the URL and run `slink login` again", server)
+}
+
+// BrowserLogin remains the terminal entry point; the viewer uses Begin/Wait.
+func BrowserLogin(server string, notify func(string)) (*LoginResult, error) {
+	attempt, err := BeginLogin(context.Background(), server, "terminal")
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("timed out waiting for browser approval — run `slink login` again")
+	notify(fmt.Sprintf("Opening %s\n  confirm this code in the browser: %s", attempt.URL, attempt.UserCode))
+	notify("  if the browser doesn't open, visit the URL yourself")
+	OpenBrowser(attempt.URL)
+	return WaitLogin(context.Background(), attempt)
 }
 
 // OpenBrowser is best-effort — the URL is always printed too.

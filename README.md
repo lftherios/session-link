@@ -16,6 +16,19 @@
 
 </div>
 
+## Encrypted sharing in this checkout
+
+New publishes encrypt the prepared session locally with a fresh AES-256-GCM key.
+The compatible hosted server stores ciphertext in iroh-blobs and serves it to the
+browser for decryption. Email links and one-time codes join GitHub sign-in.
+This prototype is not yet deployed: use an upgraded server with `/api/shares`.
+The client refuses to fall back to plaintext on older servers.
+
+Anyone with the complete `/s/<id>#key=…` link can read it. Keep the private receipts
+in `~/.slink/shares` backed up; account login cannot restore a lost encryption key.
+Existing `/r/` links retain their earlier unlisted behavior. See
+[identity and encryption](docs/identity-encryption.md) for scope and limitations.
+
 ## Why
 
 Agent runs are ephemeral. When something interesting happens — a clever tool call, a wrong turn, a great eval result — your options are a screenshot that loses the tree, timing, and cost, or a wall of pasted JSON nobody will read. `slink` gives you a third option: **a link.** Capture is ambient and local; publishing is deliberate; the result is a permanent page a teammate can actually open.
@@ -42,7 +55,7 @@ slink view
 # Run `slink login` in another terminal when needed, then reload the preview.
 ```
 
-No code changes, SDK, or re-run are required. `view` discovers Claude Code, Codex, opencode, pi, and Hermes history for this project ([details below](#works-with-the-agent-you-already-use)). Multiple sessions open a searchable picker; explicit session references never silently select a different session. Previewing needs no account; `login` (free, GitHub) is for publishing, so sessions are attributed and deletable by you. The existing `slink import` and terminal publishing command `slink share` remain available.
+No code changes, SDK, or re-run are required. `view` discovers Claude Code, Codex, opencode, pi, and Hermes history for this project ([details below](#works-with-the-agent-you-already-use)). Multiple sessions open a searchable picker; explicit session references never silently select a different session. Previewing needs no account; publishing prompts for email or GitHub sign-in in the viewer, so shares are owned and deletable by you. The existing `slink import` and terminal publishing command `slink share` remain available.
 
 ```bash
 slink view --from codex --session <session-id>
@@ -68,7 +81,7 @@ URL. Keep the tunnel and viewer running. There is no hosted relay in this flow.
 - **Recording fresh instead?** `slink record -- python agent.py` — or `-- node agent.js`, anything that speaks the Anthropic or OpenAI API. It points `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` at a local recording proxy, runs your command, and writes each call to `~/.slink` as it happens — streaming passed through untouched and reassembled, wire-exact.
 - **Local models?** The proxy can point at any compatible upstream: `SLINK_UPSTREAM_OPENAI=http://localhost:11434 slink record -- …` records Ollama sessions too. And if your shell already has `OPENAI_BASE_URL` pointed somewhere custom, `slink on` keeps forwarding there — your traffic is never silently rerouted.
 - **Pick up where you left off.** `slink view` opens on the latest human input and agent response. Search this view or the whole session, move through the conversation, or expand agent activity without losing your place. Click the title to rename the session; the name is saved locally and used for new views. See the [viewer arrival design](docs/viewer-arrival.md).
-- **Share an outcome with context?** Choose **Share this view** to preview the current human input and agent response, then save the view locally. To share just part of a message, select the text, right-click it and choose **Comment and share**. In the panel you can include agent activity, narrow to exact passages, and add a title or comment. Saved views can be reopened and edited later. Whole-session publishing is being redesigned; excerpt publishing awaits hosted integration. See the [excerpt contract and limits](docs/share-excerpt-v1.md).
+- **Share an outcome with context?** Choose **Share this view** to preview the current human input and agent response, then publish an encrypted link or save the view locally. To share just part of a message, select the text, right-click it and choose **Comment and share**. In the panel you can include agent activity, narrow to exact passages, and add a title or comment. Saved views can be reopened and edited later. If you are signed out, the panel keeps your prepared view through sign-in and returns to the final publish confirmation. See the [excerpt contract and limits](docs/share-excerpt-v1.md).
 
 ## Always on (optional)
 
@@ -118,7 +131,7 @@ A published session isn't a screenshot — it's the real thing, rendered:
 
 - **Capture is 100% local.** A recording proxy tees the calls to disk; nothing is uploaded until you run `push`.
 - **API keys never touch the capture.** The proxy records request/response bodies only — auth headers are forwarded upstream and dropped, so they can't end up in a published session.
-- **Secrets are scanned twice** — client-side before a single byte leaves your machine, and again server-side before anything touches disk. The scan is deliberately high-precision, low-recall: [a short list of unambiguous key formats](https://github.com/lftherios/session-link/blob/main/packages/format/secret-patterns.mjs) (`sk-…`, `ghp_…`, `AKIA…`, Stripe, PEM blocks), not DLP. It catches a pasted key; it can't know which *content* is sensitive — that's what reviewing in `slink view` before publishing is for.
+- **Exports are scanned before encryption** — client-side before upload. The encrypted endpoint cannot scan plaintext; legacy plaintext uploads also have a server scan. The scan is deliberately high-precision, low-recall: [a short list of unambiguous key formats](https://github.com/lftherios/session-link/blob/main/packages/format/secret-patterns.mjs) (`sk-…`, `ghp_…`, `AKIA…`, Stripe, PEM blocks), not DLP. It catches a pasted key; it can't know which *content* is sensitive — that's what reviewing in `slink view` before publishing is for.
 - **Sessions are immutable and content-addressed** — the exact bytes are served back, so anyone can verify: `curl -s https://session.link/api/runs/<id>/raw | shasum -a 256`.
 - **Deletion is a tombstone, and publishes are owned.** Deleting (only your account can) takes the page, unfurls, and raw bytes offline immediately. The underlying blob is currently retained server-side — re-publishing identical bytes from your account revives the same URL — so treat publishing as hard to fully un-ring; a true purge path is on the roadmap.
 - **Unlisted is not access control.** ~69 bits of unguessable URL, no public index, crawlers excluded — the share-a-doc-link model. Anyone holding the link can read the session; keep genuinely sensitive runs local.
@@ -174,3 +187,13 @@ rad:z24FnLsshNV8kq5fWCTi2dbKueomr
 ```
 
 Clone it with `rad clone rad:z24FnLsshNV8kq5fWCTi2dbKueomr`.
+
+### Recovery and devices
+
+Open **Recovery and devices** in the local viewer to create and save a recovery
+key. New devices need approval from an existing device or that recovery key to
+restore your private share links; email/GitHub login alone cannot unlock them.
+Approved devices automatically back up new share keys in an encrypted vault.
+Revoking a device blocks future key backups; links it already knows still work.
+See the [identity and crypto guide](docs/identity-encryption.md) for the key model,
+recovery instructions and prototype limits. Fly deployment remains pending.
