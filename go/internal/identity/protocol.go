@@ -15,6 +15,7 @@ type Device struct {
 	Wrap string `json:"wrap"`
 }
 type State struct {
+	Inbox        string   `json:"inbox,omitempty"`
 	Account      string   `json:"account"`
 	Seq          int      `json:"seq"`
 	Prev         string   `json:"prev"`
@@ -66,15 +67,15 @@ func (r Record) head() string {
 	}
 	return r.Events[len(r.Events)-1].hash()
 }
-func (r Record) verify(account string) (State, Vault, error) {
+func verifyHistory(events []Signed, account string) (State, error) {
 	var previous State
-	var vault Vault
 	var head string
-	bad := func() (State, Vault, error) { return State{}, Vault{}, errors.New("invalid signed device history") }
-	if len(r.Events) == 0 || len(r.Events) > 512 {
+	inboxes := map[string]bool{}
+	bad := func() (State, error) { return State{}, errors.New("invalid signed device history") }
+	if len(events) == 0 || len(events) > 512 {
 		return bad()
 	}
-	for i, event := range r.Events {
+	for i, event := range events {
 		var next State
 		if event.read(&next) != nil || next.Account != account || next.Seq != i || next.Prev != head || next.Epoch < 1 || len(next.Devices) < 1 || len(next.Devices) > 32 {
 			return bad()
@@ -84,6 +85,11 @@ func (r Record) verify(account string) (State, Vault, error) {
 		}
 		if _, err := decode(next.Recovery, 32); err != nil {
 			return bad()
+		}
+		if next.Inbox != "" {
+			if _, err := decode(next.Inbox, 32); err != nil {
+				return bad()
+			}
 		}
 		seen := map[string]bool{}
 		for _, d := range next.Devices {
@@ -141,12 +147,22 @@ func (r Record) verify(account string) (State, Vault, error) {
 					removed++
 				}
 			}
+			if next.Kind != "revoke" && next.Kind != "sharing" && next.Inbox != previous.Inbox {
+				return bad()
+			}
 			switch next.Kind {
+			case "sharing":
+				if previous.Inbox != "" || next.Inbox == "" || added != 0 || removed != 0 || next.Epoch != previous.Epoch || next.RecoveryWrap != previous.RecoveryWrap {
+					return bad()
+				}
 			case "approve", "recover":
 				if added != 1 || removed != 0 || next.Epoch != previous.Epoch || next.RecoveryWrap != previous.RecoveryWrap {
 					return bad()
 				}
 			case "revoke":
+				if (previous.Inbox == "" && next.Inbox != "") || (previous.Inbox != "" && (next.Inbox == "" || next.Inbox == previous.Inbox)) {
+					return bad()
+				}
 				if added != 0 || removed != 1 || next.Epoch != previous.Epoch+1 {
 					return bad()
 				}
@@ -166,8 +182,26 @@ func (r Record) verify(account string) (State, Vault, error) {
 				return bad()
 			}
 		}
+		// Every incoming-share key is introduced once; a retired key never returns.
+		if next.Inbox != "" && next.Inbox != previous.Inbox {
+			if inboxes[next.Inbox] {
+				return bad()
+			}
+			inboxes[next.Inbox] = true
+		}
 		previous, head = next, event.hash()
 	}
+	return previous, nil
+}
+func (r Record) verify(account string) (State, Vault, error) {
+	previous, err := verifyHistory(r.Events, account)
+	if err != nil {
+		return State{}, Vault{}, err
+	}
+	head := r.head()
+	var vault Vault
+	bad := func() (State, Vault, error) { return State{}, Vault{}, errors.New("invalid signed vault") }
+
 	if r.Vault.read(&vault) != nil || vault.Account != account || vault.Head != head || vault.Epoch != previous.Epoch || vault.Revision < 1 || len(vault.Data) > 6*1024*1024 {
 		return bad()
 	}

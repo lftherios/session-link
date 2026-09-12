@@ -143,6 +143,15 @@ func TestRecoveryDeviceIntegration(t *testing.T) {
 	}
 	first := addReceipt(a, "23456789abcdef")
 	call(a, "sync", Input{})
+	// Version-1 vaults explicitly enroll an incoming key without changing
+	// their recovery identity or losing existing share receipts.
+	call(a, "sharing", Input{})
+	sharing, err := a.nativeKeys(ctx, false)
+	if err != nil || sharing.data.Version != 2 || sharing.state.Inbox == "" || len(sharing.data.Shares) != 1 {
+		t.Fatal("incoming-share migration failed", err)
+	}
+	oldInbox := sharing.state.Inbox
+	oldInboxPrivate, _ := decode(sharing.data.Inboxes[oldInbox], 32)
 	wrongAccount := Receipt{Server: server.URL, Account: "usr_other", Key: enc.EncodeToString(random(32)), SHA256: strings.Repeat("b", 64), URL: server.URL + "/s/23456789abcdeg#key=" + enc.EncodeToString(random(32))}
 	privateWrite(filepath.Join(a.Home, "shares", "other.json"), wrongAccount)
 	if s := call(b, "status", Input{}); s.State != "locked" || len(s.Shares) != 0 {
@@ -177,6 +186,15 @@ func TestRecoveryDeviceIntegration(t *testing.T) {
 	if _, err := a.decrypt(oldKey, newState, newVault); err == nil {
 		t.Fatal("revoked device unlocked rotated vault")
 	}
+	current, err := a.nativeKeys(ctx, false)
+	if err != nil || current.state.Inbox == oldInbox || current.data.Inboxes[oldInbox] == "" {
+		t.Fatal("revocation did not rotate incoming keys and retain older grants", err)
+	}
+	contentKey := random(32)
+	futureGrant, _ := wrap(current.state.Inbox, contentKey, namedContext(strings.Repeat("a", 64), initial.Account, current.state.Root, current.state.Epoch))
+	if _, err := unwrap(oldInboxPrivate, futureGrant, namedContext(strings.Repeat("a", 64), initial.Account, current.state.Root, current.state.Epoch)); err == nil {
+		t.Fatal("revoked device decrypted a future incoming grant")
+	}
 	if s := call(b, "status", Input{}); s.State != "locked" || len(s.Shares) != 0 {
 		t.Fatal("revoked device remained approved")
 	}
@@ -198,6 +216,10 @@ func TestRecoveryDeviceIntegration(t *testing.T) {
 	recovered := call(c, "recover", Input{Name: "Recovered laptop", RecoveryKey: token})
 	if recovered.State != "ready" || len(recovered.Shares) != 1 || recovered.Shares[0].URL != first.URL {
 		t.Fatal("recovery did not restore exact links")
+	}
+	recoveredKeys, err := c.nativeKeys(ctx, false)
+	if err != nil || len(recoveredKeys.data.Inboxes) != 2 || recoveredKeys.data.Inboxes[oldInbox] == "" {
+		t.Fatal("recovery did not restore incoming key history", err)
 	}
 	second := addReceipt(c, "23456789abcdeh")
 	call(c, "sync", Input{})

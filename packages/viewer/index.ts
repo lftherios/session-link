@@ -3,3 +3,4 @@
 // so a preview is byte-for-byte what a recipient sees.
 export { RunViewer } from "./RunViewer";
 export { EncryptedView } from "./EncryptedView";
+export { NamedView } from "./NamedView";

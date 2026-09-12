@@ -2,8 +2,7 @@
 import { useEffect, useState } from "react";
 import type { Run } from "@session-link/format";
 import { RunViewer } from "./RunViewer";
-import { decryptDocument, MAX_PLAINTEXT, HEADER_SIZE } from "./encryption";
-import validate from "./validate-session.js";
+import { readCiphertext, openDocument } from "./sealed-document";
 
 export function EncryptedView({ id }: { id: string }) {
   const [run, setRun] = useState<Run>();
@@ -26,33 +25,7 @@ export function EncryptedView({ id }: { id: string }) {
       if (!key) throw new Error("This link is missing its encryption key. Ask the sender for the complete private link.");
       const response = await fetch(`/api/shares/${encodeURIComponent(id)}`, { signal: abort.signal, credentials: "omit", cache: "no-store" });
       if (!response.ok) throw new Error(response.status === 404 || response.status === 410 ? "This share is unavailable. It may have been deleted." : "The share could not be downloaded. Please try again.");
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("The share could not be downloaded.");
-      const chunks: Uint8Array[] = []; let size = 0;
-      try {
-        while (true) {
-          const part = await reader.read(); if (part.done) break;
-          size += part.value.length;
-          if (size > MAX_PLAINTEXT + HEADER_SIZE + 16) throw new Error("This share exceeds the supported size.");
-          chunks.push(part.value);
-        }
-      } finally { await reader.cancel().catch(() => {}); }
-      const bytes = new Uint8Array(size); let offset = 0;
-      for (const part of chunks) { bytes.set(part, offset); offset += part.length; }
-      const plain = await decryptDocument(bytes, key);
-      const doc = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(plain));
-      if (!validate(doc)) throw new Error("The decrypted document is not a valid session.");
-      const ids = new Map<string, string | undefined>();
-      for (const span of doc.spans) { if (ids.has(span.id)) throw new Error("The document contains duplicate steps."); ids.set(span.id, span.parent_id ?? undefined); }
-      const checked = new Set<string>();
-      for (const id of ids.keys()) {
-        const seen = new Set<string>(); let current: string | undefined = id;
-        while (current && ids.has(current) && !checked.has(current)) {
-          if (seen.has(current)) throw new Error("The document contains a cyclic step tree.");
-          seen.add(current); current = ids.get(current);
-        }
-        for (const item of seen) checked.add(item);
-      }
+      const doc = await openDocument(await readCiphertext(response), key);
       if (!abort.signal.aborted) setRun(doc);
     })().catch(e => { if (!abort.signal.aborted) setError(e instanceof Error ? e.message : "Could not open this share."); });
     return () => abort.abort();

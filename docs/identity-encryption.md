@@ -6,8 +6,9 @@ The Go client scans and encrypts the prepared export locally. The hosted
 `session-link-server` stores ciphertext in iroh-blobs FsStore and serves it over
 HTTPS for browser decryption. Email link/code and GitHub login identify the same
 stable account model. Recovery and approved devices protect an encrypted backup
-of the owner's complete private share links. Named-recipient sharing and passkeys
-remain future work.
+of the owner's complete private share links. Named-recipient shares now use approved browser devices and encrypted account
+grants; see the [named-sharing guide](named-recipient-sharing.md). Passkeys remain
+future work.
 
 ## First share, without an existing account
 
@@ -32,9 +33,10 @@ retroactively encrypted. New clients never fall back to plaintext uploading.
 | Material | Purpose | Where it lives |
 | --- | --- | --- |
 | API credential | Authorizes uploads, deletions and access to account metadata/ciphertext | Native config, mode 0600; hashed on server |
-| Per-share key, 32 random bytes | AES-256-GCM encryption of one exact export | Complete link fragment, local receipt, encrypted vault |
+| Per-share key, 32 random bytes | AES-256-GCM encryption of one exact export | Bearer-link fragment or encrypted named grants; local receipt and encrypted vault |
 | Device Ed25519 key pair | Signs approvals, revocations and vault updates | Private seed on that device; public key in signed history |
 | Device X25519 key pair | Unwraps the current vault key for that device | Private key on that device; public key in signed history |
+| Incoming-share X25519 key pair | Unwraps content keys addressed to an account | Public key in signed history; private keyring in encrypted version-2 vault |
 | Vault key, 32 random bytes | AES-256-GCM encryption of the saved-link backup | Memory during use; encrypted separately to every approved device and recovery public key |
 | Recovery key, 32 random secret bytes plus account/root fingerprint | Unlocks the encrypted recovery package | User's password manager or offline copy |
 | Recovery Ed25519 key pair | Authorizes initial setup and recovery enrollment | Private seed inside the encrypted recovery package; public key pins account crypto identity |
@@ -72,8 +74,11 @@ fingerprint, decrypts the recovery package and current recovery wrapper, and
 signs enrollment of fresh device keys. This works after all original devices
 are lost. Account login is still required to fetch the encrypted backup.
 
-Revocation removes another device, rotates the vault key, re-encrypts the vault
-and replaces every surviving device/recovery wrapper atomically. A removed
+Revocation removes another device, rotates the vault key and any enrolled incoming-share key, re-encrypts the vault
+and replaces every surviving device/recovery wrapper atomically. Every
+incoming-share key is introduced exactly once: verifiers reject a history that
+reinstates a retired key, so an old private key held by a revoked device never
+opens future grants. A removed
 signing key cannot approve devices or write future vault versions. Already
 received links and content keys still work; revocation cannot erase those copies.
 Revoke account API credentials separately on the hosted account page.
@@ -91,7 +96,8 @@ part of production preparation.
 A signed object is `{payload, signature}`, both canonical unpadded base64url.
 The payload is the exact UTF-8 JSON bytes. Signatures cover
 `"slink/" + purpose + "/v1" + NUL + payload_bytes`, with separate purposes
-`event`, `vault` and `request`. Verification never reserializes JSON. The SHA-256
+`event`, `vault` and `request`. Named sharing adds `named-policy`,
+`recipient-claim` and `named-grant`. Verification never reserializes JSON. The SHA-256
 of decoded event bytes identifies each history head.
 
 Each event contains account ID, sequence, previous head, operation, signer,
@@ -100,8 +106,8 @@ list with wrappers. The root signs genesis. An active device signs a single
 approval or revocation; the recovery root signs a single recovery enrollment.
 Existing device public keys cannot change in place. Both client and server
 verify the full chain and reject unapproved signers and invalid transitions.
-Native clients pin the root, previous history head and highest vault revision
-on disk; old or conflicting histories are rejected.
+Native and browser clients pin the root, previous history head and highest vault revision
+locally; old or conflicting histories are rejected.
 
 Vault snapshots separately sign account ID, increasing revision, current history
 head, key epoch, writer and ciphertext. An event and its new vault snapshot
@@ -156,7 +162,7 @@ log or independently verified human identity.
   secrets through this protocol.
 - Initial limits: 32 active devices, 512 device events, 16 pending requests,
   10,000 backed-up links and 4 MiB vault plaintext. Requests are capped at 12 MiB.
-  History compaction, recovery-key replacement, passkeys, named recipients and
+  History compaction, recovery-key replacement, passkeys and
   key transparency need separate work.
 
 The hosted recipient viewer is trusted JavaScript: compromised delivered code

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/lftherios/session-link/internal/cli"
 	"github.com/lftherios/session-link/internal/handoff"
+	"github.com/lftherios/session-link/internal/identity"
 	"github.com/lftherios/session-link/internal/spool"
 )
 
@@ -396,7 +398,8 @@ func (s *Server) publish(id string) publishResult {
 	return s.publishFile(filepath.Join(s.CaptureDir, id+".json"))
 }
 
-func (s *Server) publishFile(file string) publishResult {
+func (s *Server) publishFile(file string) publishResult { return s.publishFileTo(file, nil) }
+func (s *Server) publishFileTo(file string, recipients []string) publishResult {
 	ins, err := cli.InspectRunFile(file)
 	if err != nil {
 		return publishResult{400, map[string]any{"error": map[string]any{"message": err.Error()}}}
@@ -417,6 +420,17 @@ func (s *Server) publishFile(file string) publishResult {
 			"path":    displayPath(abs), // read by a human in the page's error text
 			"details": ins.Secrets,
 		}}}
+	}
+
+	if recipients != nil {
+		result, err := (identity.Client{Home: cli.Home(), Server: s.Target, APIKey: s.apiKey()}).NamedPublish(context.Background(), ins.Text, recipients)
+		if err != nil {
+			return publishResult{identity.HTTPStatus(err), map[string]any{"error": map[string]string{"message": err.Error()}}}
+		}
+		if s.OnPublish != nil {
+			s.OnPublish(result.URL)
+		}
+		return publishResult{200, map[string]any{"id": result.ID, "url": result.URL, "recipients": result.Recipients, "warning": result.Error}}
 	}
 	res := cli.UploadRun(ins.Text, s.Target, s.apiKey())
 	if !res.OK {
@@ -461,6 +475,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/settings" && r.Method == "GET":
 		send(200, "text/html", page("Recovery and devices", `<a href="/">← Sessions</a><div id="root"></div><script>window.__IDENTITY__=true</script><script src="/assets/viewer.js"></script>`))
+	case r.URL.Path == "/shared" && r.Method == "GET":
+		send(200, "text/html", page("Shared with people", `<a href="/">← Sessions</a><div id="root"></div><script>window.__NAMED_OUTBOX__=true</script><script src="/assets/viewer.js"></script>`))
+	case r.URL.Path == "/api/named":
+		s.namedAPI(w, r)
 	case r.URL.Path == "/api/identity":
 		s.identityAPI(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/login/"):
@@ -525,7 +543,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if m[1] == "api/publish-preview" {
 			file = filepath.Join(s.previewDir(), id+".json")
 		}
-		out := s.publishFile(file)
+		var input struct {
+			Recipients []string `json:"recipients"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&input); err != nil && err != io.EOF {
+			send(400, "application/json", `{"error":{"message":"invalid publish request"}}`)
+			return
+		}
+		out := s.publishFileTo(file, input.Recipients)
 		b, _ := json.Marshal(out.Body)
 		send(out.Status, "application/json", string(b))
 	default:
@@ -541,10 +566,13 @@ func (s *Server) Serve(port int) (string, func(), error) {
 	if err != nil {
 		return "", nil, err
 	}
+	ctxWork, cancelWork := context.WithCancel(context.Background())
+	go s.resumeNamed(ctxWork)
 	srv := &http.Server{Handler: s}
 	go srv.Serve(ln)
 	addr := fmt.Sprintf("http://127.0.0.1:%d", ln.Addr().(*net.TCPAddr).Port)
 	return addr, func() {
+		cancelWork()
 		s.loginMu.Lock()
 		if s.login != nil {
 			s.login.cancel()

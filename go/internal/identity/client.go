@@ -54,8 +54,10 @@ type Receipt struct {
 	URL     string `json:"url"`
 }
 type contents struct {
-	Version int       `json:"version"`
-	Shares  []Receipt `json:"shares"`
+	Named   []outbox          `json:"named,omitempty"`
+	Inboxes map[string]string `json:"inboxes,omitempty"`
+	Version int               `json:"version"`
+	Shares  []Receipt         `json:"shares"`
 }
 type Input struct {
 	Name        string `json:"name"`
@@ -249,8 +251,36 @@ func (c Client) decrypt(key []byte, state State, v Vault) (contents, error) {
 		return contents{}, errors.New("cannot decrypt encrypted key vault")
 	}
 	var data contents
-	if len(raw) > 4*1024*1024 || json.Unmarshal(raw, &data) != nil || data.Version != 1 || len(data.Shares) > 10000 {
+	if len(raw) > 4*1024*1024 || json.Unmarshal(raw, &data) != nil || (data.Version != 1 && data.Version != 2) || len(data.Shares) > 10000 {
 		return contents{}, errors.New("invalid key vault")
+	}
+	if state.Inbox != "" {
+		if data.Version != 2 || len(data.Inboxes) > 512 {
+			return contents{}, errors.New("update slink to read this key vault")
+		}
+		if _, ok := data.Inboxes[state.Inbox]; !ok {
+			return contents{}, errors.New("incoming-share key is missing")
+		}
+		for public, encoded := range data.Inboxes {
+			raw, err := decode(encoded, 32)
+			if err != nil {
+				return contents{}, err
+			}
+			private, err := ecdh.X25519().NewPrivateKey(raw)
+			if err != nil || enc.EncodeToString(private.PublicKey().Bytes()) != public {
+				return contents{}, errors.New("invalid incoming-share key")
+			}
+		}
+	} else if data.Version != 1 || len(data.Inboxes) > 0 {
+		return contents{}, errors.New("unbound incoming-share keys")
+	}
+	if len(data.Named) > 10000 {
+		return contents{}, errors.New("too many private shares")
+	}
+	for _, item := range data.Named {
+		if !validOutbox(item, c.Server, state.Account, state.Root) {
+			return contents{}, errors.New("invalid private sharing backup")
+		}
 	}
 	for _, receipt := range data.Shares {
 		if !validReceipt(receipt, c.Server, state.Account) {
@@ -294,7 +324,36 @@ func (c Client) merge(data contents, account string, owned []OwnedShare) (conten
 			byURL[receipt.URL] = receipt
 		}
 	}
-	data.Version = 1
+	if data.Version == 0 {
+		data.Version = 1
+	}
+	named := map[string]outbox{}
+	for _, item := range data.Named {
+		named[item.SHA256] = item
+	}
+	files, err := os.ReadDir(filepath.Join(c.Home, "named-shares"))
+	if err != nil && !os.IsNotExist(err) {
+		return data, err
+	}
+	for _, entry := range files {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), "pending-") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(c.Home, "named-shares", entry.Name()))
+		if err != nil {
+			return data, err
+		}
+		var item outbox
+		if json.Unmarshal(raw, &item) == nil && item.Server == c.Server && item.Account == account && namedID.MatchString(item.ID) && len(item.Envelope) == 0 {
+			named[item.SHA256] = item
+		}
+	}
+	data.Named = nil
+	for _, item := range named {
+		data.Named = append(data.Named, item)
+	}
+	sort.Slice(data.Named, func(i, j int) bool { return data.Named[i].SHA256 < data.Named[j].SHA256 })
+
 	data.Shares = []Receipt{}
 	for _, receipt := range byURL {
 		data.Shares = append(data.Shares, receipt)
@@ -319,9 +378,26 @@ func (c Client) importShares(data contents) error {
 			return err
 		}
 	}
+	for _, item := range data.Named {
+		file := c.outboxFile(item.SHA256)
+		if _, err := os.Stat(file); os.IsNotExist(err) {
+			if err := privateWrite(file, item); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 func (c Client) commit(ctx context.Context, old *Record, next State, event *Signed, data contents, key []byte, signer ed25519.PrivateKey) (remote, error) {
+	if len(data.Named) > 10000 || (len(data.Named) > 0 && data.Version != 2) {
+		return remote{}, errors.New("invalid private sharing backup")
+	}
+	for _, item := range data.Named {
+		if !validOutbox(item, c.Server, next.Account, next.Root) {
+			return remote{}, errors.New("invalid private sharing backup")
+		}
+	}
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return remote{}, err
@@ -590,7 +666,10 @@ func (c Client) handle(ctx context.Context, action string, in Input) (Status, er
 	if action == "status" {
 		return result, nil
 	}
-	if action != "sync" && action != "approve" && action != "revoke" {
+	if action == "sharing" && state.Inbox != "" {
+		return result, nil
+	}
+	if action != "sync" && action != "approve" && action != "revoke" && action != "sharing" {
 		return result, errors.New("unknown device action")
 	}
 	data, err = c.merge(data, state.Account, remote.Owned)
@@ -600,7 +679,11 @@ func (c Client) handle(ctx context.Context, action string, in Input) (Status, er
 	signer := d.key()
 	state.Signer = own.ID
 	var event *Signed
-	if action == "approve" {
+	if action == "sharing" {
+		if err := data.rotateInbox(&state); err != nil {
+			return result, err
+		}
+	} else if action == "approve" {
 		var pending *Signed
 		var request Request
 		for _, signed := range remote.Requests {
@@ -629,6 +712,11 @@ func (c Client) handle(ctx context.Context, action string, in Input) (Status, er
 			return result, errors.New("device is no longer approved")
 		}
 		state.Epoch++
+		if state.Inbox != "" {
+			if err := data.rotateInbox(&state); err != nil {
+				return result, err
+			}
+		}
 		key = random(32)
 		devices := []Device{}
 		for _, device := range state.Devices {
@@ -672,4 +760,18 @@ func deviceName(name string) string {
 		name = name[:len(name)-n]
 	}
 	return name
+}
+
+func (data *contents) rotateInbox(state *State) error {
+	key, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		return err
+	}
+	state.Inbox = enc.EncodeToString(key.PublicKey().Bytes())
+	if data.Inboxes == nil {
+		data.Inboxes = map[string]string{}
+	}
+	data.Inboxes[state.Inbox] = enc.EncodeToString(key.Bytes())
+	data.Version = 2
+	return nil
 }

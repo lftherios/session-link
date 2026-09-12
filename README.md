@@ -195,5 +195,11 @@ key. New devices need approval from an existing device or that recovery key to
 restore your private share links; email/GitHub login alone cannot unlock them.
 Approved devices automatically back up new share keys in an encrypted vault.
 Revoking a device blocks future key backups; links it already knows still work.
+Choose **Specific people** when publishing to restrict a share to verified email
+recipients. They can sign in, set up or unlock their browser, and accept without
+a CLI. Copy their invitation links and keep your local viewer running until
+access is granted. **Shared with people** shows status and revocation controls.
+See [named-recipient sharing](docs/named-recipient-sharing.md).
+
 See the [identity and crypto guide](docs/identity-encryption.md) for the key model,
 recovery instructions and prototype limits. Fly deployment remains pending.

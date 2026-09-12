@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
+import { browserIdentity } from "./browser-identity";
 import { LocalLogin, localRequest } from "./LocalLogin";
 
 type Device = { id: string; name: string; current: boolean };
 type Status = {
  server: string; account: string; state: "setup" | "locked" | "ready"; devices: Device[];
- requests: { id: string; name: string; code: string }[];
+ requests: { id: string; name: string; code?: string }[];
  shares: { url: string; sha256: string }[];
  confirmation?: string; recovery_key?: string; recovery_pending: boolean;
 };
-export function IdentitySettings() {
+export function IdentitySettings({ browser = false, onReady }: { browser?: boolean; onReady?: () => void } = {}) {
  const [status, setStatus] = useState<Status | null>(null), [signedIn, setSignedIn] = useState<boolean | null>(null);
  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
  const [name, setName] = useState(""), [recovery, setRecovery] = useState(""), [newRecovery, setNewRecovery] = useState("");
@@ -16,11 +17,12 @@ export function IdentitySettings() {
  const act = async (action: string, input: Record<string, string> = {}) => {
   setBusy(true); setError(""); setNotice("");
   try {
-   const data = await localRequest<Status>("/api/identity", "POST", { action, ...input });
+   const data = browser ? { ...await browserIdentity(action,input), server:location.origin, shares:[] } as Status : await localRequest<Status>("/api/identity", "POST", { action, ...input });
    setStatus(data); if (data.recovery_key) setNewRecovery(data.recovery_key);
    if (action === "confirm-recovery") setNewRecovery("");
    if (action === "recover") setRecovery("");
    if (action === "sync") setNotice("Your share keys are backed up.");
+   if (data.state === "ready" && !data.recovery_pending) onReady?.();
    setRevoke("");
   } catch (error) {
    setError((error as Error).message);
@@ -29,6 +31,7 @@ export function IdentitySettings() {
   finally { setBusy(false); }
  };
  useEffect(() => {
+  if (browser) { setSignedIn(true); void act("status"); return; }
   localRequest<{ signed_in?: boolean; state: string }>("/api/login/status")
    .then(data => { const ready = !!data.signed_in || data.state === "complete"; setSignedIn(ready); if (ready) void act("status"); })
    .catch(error => setError(error.message));
@@ -40,8 +43,8 @@ export function IdentitySettings() {
  return <main className="sl-settings" style={{ maxWidth: 720, margin: "24px auto", lineHeight: 1.6 }}>
   <style>{`.sl-settings h1,.sl-settings h2{font-family:var(--serif);font-weight:500}.sl-settings section{padding:20px 0;border-bottom:1px solid var(--line)}.sl-settings input,.sl-settings textarea{display:block;width:100%;padding:10px;margin:8px 0;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;font:inherit}.sl-settings button,.sl-auth button{padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);cursor:pointer;margin:4px 8px 4px 0}.sl-settings button:disabled{opacity:.5;cursor:wait}.sl-settings .secret{font:14px var(--mono);overflow-wrap:anywhere;padding:14px;background:var(--panel);border:1px solid var(--line)}.sl-settings ul{padding-left:20px}.sl-settings li{margin:14px 0;overflow-wrap:anywhere}.sl-settings label{display:block}`}</style>
   <h1>Recovery and devices</h1>
-  <p>Back up your private share links so you can open them on another device. Your session files stay on the devices where you saved them.</p>
-  {signedIn === false && <LocalLogin onSignedIn={() => { setSignedIn(true); void act("status"); }} />}
+  <p>Back up your private share links so you can open them on another device. {browser ? "This browser keeps its own private device keys." : "Your session files stay on the devices where you saved them."}</p>
+  {signedIn === false && (browser ? <p><a href={`/login?next=${encodeURIComponent(location.pathname)}`}>Sign in to continue</a></p> : <LocalLogin onSignedIn={() => { setSignedIn(true); void act("status"); }} />)}
   {error && <p role="alert" style={{ color: "var(--error)" }}>{error}</p>}
   {notice && <p role="status">{notice}</p>}
   {signedIn && !status && <button disabled={busy} onClick={() => act("status")}>{busy ? "Loading…" : "Retry"}</button>}
@@ -77,7 +80,7 @@ export function IdentitySettings() {
      {!device.current && (revoke === device.id ? <div><p>Revoke this device? It will lose access to future key backups. Share links it already knows will still work.</p><button onClick={() => act("revoke", { id: device.id })}>Confirm revocation</button><button onClick={() => setRevoke("")}>Cancel</button></div> : <button onClick={() => setRevoke(device.id)}>Revoke</button>)}
     </li>)}</ul><button onClick={() => act("status")}>Refresh devices</button></section>
     {status.requests.length > 0 && <section><h2>Waiting for approval</h2><p>Enter the code displayed on your new device to grant access to backed-up share links.</p><ul>{status.requests.map(request => <li key={request.id}>{request.name}<label>Code from the new device<input aria-label={`Approval code for ${request.name}`} autoComplete="off" value={codes[request.id] ?? ""} placeholder="XXXX-XXXX-XXXX" onChange={e => setCodes({ ...codes, [request.id]: e.target.value })} /></label><button disabled={!codes[request.id]?.trim()} onClick={() => act("approve", { id: request.id, code: codes[request.id] })}>Approve device</button></li>)}</ul></section>}
-    <section><h2>Backed-up share links</h2><p>{status.shares.length} {status.shares.length === 1 ? "link" : "links"} in your encrypted vault. New shares from this device are backed up automatically.</p><button onClick={() => act("sync")}>Back up now</button><ul>{status.shares.map(share => <li key={share.url}><a href={share.url} target="_blank" rel="noopener noreferrer">{new URL(share.url).pathname}</a></li>)}</ul></section>
+    {!browser && <section><h2>Backed-up share links</h2><p>{status.shares.length} {status.shares.length === 1 ? "link" : "links"} in your encrypted vault. New shares from this device are backed up automatically.</p><button onClick={() => act("sync")}>Back up now</button><ul>{status.shares.map(share => <li key={share.url}><a href={share.url} target="_blank" rel="noopener noreferrer">{new URL(share.url).pathname}</a></li>)}</ul></section>}
    </>}
   </fieldset>}
  </main>;

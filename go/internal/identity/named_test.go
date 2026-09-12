@@ -1,0 +1,89 @@
+package identity
+
+import (
+	"context"
+	"crypto/ecdh"
+	"crypto/ed25519"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestNamedGrantRequiresInvitationProofAndApprovedHistory(t *testing.T) {
+	_, root, _ := ed25519.GenerateKey(rand.Reader)
+	device, _ := newDevice()
+	inbox, _ := ecdh.X25519().GenerateKey(rand.Reader)
+	recovery, _ := ecdh.X25519().GenerateKey(rand.Reader)
+	state := State{Account: "usr_recipient", Kind: "init", Signer: "root", Root: enc.EncodeToString(root.Public().(ed25519.PublicKey)), Recovery: enc.EncodeToString(recovery.PublicKey().Bytes()), RecoveryBox: enc.EncodeToString(random(92)), Epoch: 1, Inbox: enc.EncodeToString(inbox.PublicKey().Bytes())}
+	d := device.public("Recipient")
+	d.Wrap, _ = wrap(d.Box, random(32), state.context())
+	state.Devices = []Device{d}
+	state.RecoveryWrap, _ = wrap(state.Recovery, random(32), state.context())
+	event, _ := sign("event", state, root)
+	owner, _ := newDevice()
+	ownerRoot := enc.EncodeToString(random(32))
+	invite := enc.EncodeToString(random(24))
+	secret := random(32)
+	saved := outbox{ID: "23456789abcdef", Account: "usr_owner", Root: ownerRoot, SHA256: strings.Repeat("a", 64), Key: enc.EncodeToString(random(32)), Invitations: []Invitation{{ID: invite, Email: "recipient@example.test", Commitment: digest(secret)}}, Secrets: map[string]string{invite: enc.EncodeToString(secret)}}
+	binding := claim{Account: state.Account, Root: state.Root, Head: event.hash(), Signer: d.ID, ShareID: saved.ID, InviteID: invite, SHA256: saved.SHA256, Owner: saved.Account, OwnerRoot: saved.Root, Inbox: state.Inbox, Epoch: state.Epoch}
+	signed, _ := sign("recipient-claim", binding, device.key())
+	raw, _ := decode(signed.Payload, 0)
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte("slink/recipient-binding/v1\x00"))
+	mac.Write(raw)
+	valid := recipientClaim{Signed: signed, Proof: enc.EncodeToString(mac.Sum(nil))}
+	submitted := valid
+	var captured Signed
+	posts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			json.NewEncoder(w).Encode(map[string]any{"id": saved.ID, "owner": true, "sha256": saved.SHA256, "recipients": []any{map[string]any{"id": invite, "email": "recipient@example.test", "status": "accepted", "claim": submitted, "recipient_history": []Signed{event}}}})
+			return
+		}
+		posts++
+		var body struct {
+			Grant Signed `json:"grant"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		captured = body.Grant
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	c := Client{Home: t.TempDir(), Server: server.URL, APIKey: "rk_fixture"}
+	saved.Server = server.URL
+	keys := nativeKeys{state: State{Account: saved.Account, Root: saved.Root}, device: owner, own: owner.public("Sender"), remote: remote{Record: &Record{Events: []Signed{event}}}}
+	for _, attack := range []func(*recipientClaim){
+		func(s *recipientClaim) { s.Proof = enc.EncodeToString(random(32)) },
+		func(s *recipientClaim) { s.Signature = enc.EncodeToString(random(64)) },
+		func(s *recipientClaim) { s.Payload = enc.EncodeToString([]byte(`{"account":"usr_attacker"}`)) },
+	} {
+		submitted = valid
+		attack(&submitted)
+		if _, err := c.finalizeNamed(context.Background(), saved, keys); err == nil {
+			t.Fatal("unverified recipient received a grant")
+		}
+		if posts != 0 {
+			t.Fatal("key was released before verifying invitation")
+		}
+	}
+	submitted = valid
+	if _, err := c.finalizeNamed(context.Background(), saved, keys); err != nil {
+		t.Fatal(err)
+	}
+	if posts != 1 || captured.verify("named-grant", keys.own.Sign) != nil {
+		t.Fatal("missing signed sender grant")
+	}
+	var grant namedGrant
+	if captured.read(&grant) != nil || grant.ClaimHash != valid.hash() {
+		t.Fatal("grant not bound to recipient claim")
+	}
+	opened, err := unwrap(inbox.Bytes(), grant.Wrap, namedContext(saved.SHA256, state.Account, state.Root, state.Epoch))
+	if err != nil || enc.EncodeToString(opened) != saved.Key {
+		t.Fatal("recipient cannot decrypt content key", err)
+	}
+}

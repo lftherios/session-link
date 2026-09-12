@@ -28,7 +28,15 @@
     "validate-session.d.ts",
     "LocalLogin.tsx",
     "PublishPanel.tsx",
-    "IdentitySettings.tsx"
+    "IdentitySettings.tsx",
+    "NamedView.tsx",
+    "NamedOutbox.tsx",
+    "named-sharing.ts",
+    "browser-identity.ts",
+    "identity-crypto.ts",
+    "identity-protocol.ts",
+    "sealed-document.ts",
+    "PrivateSharingStyle.tsx"
   ],
   "dependencies": {
     "@session-link/format": "0.1.0",

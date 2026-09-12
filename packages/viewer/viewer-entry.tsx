@@ -9,6 +9,8 @@ import { ShareComposer } from "./ShareComposer";
 import { IdentitySettings } from "./IdentitySettings";
 import { PublishPanel } from "./PublishPanel";
 import { EncryptedView } from "./EncryptedView";
+import { NamedView } from "./NamedView";
+import { NamedOutbox } from "./NamedOutbox";
 import type { Run } from "@session-link/format";
 import type { LocalViewer } from "./SessionView";
 
@@ -16,6 +18,9 @@ declare global {
   interface Window {
     __RUN__: Run;
     __IDENTITY__?: boolean;
+    __BROWSER_IDENTITY__?: boolean;
+    __NAMED__?: { id: string };
+    __NAMED_OUTBOX__?: boolean;
     __PUB__?: { endpoint: string; title: string };
     __SEALED__?: { id: string };
     __COMPOSE__?: { source: string };
@@ -41,7 +46,7 @@ function LocalSession({ reading, full, local }: { reading: Run; full?: string; l
 }
 
 const el = document.getElementById("root");
-if (el) createRoot(el).render(window.__IDENTITY__ ? <IdentitySettings /> : window.__SEALED__ ? <EncryptedView id={window.__SEALED__.id} /> : window.__COMPOSE__ ? <ShareComposer source={window.__COMPOSE__.source} /> : <LocalSession reading={window.__RUN__} full={window.__FULL__} local={window.__LOCAL__} />);
+if (el) createRoot(el).render(window.__NAMED__ ? <NamedView id={window.__NAMED__.id} /> : window.__NAMED_OUTBOX__ ? <NamedOutbox /> : window.__BROWSER_IDENTITY__ ? <IdentitySettings browser /> : window.__IDENTITY__ ? <IdentitySettings /> : window.__SEALED__ ? <EncryptedView id={window.__SEALED__.id} /> : window.__COMPOSE__ ? <ShareComposer source={window.__COMPOSE__.source} /> : <LocalSession reading={window.__RUN__} full={window.__FULL__} local={window.__LOCAL__} />);
 
 const publish = document.getElementById("publish-control");
 if (publish && window.__PUB__) createRoot(publish).render(<PublishPanel {...window.__PUB__} />);
