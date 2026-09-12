@@ -1,0 +1,14 @@
+{
+  "captured_at": "2026-09-12T11:26:34.766Z",
+  "fixtures": "testdata/landing/sessions.mjs",
+  "viewer": "Built slink local viewer; unmodified UI",
+  "branding": "Original Excerpt: brackets, two lines, and a dot",
+  "files": [
+    "sessions.webp",
+    "focused.webp",
+    "focused-mobile.webp",
+    "prepare-view.webp",
+    "search.webp",
+    "agent-activity.webp"
+  ]
+}

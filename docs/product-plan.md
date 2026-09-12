@@ -16,6 +16,17 @@ local titles, compact navigation, prominent scoped search, hover selection,
 annotation, local saved views and Markdown document rendering. Saved diffs and
 real handoff pilots remain open.
 
+Integration TODO:
+
+- [ ] Build the [DeepSeek Harness (`dsh`)](https://github.com/deepseek-ai/deepseek-harness)
+  integration. Verify its session storage and active-session identity against a
+  pinned version; add discovery and import support that preserve prompts, outputs,
+  tool calls/results, and source provenance through the common handoff contract.
+  Add realistic fixtures and verify a live session from discovery through local
+  viewing, excerpt preparation, and whole-session publishing. Document supported
+  versions and limitations in the harness matrix. The landing-page logo has no
+  status label; this integration remains unbuilt until these checks pass.
+
 **Product promise:** Move work from any CLI agent harness into a polished,
 shareable web experience, with the prompt, context, and evidence a colleague
 needs to understand it and respond.

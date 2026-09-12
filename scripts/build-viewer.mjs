@@ -5,7 +5,7 @@
 // (react + lucide + inline styles only.) Gitignored; CI rebuilds it before
 // `go build`.
 import { fileURLToPath } from "node:url";
-import { mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import esbuild from "esbuild";
 
@@ -27,4 +27,9 @@ const js = result.outputFiles[0].text;
 const out = path.join(root, "go", "internal", "open", "viewer.js");
 await mkdir(path.dirname(out), { recursive: true });
 await writeFile(out, js);
+const branding = path.join(root, "go", "internal", "open", "branding");
+await mkdir(branding, { recursive: true });
+await Promise.all(["mark.svg", "favicon.svg", "brand.css"].map(name =>
+  copyFile(path.join(root, "assets", "brand", name), path.join(branding, name))
+));
 console.log(`built go/internal/open/viewer.js (${(js.length / 1024).toFixed(0)} KB viewer)`);

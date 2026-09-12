@@ -44,6 +44,7 @@ const css = `
   *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
   .wrap{max-width:1080px;margin:0 auto;padding:28px 24px 64px}
+  .viewer-brand{display:flex;align-items:center;margin:0 0 24px;padding-bottom:18px;border-bottom:1px solid var(--line)}
   .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
   a{color:var(--signal)}
   .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
@@ -78,11 +79,9 @@ const css = `
   .dlg-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
 `
 
-const favicon = `<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="22" fill="%230e6f5c"/><circle cx="50" cy="50" r="16" fill="%23fdfdfb"/></svg>'>`
-
 func page(title, body string) string {
 	return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>` + html.EscapeString(title) + `</title>` + favicon + `<style>` + css + `</style><div class="wrap">` + body + `</div>`
+<title>` + html.EscapeString(title) + `</title>` + favicon + `<style>` + css + brandCSS + `</style><div class="wrap">` + brandHeader + body + `</div>`
 }
 
 // Server carries the open UI's state.

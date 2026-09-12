@@ -5,6 +5,7 @@ node_modules
 # Go build output
 /go/slink
 /go/internal/open/viewer.js
+/go/internal/open/branding/
 
 # goreleaser snapshot output
 /go/dist/
