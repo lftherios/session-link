@@ -13,7 +13,9 @@ ID errors instead of substituting another session. Without explicit identity,
 multiple candidates open a searchable browser picker. `--pick` always opens it.
 
 Selection pins the source identity. Opening its preview imports the currently
-available data and saves a separate, validated `session/v0` document. The
+available data and saves a separate, validated `session/v0` document. While a
+transcript file keeps its size and modification time, and slink itself is
+unchanged, reopening reuses that document instead of importing again. The
 browser renders that file and publishing sends those same bytes through the
 existing validation and secret scan. No source material is rewritten to add
 annotations; materializing a live recorder's spool still updates its capture.

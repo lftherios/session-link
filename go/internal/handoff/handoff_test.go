@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
+	"github.com/lftherios/session-link/internal/importers"
 	"github.com/lftherios/session-link/internal/spool"
 )
 
@@ -114,4 +116,74 @@ func TestPreviewDuringLiveRecording(t *testing.T) {
 	if !bytes.Equal(before, after) {
 		t.Fatal("live work changed the earlier preview")
 	}
+}
+
+func TestSaveReusesSnapshotWhileTranscriptIsUnchanged(t *testing.T) {
+	transcript, err := os.ReadFile("../../../testdata/import/claude-code/basic/input.session.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	file := filepath.Join(root, "claude", "-work-project", "session.jsonl")
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, transcript, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := importers.Locations{Claude: filepath.Join(root, "claude")}.Recent("claude-code", "/work/project", "", 5)
+	if err != nil || len(candidates) != 1 {
+		t.Fatalf("%v %v", candidates, err)
+	}
+	source := Native(candidates[0])
+	if !slices.Equal(source.Files, []string{file}) {
+		t.Fatalf("transcript not tracked: %v", source.Files)
+	}
+	reads, read := 0, source.Read
+	source.Read = func() ([]byte, error) { reads++; return read() }
+	dir := t.TempDir()
+	save := func(wantReads int) string {
+		t.Helper()
+		id, err := Save(dir, source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reads != wantReads {
+			t.Fatalf("imported %d times, want %d", reads, wantReads)
+		}
+		return id
+	}
+	first := save(1)
+	if again := save(1); again != first {
+		t.Fatalf("unchanged transcript gave %s, then %s", first, again)
+	}
+	// The agent keeps writing, so the grown transcript becomes a new snapshot.
+	grown := append(slices.Clone(transcript), []byte(`{"type":"user","uuid":"later","timestamp":"2026-09-11T10:00:00Z","message":{"role":"user","content":"One more request"}}`+"\n")...)
+	if err := os.WriteFile(file, grown, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	second := save(2)
+	if second == first {
+		t.Fatal("new work was not saved")
+	}
+	if again := save(2); again != second {
+		t.Fatal("grown transcript was not reused")
+	}
+	// A damaged or missing snapshot is rebuilt rather than served.
+	if err := os.WriteFile(filepath.Join(dir, second+".json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if again := save(3); again != second {
+		t.Fatal("rebuilt snapshot changed")
+	}
+	if err := os.Remove(filepath.Join(dir, second+".json")); err != nil {
+		t.Fatal(err)
+	}
+	save(4)
+	// Another build of slink never trusts an import this one made.
+	previous := buildStamp
+	buildStamp = "another build"
+	t.Cleanup(func() { buildStamp = previous })
+	save(5)
+	save(5)
 }

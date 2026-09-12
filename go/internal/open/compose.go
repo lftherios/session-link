@@ -107,8 +107,8 @@ func runSessionTitleKey(run map[string]any) string {
 
 // titleFor prefers the title typed for the session over the snapshot's own,
 // so a later snapshot of the same session keeps its name.
-func (s *Server) titleFor(id string, run map[string]any) string {
-	if key := runSessionTitleKey(run); key != "" {
+func (s *Server) titleFor(id, key string) string {
+	if key != "" {
 		if title := s.localTitle(key); title != "" {
 			return title
 		}
@@ -260,7 +260,7 @@ func (s *Server) composeAPI(w http.ResponseWriter, r *http.Request, action, id s
 	}
 	if action == "api/title" {
 		if read {
-			send(200, map[string]string{"title": s.titleFor(id, source.run)})
+			send(200, map[string]string{"title": s.titleFor(id, runSessionTitleKey(source.run))})
 			return
 		}
 		var title struct {
@@ -303,7 +303,7 @@ func (s *Server) composeAPI(w http.ResponseWriter, r *http.Request, action, id s
 			}
 			draft.Draft = *record.Draft
 		}
-		title := s.titleFor(id, source.run)
+		title := s.titleFor(id, runSessionTitleKey(source.run))
 		if title == "" {
 			title, _ = source.run["name"].(string)
 		}

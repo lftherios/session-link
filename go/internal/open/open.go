@@ -250,26 +250,18 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 	if err != nil {
 		return "", err // os.ErrNotExist → the styled 404
 	}
-	var run map[string]any
-	if err := json.Unmarshal(raw, &run); err != nil {
-		return "", errNotJSON
+	doc, err := readSessionPage(id, raw, preview)
+	if err != nil {
+		return "", err
 	}
-	// The index greys non-session JSON as unrenderable — the direct URL
-	// must agree, not serve a half-broken viewer over it.
-	if sch, _ := run["schema"].(string); sch != "session/v0" && sch != "run/v0" {
-		return "", errNotJSON
-	}
-	name, _ := run["name"].(string)
+	name := doc.name
 	if name == "" {
 		name = id
 	}
-	spans, _ := run["spans"].([]any)
-	meta, _ := run["metadata"].(map[string]any)
-	inProgress, _ := meta["in_progress"].(bool)
 	recNote := ""
 	if preview {
 		recNote = `<div class="kv"><span class="k">status</span><span class="v">saved preview — later session changes are not included</span></div>`
-	} else if inProgress {
+	} else if doc.inProgress {
 		recNote = `<div class="kv"><span class="k">status</span><span class="v">still recording — a snapshot as of now will be published</span></div>`
 	}
 	absFile, err := filepath.Abs(file)
@@ -277,7 +269,7 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 		absFile = file
 	}
 	// <-escaping keeps attacker-controlled trace text inert inside the tag.
-	runJSON := strings.ReplaceAll(string(mustCompact(raw)), "<", `\u003c`)
+	runJSON := strings.ReplaceAll(string(doc.json), "<", `\u003c`)
 	// json.Marshal escapes < > & by default, so this is script-safe as-is.
 	// The file path is only ever read by a human in error text — abbreviated.
 	pubJSON, _ := json.Marshal(map[string]any{"hasKey": s.apiKey() != "", "file": displayPath(absFile), "endpoint": endpoint})
@@ -296,7 +288,7 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 	if preview {
 		composeLink = `<a class="btn" href="/compose/` + id + `">Choose what to share</a>`
 	}
-	if ext, _ := run["extensions"].(map[string]any); ext[share.Extension] != nil {
+	if doc.excerpt {
 		previewNote = `<p class="note">Excerpt preview · only the selected material and the author note are included. Excerpts can currently be downloaded locally.</p>`
 		composeLink = ""
 		if source := s.editSource(id); source != "" {
@@ -325,7 +317,7 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 		// The reading view owns its header: back link, editable title and one
 		// primary action. Whole-session publishing has no chrome here yet.
 		previewNote = ""
-		config, _ := json.Marshal(map[string]string{"source": id, "project": s.Project, "title": s.titleFor(id, run)})
+		config, _ := json.Marshal(map[string]string{"source": id, "project": s.Project, "title": s.titleFor(id, doc.titleKey)})
 		localConfig = `<script>window.__LOCAL__=` + string(config) + `</script>`
 		top = ""
 	}
@@ -335,7 +327,7 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
        <p class="eyebrow" style="margin:0 0 12px">Publish this capture?</p>
        <div class="kv"><span class="k">server</span><span class="v">`+html.EscapeString(s.Target)+`</span></div>
        <div class="kv"><span class="k">title</span><span class="v">`+html.EscapeString(name)+`</span></div>
-       <div class="kv"><span class="k">spans</span><span class="v">`+fmt.Sprintf("%d", len(spans))+`</span></div>
+       <div class="kv"><span class="k">spans</span><span class="v">`+fmt.Sprintf("%d", doc.spans)+`</span></div>
        <div class="kv"><span class="k">size</span><span class="v">~`+approxSize(len(raw))+`</span></div>`+recNote+`
        <p class="dlg-warn">Unlisted is not private — anyone with the link can view it.</p>
        <div class="dlg-actions">
