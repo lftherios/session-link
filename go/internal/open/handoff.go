@@ -114,15 +114,30 @@ func (s *Server) pickerPage() string {
     <header class="list-head"><h1 title="`+html.EscapeString(displayPath(s.Project))+`">`+html.EscapeString(name)+`</h1><button class="quiet" id="stop">`+iconPower+`Stop viewer</button></header>
     `+list+listScript+`
     <script>
-      const result=document.getElementById('result');
-      document.querySelectorAll('[data-source]').forEach(row=>row.onclick=async()=>{
-        if(row.getAttribute('aria-busy')==='true')return;
-        row.setAttribute('aria-busy','true');result.className='list-status';result.textContent='Opening…';
-        try{
-          const r=await fetch('/api/preview/'+row.dataset.source,{method:'POST',headers:{'x-slink':'1'}});
-          const d=await r.json();if(!r.ok)throw new Error(d.error?.message||'Could not open this session.');
-          location.assign(d.url);
-        }catch(e){result.className='list-status err';result.textContent=e.message;row.removeAttribute('aria-busy');}
+      const result=document.getElementById('result'),inflight=new Map();
+      // One request per session at a time: a pointer resting on a row starts
+      // the import, and the click that follows either joins that request or
+      // finds the session already saved.
+      const preview=i=>{
+        if(inflight.has(i))return inflight.get(i);
+        const p=fetch('/api/preview/'+i,{method:'POST',headers:{'x-slink':'1'}})
+          .then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error?.message||'Could not open this session.');return d;})
+          .finally(()=>inflight.delete(i));
+        inflight.set(i,p);return p;
+      };
+      document.querySelectorAll('[data-source]').forEach(row=>{
+        const warm=()=>preview(row.dataset.source).catch(()=>{});
+        let resting;
+        row.addEventListener('pointerenter',()=>{resting=setTimeout(warm,70)});
+        row.addEventListener('pointerleave',()=>clearTimeout(resting));
+        row.addEventListener('pointerdown',warm);
+        row.addEventListener('focus',warm);
+        row.onclick=async()=>{
+          if(row.getAttribute('aria-busy')==='true')return;
+          row.setAttribute('aria-busy','true');result.className='list-status';result.textContent='Opening…';
+          try{location.assign((await preview(row.dataset.source)).url);}
+          catch(e){result.className='list-status err';result.textContent=e.message;row.removeAttribute('aria-busy');}
+        };
       });
       document.getElementById('stop').onclick=async()=>{
         try{const r=await fetch('/api/stop',{method:'POST',headers:{'x-slink':'1'}});if(!r.ok)throw new Error();

@@ -24,6 +24,10 @@ type Source struct {
 	Name, Prompt     string
 	Updated, Started time.Time
 	Read             func() ([]byte, error)
+	// Document returns the session already decoded. When a source can do
+	// that, Save validates and encodes it once instead of encoding it, then
+	// parsing it back to check it.
+	Document func() (map[string]any, error)
 	// Files lists every file Read depends on. While none of them changes size
 	// or modification time, Save reuses the snapshot it made from them.
 	Files []string
@@ -40,16 +44,17 @@ func transcriptFiles(candidate importers.Candidate) []string {
 
 func Native(candidate importers.Candidate) Source {
 	return Source{ID: candidate.ID, Title: candidate.Title, Harness: candidate.Harness, Name: candidate.Name, Prompt: candidate.Prompt, Started: candidate.Started,
-		Dir: candidate.Dir, Updated: time.Unix(0, candidate.Recency), Files: transcriptFiles(candidate), Read: func() ([]byte, error) {
+		Dir: candidate.Dir, Updated: time.Unix(0, candidate.Recency), Files: transcriptFiles(candidate),
+		Document: func() (map[string]any, error) {
 			in, err := candidate.Load()
 			if err != nil {
 				return nil, err
 			}
-			return importDocument(candidate.Harness, in)
+			return importSession(candidate.Harness, in)
 		}}
 }
 
-func importDocument(harness string, in importers.Input) ([]byte, error) {
+func importSession(harness string, in importers.Input) (map[string]any, error) {
 	build := importers.Registry[harness]
 	if build == nil {
 		return nil, fmt.Errorf("unknown agent %q", harness)
@@ -61,6 +66,14 @@ func importDocument(harness string, in importers.Input) ([]byte, error) {
 	spans, _ := run["spans"].([]any)
 	if len(spans) == 0 {
 		return nil, fmt.Errorf("this %s session has no messages yet", harness)
+	}
+	return run, nil
+}
+
+func importDocument(harness string, in importers.Input) ([]byte, error) {
+	run, err := importSession(harness, in)
+	if err != nil {
+		return nil, err
 	}
 	return json.Marshal(run)
 }
@@ -119,28 +132,10 @@ func Save(dir string, source Source) (string, error) {
 	if id := reusableSnapshot(dir, source, stamp); id != "" {
 		return id, nil
 	}
-	data, err := source.Read()
+	data, doc, err := sessionBytes(source)
 	if err != nil {
 		return "", err
 	}
-	var doc map[string]any
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return "", fmt.Errorf("cannot read session JSON: %w", err)
-	}
-	// Validate the legacy spelling against the same structural contract while
-	// preserving the original bytes in the preview.
-	schema := doc["schema"]
-	if schema == "run/v0" {
-		doc["schema"] = "session/v0"
-	}
-	if issues := format.ValidateRun(doc); len(issues) != 0 {
-		return "", fmt.Errorf("cannot preview this session: %s", strings.Join(issues, "; "))
-	}
-	var compact bytes.Buffer
-	if err := json.Compact(&compact, data); err != nil {
-		return "", err
-	}
-	data = compact.Bytes()
 	hash := sha256.Sum256(data)
 	id := hex.EncodeToString(hash[:])
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -153,8 +148,119 @@ func Save(dir string, source Source) (string, error) {
 			return "", err
 		}
 	}
+	writeReadingCopy(dir, id, doc, len(data))
 	rememberSnapshot(dir, source, stamp, id)
 	return id, nil
+}
+
+// ReadingSuffix names the reading copy of a snapshot: the same session with
+// the recorded results of tool spans left out. Those results are most of a
+// large session's bytes and none of what the reader shows on arrival, so the
+// page carries this copy and fetches the whole document behind it.
+const ReadingSuffix = ".reading.json"
+
+// readingCopy returns doc without recorded tool results, or nil when there
+// are none to leave out. The spans themselves are untouched, so both copies
+// address the same material.
+func readingCopy(doc map[string]any) map[string]any {
+	spans, _ := doc["spans"].([]any)
+	trimmed := make([]any, len(spans))
+	omitted := false
+	for i, value := range spans {
+		span, _ := value.(map[string]any)
+		output, _ := span["output"].(map[string]any)
+		if output == nil || output["result"] == nil {
+			trimmed[i] = value
+			continue
+		}
+		lightOutput := make(map[string]any, len(output))
+		for key, v := range output {
+			if key != "result" {
+				lightOutput[key] = v
+			}
+		}
+		lightOutput["result_omitted"] = true
+		lightSpan := make(map[string]any, len(span))
+		for key, v := range span {
+			lightSpan[key] = v
+		}
+		lightSpan["output"] = lightOutput
+		trimmed[i] = lightSpan
+		omitted = true
+	}
+	if !omitted {
+		return nil
+	}
+	copied := make(map[string]any, len(doc))
+	for key, v := range doc {
+		copied[key] = v
+	}
+	copied["spans"] = trimmed
+	return copied
+}
+
+// writeReadingCopy is best effort: without it the page carries the whole
+// document, which is what it did before. Below this saving the extra request
+// costs more than the bytes it avoids.
+const readingGain = 512 << 10
+
+func writeReadingCopy(dir, id string, doc map[string]any, full int) {
+	light := readingCopy(doc)
+	if light == nil {
+		return
+	}
+	data, err := json.Marshal(light)
+	if err != nil || full-len(data) < readingGain {
+		return
+	}
+	writeFile(filepath.Join(dir, id+ReadingSuffix), data)
+}
+
+// sessionBytes validates the session and returns the exact bytes to store.
+// A source that decodes its own document is encoded once here; anything else
+// keeps its own bytes, parsed to check them and compacted to store them.
+func sessionBytes(source Source) ([]byte, map[string]any, error) {
+	if source.Document != nil {
+		doc, err := source.Document()
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := validateSession(doc); err != nil {
+			return nil, nil, err
+		}
+		data, err := json.Marshal(doc) // json.Marshal writes compact JSON already
+		return data, doc, err
+	}
+	data, err := source.Read()
+	if err != nil {
+		return nil, nil, err
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, nil, fmt.Errorf("cannot read session JSON: %w", err)
+	}
+	if err := validateSession(doc); err != nil {
+		return nil, nil, err
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, data); err != nil {
+		return nil, nil, err
+	}
+	return compact.Bytes(), doc, nil
+}
+
+// validateSession checks the legacy spelling against the same structural
+// contract, leaving the document itself exactly as it was written.
+func validateSession(doc map[string]any) error {
+	schema := doc["schema"]
+	if schema == "run/v0" {
+		doc["schema"] = "session/v0"
+		defer func() { doc["schema"] = schema }()
+	}
+	if issues := format.ValidateRun(doc); len(issues) != 0 {
+		return fmt.Errorf("cannot preview this session: %s", strings.Join(issues, "; "))
+	}
+	return nil
 }
 
 // writeFile renames a fully written file into place so concurrent readers

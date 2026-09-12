@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+
+	"github.com/lftherios/session-link/internal/handoff"
 	"strings"
 	"testing"
 )
@@ -96,5 +98,53 @@ func TestSessionPageDecodesPreviewsWhoseBytesDoNotMatchTheirName(t *testing.T) {
 	write(`{"schema":"other/v1","spans":[]}`)
 	if page := action(s, "GET", "/p/"+id, "", ""); page.Code != 500 {
 		t.Fatalf("non-session JSON served: %d", page.Code)
+	}
+}
+
+func TestSessionPageCarriesTheReadingCopyAndServesTheWholeDocument(t *testing.T) {
+	raw := previewFixture(t)
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	marker := "recorded-output-marker"
+	for _, value := range doc["spans"].([]any) {
+		span, _ := value.(map[string]any)
+		if span["type"] != "tool_call" {
+			continue
+		}
+		output, _ := span["output"].(map[string]any)
+		if output == nil {
+			output = map[string]any{}
+			span["output"] = output
+		}
+		output["result"] = marker + strings.Repeat("x", 900<<10)
+		break
+	}
+	data, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	id, err := handoff.Save(dir, handoff.Source{Read: func() ([]byte, error) { return data, nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{Project: "/work/project", PreviewDir: dir, Target: "http://127.0.0.1:1"}
+	page := action(s, "GET", "/p/"+id, "", "").Body.String()
+	if strings.Contains(page, marker) {
+		t.Fatal("the page carried recorded tool output")
+	}
+	for _, want := range []string{`window.__FULL__="/api/document/` + id + `"`, `"result_omitted":true`} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("page is missing %s", want)
+		}
+	}
+	whole := action(s, "GET", "/api/document/"+id, "", "")
+	if whole.Code != 200 || !strings.Contains(whole.Body.String(), marker) {
+		t.Fatalf("the whole document is not served: %d", whole.Code)
+	}
+	if missing := action(s, "GET", "/api/document/"+strings.Repeat("b", 64), "", ""); missing.Code != 404 {
+		t.Fatalf("a session that is not saved answered %d", missing.Code)
 	}
 }

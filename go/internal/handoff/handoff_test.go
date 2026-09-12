@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/lftherios/session-link/internal/importers"
@@ -139,8 +140,8 @@ func TestSaveReusesSnapshotWhileTranscriptIsUnchanged(t *testing.T) {
 	if !slices.Equal(source.Files, []string{file}) {
 		t.Fatalf("transcript not tracked: %v", source.Files)
 	}
-	reads, read := 0, source.Read
-	source.Read = func() ([]byte, error) { reads++; return read() }
+	reads, read := 0, source.Document
+	source.Document = func() (map[string]any, error) { reads++; return read() }
 	dir := t.TempDir()
 	save := func(wantReads int) string {
 		t.Helper()
@@ -186,4 +187,91 @@ func TestSaveReusesSnapshotWhileTranscriptIsUnchanged(t *testing.T) {
 	t.Cleanup(func() { buildStamp = previous })
 	save(5)
 	save(5)
+}
+
+// heavySession is a valid session whose tool call recorded a large result.
+func heavySession(t *testing.T) ([]byte, string) {
+	t.Helper()
+	raw, err := os.ReadFile("../../../testdata/import/pi/basic/golden.run.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	marker := "recorded-output-marker"
+	spans, _ := doc["spans"].([]any)
+	for _, value := range spans {
+		span, _ := value.(map[string]any)
+		if span["type"] != "tool_call" {
+			continue
+		}
+		output, _ := span["output"].(map[string]any)
+		if output == nil {
+			output = map[string]any{}
+			span["output"] = output
+		}
+		output["result"] = marker + strings.Repeat("x", 900<<10)
+		data, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data, marker
+	}
+	t.Fatal("fixture has no tool call to weigh down")
+	return nil, ""
+}
+
+func TestSaveWritesAReadingCopyWithoutRecordedOutput(t *testing.T) {
+	data, marker := heavySession(t)
+	dir := t.TempDir()
+	id, err := Save(dir, Source{Read: func() ([]byte, error) { return data, nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	whole, err := os.ReadFile(filepath.Join(dir, id+".json"))
+	if err != nil || !bytes.Contains(whole, []byte(marker)) {
+		t.Fatal("the saved session lost its recorded output")
+	}
+	reading, err := os.ReadFile(filepath.Join(dir, id+ReadingSuffix))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(reading, []byte(marker)) {
+		t.Fatal("the reading copy still carries recorded output")
+	}
+	if len(reading)*4 > len(whole) {
+		t.Fatalf("reading copy is %d bytes against %d", len(reading), len(whole))
+	}
+	var light, full map[string]any
+	if json.Unmarshal(reading, &light) != nil || json.Unmarshal(whole, &full) != nil {
+		t.Fatal("copies are not both JSON")
+	}
+	if len(light["spans"].([]any)) != len(full["spans"].([]any)) {
+		t.Fatal("the reading copy lost spans")
+	}
+	omitted := 0
+	for _, value := range light["spans"].([]any) {
+		span, _ := value.(map[string]any)
+		output, _ := span["output"].(map[string]any)
+		if output["result_omitted"] == true && output["result"] == nil {
+			omitted++
+		}
+	}
+	if omitted == 0 {
+		t.Fatal("nothing is marked as left out")
+	}
+	// A session with no weight to shed keeps one copy.
+	light2, err := os.ReadFile("../../../testdata/import/pi/basic/golden.run.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := Save(dir, Source{Read: func() ([]byte, error) { return light2, nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, plain+ReadingSuffix)); !os.IsNotExist(err) {
+		t.Fatal("wrote a reading copy that saves nothing")
+	}
 }

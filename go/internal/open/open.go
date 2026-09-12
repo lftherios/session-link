@@ -33,7 +33,7 @@ import (
 var viewerJS []byte
 
 var fileID = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-var routeRe = regexp.MustCompile(`^/(r|p|compose|api/compose|api/title|api/draft|api/export|api/preview|api/publish|api/publish-preview)/([^/]+)$`)
+var routeRe = regexp.MustCompile(`^/(r|p|compose|api/compose|api/title|api/draft|api/export|api/preview|api/document|api/publish|api/publish-preview)/([^/]+)$`)
 
 const css = `
   :root{--paper:#f5f6f3;--panel:#fdfdfb;--ink:#17201c;--faint:#5b6660;--line:#d8ddd7;--signal:#0e6f5c;--error:#b3402e;
@@ -246,13 +246,28 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 	} else {
 		spool.Assemble(file, spool.AssembleOptions{}) // legacy live capture route
 	}
-	raw, err := os.ReadFile(file)
+	info, err := os.Stat(file)
 	if err != nil {
 		return "", err // os.ErrNotExist → the styled 404
 	}
-	doc, err := readSessionPage(id, raw, preview)
-	if err != nil {
-		return "", err
+	size, fullURL := int(info.Size()), ""
+	var doc sessionPage
+	// The reading copy leaves out recorded tool output, which the reader only
+	// shows once someone opens a step. The whole document follows over the
+	// network while the page is already on screen.
+	if preview {
+		if light, lightErr := os.ReadFile(strings.TrimSuffix(file, ".json") + handoff.ReadingSuffix); lightErr == nil && len(light) > 0 {
+			doc, fullURL = scanSessionPage(light), "/api/document/"+id
+		}
+	}
+	if fullURL == "" {
+		raw, readErr := os.ReadFile(file)
+		if readErr != nil {
+			return "", readErr
+		}
+		if doc, err = readSessionPage(id, raw, preview); err != nil {
+			return "", err
+		}
 	}
 	name := doc.name
 	if name == "" {
@@ -281,6 +296,11 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 	previewNote := ""
 	if preview {
 		previewNote = `<p class="note">Saved local preview · later session changes will not appear here.</p>`
+	}
+	fullScript := ""
+	if fullURL != "" {
+		address, _ := json.Marshal(fullURL)
+		fullScript = `<script>window.__FULL__=` + string(address) + `</script>`
 	}
 	composeLink, publishDisabled := "", ""
 	publishTarget := `<span class="note">unlisted → ` + html.EscapeString(s.Target) + keyNote + `</span>`
@@ -328,7 +348,7 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
        <div class="kv"><span class="k">server</span><span class="v">`+html.EscapeString(s.Target)+`</span></div>
        <div class="kv"><span class="k">title</span><span class="v">`+html.EscapeString(name)+`</span></div>
        <div class="kv"><span class="k">spans</span><span class="v">`+fmt.Sprintf("%d", doc.spans)+`</span></div>
-       <div class="kv"><span class="k">size</span><span class="v">~`+approxSize(len(raw))+`</span></div>`+recNote+`
+       <div class="kv"><span class="k">size</span><span class="v">~`+approxSize(size)+`</span></div>`+recNote+`
        <p class="dlg-warn">Unlisted is not private — anyone with the link can view it.</p>
        <div class="dlg-actions">
          <button class="btn" id="cancel">Cancel</button>
@@ -336,7 +356,7 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
        </div>
      </dialog>
      `+previewNote+`<div id="root"></div>
-     <script type="application/json" id="run-data">`+runJSON+`</script><script>window.__RUN__=JSON.parse(document.getElementById("run-data").textContent)</script>`+localConfig+`
+     <script type="application/json" id="run-data">`+runJSON+`</script><script>window.__RUN__=JSON.parse(document.getElementById("run-data").textContent)</script>`+fullScript+localConfig+`
      <script>window.__PUB__=`+string(pubJSON)+`</script>
      <script src="/assets/viewer.js"></script>
      <script>
@@ -563,6 +583,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		out := s.prepare(id)
 		b, _ := json.Marshal(out.Body)
 		send(out.Status, "application/json", string(b))
+	case m != nil && m[1] == "api/document" && id != "" && r.Method == http.MethodGet:
+		raw, err := os.ReadFile(filepath.Join(s.previewDir(), filepath.Base(id)+".json"))
+		if err != nil {
+			send(404, "application/json", `{"error":{"message":"this session is no longer saved locally"}}`)
+			return
+		}
+		send(200, "application/json", string(raw))
 	case m != nil && (m[1] == "r" || m[1] == "p") && id != "" && r.Method == http.MethodGet:
 		body, err := s.documentPage(id, m[1] == "p")
 		switch {

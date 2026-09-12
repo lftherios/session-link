@@ -918,6 +918,20 @@ function SpanDetail({ span }: { span: Span }) {
           <SectionLabel>result</SectionLabel>
           {span.output?.result === undefined && span.output?.result_ref ? (
             <BlobRefNote label="result" hash={span.output.result_ref} />
+          ) : span.output?.result === undefined &&
+            (span.output as { result_omitted?: boolean } | undefined)?.result_omitted ? (
+            <div
+              style={{
+                fontFamily: T.mono,
+                fontSize: 11,
+                color: T.faint,
+                border: `1px dashed ${T.line}`,
+                borderRadius: 6,
+                padding: "10px 12px",
+              }}
+            >
+              recorded output is still loading
+            </div>
           ) : (
             <JsonBlock value={span.output?.result} />
           )}
@@ -1270,7 +1284,14 @@ export function RunViewer({ run, src, local, initialView = "exchange" }: { run?:
 
 const viewerKeys = new WeakMap<Run, number>();
 let nextViewerKey = 0;
-function viewerKey(run: Run) { if (!viewerKeys.has(run)) viewerKeys.set(run, ++nextViewerKey); return viewerKeys.get(run); }
+// One key per session, not per object. A session that arrives in two parts —
+// the reading copy first, the whole document behind it — must keep the reader
+// where it is, while a different session still starts clean.
+function viewerKey(run: Run): string | number {
+  if (typeof run.id === "string" && run.id) return run.id;
+  if (!viewerKeys.has(run)) viewerKeys.set(run, ++nextViewerKey);
+  return viewerKeys.get(run)!;
+}
 
 // Figures for the session details summary, from the index the trace uses.
 function sessionStats(run: Run): SessionStats {

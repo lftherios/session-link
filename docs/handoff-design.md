@@ -17,7 +17,11 @@ available data and saves a separate, validated `session/v0` document. While a
 transcript file keeps its size and modification time, and slink itself is
 unchanged, reopening reuses that document instead of importing again. The
 browser renders that file and publishing sends those same bytes through the
-existing validation and secret scan. No source material is rewritten to add
+existing validation and secret scan. A large session is saved twice: the
+whole document, and a reading copy without the recorded results of tool
+spans. The page carries the reading copy, which is what the reader shows on
+arrival, and fetches the whole document behind it; publishing and sharing
+always use the whole document. No source material is rewritten to add
 annotations; materializing a live recorder's spool still updates its capture.
 Later source changes and failed uploads do not replace a saved preview.
 
