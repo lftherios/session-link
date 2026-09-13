@@ -39,10 +39,14 @@ func TestNamedGrantRequiresInvitationProofAndApprovedHistory(t *testing.T) {
 	valid := recipientClaim{Signed: signed, Proof: enc.EncodeToString(mac.Sum(nil))}
 	submitted := valid
 	var captured Signed
-	posts := 0
+	posts, remoteStatus, remoteExtra := 0, "accepted", false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
-			json.NewEncoder(w).Encode(map[string]any{"id": saved.ID, "owner": true, "sha256": saved.SHA256, "recipients": []any{map[string]any{"id": invite, "email": "recipient@example.test", "status": "accepted", "claim": submitted, "recipient_history": []Signed{event}}}})
+			recipients := []any{map[string]any{"id": invite, "email": "recipient@example.test", "status": remoteStatus, "claim": submitted, "recipient_history": []Signed{event}}}
+			if remoteExtra {
+				recipients = append(recipients, map[string]any{"id": "unknown", "email": "stranger@example.test", "status": "waiting"})
+			}
+			json.NewEncoder(w).Encode(map[string]any{"id": saved.ID, "owner": true, "sha256": saved.SHA256, "recipients": recipients})
 			return
 		}
 		posts++
@@ -57,6 +61,9 @@ func TestNamedGrantRequiresInvitationProofAndApprovedHistory(t *testing.T) {
 	c := Client{Home: t.TempDir(), Server: server.URL, APIKey: "rk_fixture"}
 	saved.Server = server.URL
 	keys := nativeKeys{state: State{Account: saved.Account, Root: saved.Root}, device: owner, own: owner.public("Sender"), remote: remote{Record: &Record{Events: []Signed{event}}}}
+	// Links without the secret keep the public invitation id so the server
+	// resolves the right entry when one account holds several invitations.
+	canonical := server.URL + "/n/" + saved.ID + "?invite=" + invite
 	for _, attack := range []func(*recipientClaim){
 		func(s *recipientClaim) { s.Proof = enc.EncodeToString(random(32)) },
 		func(s *recipientClaim) { s.Signature = enc.EncodeToString(random(64)) },
@@ -64,15 +71,24 @@ func TestNamedGrantRequiresInvitationProofAndApprovedHistory(t *testing.T) {
 	} {
 		submitted = valid
 		attack(&submitted)
-		if _, err := c.finalizeNamed(context.Background(), saved, keys); err == nil {
+		result, err := c.finalizeNamed(context.Background(), saved, keys)
+		if err == nil {
 			t.Fatal("unverified recipient received a grant")
+		}
+		// A claimed invitation has spent its secret even when the grant fails.
+		if result.Recipients[0].Status != "accepted" || result.Recipients[0].URL != canonical {
+			t.Fatal("claimed recipient still carries its invitation secret", result.Recipients)
 		}
 		if posts != 0 {
 			t.Fatal("key was released before verifying invitation")
 		}
 	}
 	submitted = valid
-	if _, err := c.finalizeNamed(context.Background(), saved, keys); err != nil {
+	if !strings.Contains(saved.result().Recipients[0].URL, saved.Secrets[invite]) {
+		t.Fatal("waiting recipient lost its invitation link")
+	}
+	result, err := c.finalizeNamed(context.Background(), saved, keys)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if posts != 1 || captured.verify("named-grant", keys.own.Sign) != nil {
@@ -85,6 +101,31 @@ func TestNamedGrantRequiresInvitationProofAndApprovedHistory(t *testing.T) {
 	opened, err := unwrap(inbox.Bytes(), grant.Wrap, namedContext(saved.SHA256, state.Account, state.Root, state.Epoch))
 	if err != nil || enc.EncodeToString(opened) != saved.Key {
 		t.Fatal("recipient cannot decrypt content key", err)
+	}
+	// Once the grant is issued the invitation secret has done its job: the
+	// result must carry the canonical URL, not a link that would put the
+	// secret into the DOM and clipboard.
+	if len(result.Recipients) != 1 || result.Recipients[0].Status != "ready" || result.Recipients[0].URL != canonical {
+		t.Fatal("granted recipient still carries its invitation link", result.Recipients)
+	}
+	// The same holds when the server already knows the grant but the local
+	// file is stale.
+	remoteStatus = "ready"
+	saved.Status = map[string]string{invite: "accepted"}
+	if result, err = c.finalizeNamed(context.Background(), saved, keys); err != nil || posts != 1 || result.Recipients[0].Status != "ready" || result.Recipients[0].URL != canonical {
+		t.Fatal("stale local status leaked the invitation secret", err, posts)
+	}
+	// A grant already issued is persisted even when a later recipient fails,
+	// so an offline pass cannot resurrect its invitation link.
+	remoteStatus, remoteExtra = "accepted", true
+	fresh := Client{Home: t.TempDir(), Server: server.URL, APIKey: "rk_fixture"}
+	saved.Status = nil
+	if _, err = fresh.finalizeNamed(context.Background(), saved, keys); err == nil || posts != 2 {
+		t.Fatal("unknown recipient did not stop the pass after granting the known one", err, posts)
+	}
+	items, err := fresh.readOutbox(saved.Account, saved.Root)
+	if err != nil || len(items) != 1 || items[0].Status[invite] != "ready" {
+		t.Fatal("issued grant was not persisted before the failure", err, len(items))
 	}
 }
 func TestRevokeWithoutLocalOutboxIsNotSilentlyDropped(t *testing.T) {

@@ -273,13 +273,17 @@ func (c Client) readOutbox(account, root string) ([]outbox, error) {
 func (o outbox) result() NamedResult {
 	out := NamedResult{ID: o.ID, URL: o.Server + "/n/" + o.ID, Recipients: []NamedRecipient{}}
 	for _, recipient := range o.Invitations {
-		out.Recipients = append(out.Recipients, NamedRecipient{ID: recipient.ID, Email: recipient.Email, URL: out.URL + "?invite=" + recipient.ID + "#invite=" + o.Secrets[recipient.ID] + "&sender=" + o.Root, Status: "waiting"})
+		// The public invitation id selects the right entry when one account
+		// holds several invitations; the secret only has a job until the
+		// recipient claims it and never appears in a link afterwards.
+		item := NamedRecipient{ID: recipient.ID, Email: recipient.Email, URL: out.URL + "?invite=" + recipient.ID, Status: "waiting"}
 		if status := o.Status[recipient.ID]; status != "" {
-			out.Recipients[len(out.Recipients)-1].Status = status
-			if status == "ready" {
-				out.Recipients[len(out.Recipients)-1].URL = out.URL
-			}
+			item.Status = status
 		}
+		if item.Status == "waiting" {
+			item.URL += "#invite=" + o.Secrets[recipient.ID] + "&sender=" + o.Root
+		}
+		out.Recipients = append(out.Recipients, item)
 	}
 	return out
 }
@@ -373,8 +377,11 @@ func (c Client) NamedPublish(ctx context.Context, text string, emails []string) 
 	}
 	return result, nil
 }
-func (c Client) finalizeNamed(ctx context.Context, saved outbox, keys nativeKeys) (NamedResult, error) {
-	out := saved.result()
+func (c Client) finalizeNamed(ctx context.Context, saved outbox, keys nativeKeys) (out NamedResult, err error) {
+	// The result is derived from the statuses known at return time, so a
+	// recipient that just became ready is reported with the canonical URL and
+	// never with a link that still carries its invitation secret.
+	defer func() { out = saved.result() }()
 	var remote namedRemote
 	if err := c.namedRequest(ctx, "GET", "/api/named-shares/"+saved.ID, nil, nil, &remote); err != nil {
 		return out, err
@@ -383,17 +390,16 @@ func (c Client) finalizeNamed(ctx context.Context, saved outbox, keys nativeKeys
 		return out, errors.New("private share identity changed")
 	}
 	for _, recipient := range remote.Recipients {
-		var local *NamedRecipient
-		for i := range out.Recipients {
-			if out.Recipients[i].ID == recipient.ID && out.Recipients[i].Email == recipient.Email {
-				local = &out.Recipients[i]
+		known := false
+		for _, invitation := range saved.Invitations {
+			if invitation.ID == recipient.ID && invitation.Email == recipient.Email {
+				known = true
 				break
 			}
 		}
-		if local == nil {
+		if !known {
 			return out, errors.New("recipient list changed")
 		}
-		local.Status = recipient.Status
 		if saved.Status == nil {
 			saved.Status = map[string]string{}
 		}
@@ -473,8 +479,12 @@ func (c Client) finalizeNamed(ctx context.Context, saved outbox, keys nativeKeys
 		if err = c.namedPost(ctx, saved.ID, map[string]any{"action": "grant", "grant": authorization}, nil); err != nil {
 			return out, err
 		}
-		local.Status = "ready"
 		saved.Status[recipient.ID] = "ready"
+		// Persist each grant at once so a failure on a later recipient cannot
+		// leave this one recorded as still waiting.
+		if err := privateWrite(c.outboxFile(saved.SHA256), saved); err != nil {
+			return out, err
+		}
 	}
 	if err := privateWrite(c.outboxFile(saved.SHA256), saved); err != nil {
 		return out, err

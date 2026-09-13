@@ -8,7 +8,7 @@ export function RecipientLinks({ recipients }: { recipients: NamedRecipient[] })
  const [copied, setCopied] = useState("");
  return <ul style={{ paddingLeft: 20, overflowWrap: "anywhere" }}>{recipients.map(r => <li key={r.id} style={{ margin: "16px 0" }}>
   <strong>{r.email}</strong> · {statusText[r.status] ?? r.status}
-  {!["revoked", "expired"].includes(r.status) && <div><a href={r.url} target="_blank" rel="noopener noreferrer">{r.status === "ready" ? "Open share" : "Invitation link"}</a> <button onClick={async () => { try { await navigator.clipboard.writeText(r.url); setCopied(r.id); } catch { setCopied("failed"); } }}>{copied === r.id ? "Copied" : "Copy link"}</button></div>}
+  {!["revoked", "expired"].includes(r.status) && <div><a href={r.url} target="_blank" rel="noopener noreferrer">{r.status === "waiting" ? "Invitation link" : "Open share"}</a> <button onClick={async () => { try { await navigator.clipboard.writeText(r.url); setCopied(r.id); } catch { setCopied("failed"); } }}>{copied === r.id ? "Copied" : "Copy link"}</button></div>}
  </li>)}{copied === "failed" && <li role="alert">Use the invitation link’s context menu to copy its address.</li>}</ul>;
 }
 export function NamedOutbox() {

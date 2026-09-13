@@ -68,7 +68,9 @@ address directory and automatic grants to previously known people are future wor
 **Shared with people** in the native viewer lists pending, granted, expired and
 revoked access. The hosted account page lists incoming/outgoing shares and links
 to browser **Recovery and devices**. An approved browser can open a ready share
-from its canonical `/n/<id>` URL. A fresh login alone cannot decrypt it.
+from its canonical `/n/<id>` URL. A fresh login alone cannot decrypt it. The
+invitation link, which carries the recipient's secret, is offered only while an
+invitation is waiting; accepted and granted recipients get a link without it.
 
 Unaccepted invitations expire in seven days. Revoke individual invitations from
 the native list, or delete the whole share on the hosted account page. Revoking
