@@ -75,8 +75,9 @@ invitation is waiting; accepted and granted recipients get a link without it.
 Unaccepted invitations expire in seven days. Revoke individual invitations from
 the native list, or delete the whole share on the hosted account page. Revoking
 one email invitation does not revoke a separate invitation to another verified
-email on the same account. Named ciphertext tombstones are not revived by retry;
-create a fresh publication after deletion. Already downloaded copies remain.
+email on the same account. Named ciphertext tombstones are not revived by retry:
+the API answers 410 and the native client discards its pending copy, so
+publishing again creates fresh ciphertext. Already downloaded copies remain.
 
 ## Wire and persistence
 

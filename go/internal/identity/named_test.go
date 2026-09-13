@@ -8,8 +8,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -185,5 +187,33 @@ func TestUnverifiableOutboxFilesNeverBlockVaultBackup(t *testing.T) {
 	replaced := State{Account: state.Account, Root: enc.EncodeToString(random(32))}
 	if data, err := c.merge(contents{}, replaced, nil); err != nil || len(data.Named) != 0 || data.Version != 1 {
 		t.Fatal("previous-identity shares leaked into a fresh vault", err, len(data.Named))
+	}
+}
+func TestDeletedPrivateShareDiscardsItsPendingCopy(t *testing.T) {
+	c := Client{Home: t.TempDir(), Server: "https://example.test"}
+	pending := c.outboxFile("pending-fixture")
+	write := func() {
+		if err := privateWrite(pending, outbox{Server: c.Server}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exists := func() bool { _, err := os.Stat(pending); return err == nil }
+	write()
+	// Other failures keep the pending copy so the same envelope is retried.
+	for _, err := range []error{errors.New("cannot reach private sharing"), &httpError{status: 503, message: "busy"}} {
+		if got := c.discardDeleted(pending, err); got != err || !exists() {
+			t.Fatal("pending copy dropped on a retryable error", got)
+		}
+	}
+	// A tombstoned ciphertext can never be accepted again: drop it and say so.
+	got := c.discardDeleted(pending, &httpError{status: 410, message: "This share was deleted (HTTP 410)"})
+	var failed *httpError
+	if exists() || !errors.As(got, &failed) || failed.status != 410 || !strings.Contains(got.Error(), "publish again") {
+		t.Fatal("deleted share did not discard its pending copy", got, exists())
+	}
+	// An already-missing pending copy is not an error in itself.
+	var again *httpError
+	if err := c.discardDeleted(pending, &httpError{status: 410}); !errors.As(err, &again) || again.status != 410 {
+		t.Fatal("missing pending copy should still report the deletion", err)
 	}
 }

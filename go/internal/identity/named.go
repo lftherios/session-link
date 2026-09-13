@@ -242,6 +242,20 @@ func (c Client) outboxFile(hash string) string {
 	return filepath.Join(c.Home, "named-shares", hash+".json")
 }
 
+// discardDeleted drops the pending copy of a ciphertext the server has
+// tombstoned (HTTP 410). Replaying it can never succeed, so the next attempt
+// with the same text and recipients must encrypt afresh.
+func (c Client) discardDeleted(pending string, err error) error {
+	var failed *httpError
+	if !errors.As(err, &failed) || failed.status != 410 {
+		return err
+	}
+	if removeErr := os.Remove(pending); removeErr != nil && !os.IsNotExist(removeErr) {
+		return removeErr
+	}
+	return &httpError{status: 410, message: "this private share was deleted; publish again to create a new one"}
+}
+
 // readOutbox loads the private shares this machine saved for the current
 // identity. Files for other servers or accounts are ignored, and unreadable,
 // malformed or previous-identity files are skipped, so one bad file can never
@@ -360,7 +374,7 @@ func (c Client) NamedPublish(ctx context.Context, text string, emails []string) 
 		Account string `json:"account_id"`
 	}
 	if err = c.namedRequest(ctx, "POST", "/api/named-shares", map[string]string{"content-type": "application/vnd.session-link.encrypted", "x-slink-policy": string(header)}, bytes.NewReader(saved.Envelope), &ack); err != nil {
-		return NamedResult{}, err
+		return NamedResult{}, c.discardDeleted(pending, err)
 	}
 	if !namedID.MatchString(ack.ID) || ack.SHA256 != saved.SHA256 || ack.Account != saved.Account {
 		return NamedResult{}, errors.New("server did not acknowledge this private share; retry with the saved local keys")
