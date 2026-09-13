@@ -126,7 +126,10 @@ Identity and named-share metadata reads allow 120 requests per account/minute;
 write limits retain the existing 30/minute default. Background sender work rotates
 through at most eight pending shares every fifteen seconds. Recipient histories
 are fetched individually so ten invitations do not multiply one response's bound.
-Existing limits of 32 active devices, 512 events and 4 MiB vault plaintext still
+Grants share one sender log per share and record only its length at grant time,
+so a share stores at most one copy of the sender history however many
+recipients it has. Existing limits of 32 active devices, 512 events and 4 MiB
+vault plaintext still
 apply. Version-2 vaults retain historical incoming keys and up to 10,000 outbox
 entries within that byte limit. Saved private shares that cannot be verified for
 the current identity, for example after the account is set up again, stay on
