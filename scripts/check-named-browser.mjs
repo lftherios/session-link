@@ -52,12 +52,12 @@ try {
  await local.evaluate("document.querySelector('.sv-author-fields').open=true");await local.fill('[aria-label="View title"]',"PRIVATE_NAMED_TITLE");await local.fill('[aria-label="Your comment"]',"PRIVATE_NAMED_NOTE");
  await local.click("Publish link");await local.wait("!!document.querySelector('select[aria-label]')");
  await local.evaluate("const el=document.querySelector('select[aria-label]');el.value='named';el.dispatchEvent(new Event('change',{bubbles:true}))");
- await local.fill('[aria-label="Recipient emails"]',"named-reader@example.test");await local.wait("document.body.innerText.includes('Create recovery key')");
+ await local.fill('[aria-label="Recipient emails"]',"named-reader@example.test, second-reader@example.test");await local.wait("document.body.innerText.includes('Create recovery key')");
  await local.fill('[aria-label="Device name"]',"Sender laptop");await local.click("Create recovery key");await local.wait("!!document.querySelector('[data-recovery-key]')");
  const ownerRecovery=await local.evaluate("document.querySelector('[data-recovery-key]').textContent");await local.click("I saved my recovery key");await local.wait("!document.querySelector('[data-recovery-key]')");
  await local.click("Share with these people");await local.wait("document.querySelector('.sl-publish')?.innerText.includes('Published for the people')");
  const prepared=await local.evaluate("document.querySelector('.sv-saved-notice a').href");
- const invitation=await local.evaluate("Array.from(document.querySelectorAll('.sl-publish a')).find(a=>a.textContent==='Invitation link').href"),id=new URL(invitation).pathname.split('/').at(-1),canonical=base+"/n/"+id;
+ const invitation=await local.evaluate("Array.from(document.querySelectorAll('.sl-publish li')).find(li=>li.querySelector('strong')?.textContent==='named-reader@example.test').querySelector('a').href"),id=new URL(invitation).pathname.split('/').at(-1),canonical=base+"/n/"+id;
  const outbox=JSON.parse(await readFile(path.join(a.home,"named-shares",(await readdir(path.join(a.home,"named-shares"))).find(f=>!f.startsWith('pending-'))),"utf8"));
  assert.equal(new URL(invitation).hash.includes(outbox.key),false);
  const ciphertext=Buffer.from(await(await fetch(base+"/api/named-shares/"+id+"/blob",{headers:{authorization:"Bearer "+credential.key}})).arrayBuffer());
@@ -73,6 +73,11 @@ try {
  await recipient.click("I saved my recovery key");await recipient.wait("document.body.innerText.includes('Accept invitation')");await recipient.click("Accept invitation");await recipient.wait("document.body.innerText.includes('Waiting for the sender')");
  a=await viewer(a.home);await recipient.wait("document.body.innerText.includes('PRIVATE_NAMED_NOTE')");assert.ok(await recipient.evaluate("document.body.innerText.includes('PRIVATE_NAMED_TITLE')"));assert.equal(await recipient.evaluate("location.href"),canonical);
  const remote=await recipient.evaluate(`fetch('/api/named-shares/${id}').then(r=>r.json())`);const firstInbox=JSON.parse(Buffer.from(remote.grant.payload,"base64url")).inbox;
+ // A recipient learns nothing about who else was invited.
+ const other=outbox.invitations.find(i=>i.email!=="named-reader@example.test"),served=JSON.stringify(remote);
+ for(const value of [other.email,other.id,other.commitment])assert.equal(served.includes(value),false,`recipient response leaked ${value}`);
+ assert.equal(served.includes("recipients"),false);
+ assert.equal(JSON.parse(Buffer.from(remote.statement.payload,"base64url")).invitation.email,"named-reader@example.test");
  const extractable=await recipient.evaluate(`(async()=>{const db=await new Promise((resolve,reject)=>{const r=indexedDB.open("slink-device-v1");r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});const entries=await new Promise(resolve=>{const r=db.transaction("devices").objectStore("devices").getAll();r.onsuccess=()=>resolve(r.result)});db.close();return entries.map(d=>[d.sign.extractable,d.box.extractable])})()`);assert.deepEqual(extractable,[[false,false]]);
  console.log("✓ Named first share: exact excerpt, browser email onboarding, persistent recovery, sender restart and automatic signed grant");
  // A forwarded complete invitation does not grant another account access.

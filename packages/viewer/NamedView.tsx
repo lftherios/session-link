@@ -4,7 +4,7 @@ import { RunViewer } from "./RunViewer";
 import { IdentitySettings } from "./IdentitySettings";
 import { browserIdentity, browserRequest, unlockedIdentity } from "./browser-identity";
 import { bindingProof, hash, hexHash, sign, unb64 } from "./identity-crypto";
-import { namedContentKey, verifyClaim, verifyPolicy, type NamedShare, type RecipientClaim } from "./named-sharing";
+import { namedContentKey, verifyClaim, verifyInvite, type NamedShare, type RecipientClaim } from "./named-sharing";
 import { openDocument, readCiphertext } from "./sealed-document";
 import { PrivateSharingStyle } from "./PrivateSharingStyle";
 
@@ -34,8 +34,8 @@ export function NamedView({ id }: { id: string }) {
    const invite = invitation(id), selected = new URLSearchParams(location.search).get("invite") ?? invite?.id;
    const data = await browserRequest<NamedShare>(`/api/named-shares/${id}${selected ? "?invite=" + encodeURIComponent(selected) : ""}`);
    if (data.id !== id) throw new Error("The server returned a different share.");
-   const policy = await verifyPolicy(data);
-   if (invite && invite.sender !== policy.root) throw new Error("The sender's encryption identity does not match your invitation.");
+   const invited = await verifyInvite(data);
+   if (invite && invite.sender !== invited.root) throw new Error("The sender's encryption identity does not match your invitation.");
    if (abort.signal.aborted) return;
    setShare(data);
    const status = await browserIdentity();
@@ -48,7 +48,7 @@ export function NamedView({ id }: { id: string }) {
     const response = await fetch(`/api/named-shares/${id}/blob`, { credentials: "same-origin", cache: "no-store", signal: abort.signal });
     if (!response.ok) throw new Error("Access is no longer available. Ask the sender to check this share.");
     const bytes = await readCiphertext(response);
-    if (await hexHash(bytes) !== policy.sha256) throw new Error("The downloaded share failed its integrity check.");
+    if (await hexHash(bytes) !== invited.sha256) throw new Error("The downloaded share failed its integrity check.");
     const document = await openDocument(bytes, key);
     if (!abort.signal.aborted) {
      sessionStorage.removeItem(`slink-invitation/${id}`);
@@ -57,13 +57,12 @@ export function NamedView({ id }: { id: string }) {
      setRun(document); setMode("ready");
     }
    } else if (data.claim) {
-    await verifyClaim(data, policy, identity);
+    await verifyClaim(data, invited, identity);
     if (!abort.signal.aborted) { setMode("waiting"); timer = setTimeout(ready, 5000); }
    } else {
     if (data.invitation?.status === "expired") throw new Error("This invitation expired. Ask the sender for a new share.");
     if (!invite || invite.id !== data.invitation?.id) throw new Error("Open the complete invitation link sent to your email address to accept this share.");
-    const recipient = policy.recipients.find(r => r.id === invite.id);
-    if (!recipient || await hash(unb64(invite.secret, 32)) !== recipient.commitment) throw new Error("This invitation secret does not match the sender's policy.");
+    if (invited.invitation.id !== invite.id || await hash(unb64(invite.secret, 32)) !== invited.invitation.commitment) throw new Error("This invitation secret does not match the sender's invitation.");
     if (!abort.signal.aborted) setMode("accept");
    }
   })().catch(e => { if (!abort.signal.aborted) { setRun(undefined); setError(e.message); setMode(e.status === 401 ? "login" : e.status === 403 ? "account" : "error"); } });
@@ -74,9 +73,9 @@ export function NamedView({ id }: { id: string }) {
   try {
    const invite = invitation(id), identity = await unlockedIdentity();
    if (!share || !invite) throw new Error("Open the complete invitation link again.");
-   const policy = await verifyPolicy(share), recipient = policy.recipients.find(r => r.id === invite.id);
-   if (policy.root !== invite.sender || !recipient || await hash(unb64(invite.secret, 32)) !== recipient.commitment || share.invitation?.id !== invite.id) throw new Error("This invitation failed verification.");
-   const claim: RecipientClaim = { account: identity.account, root: identity.state.root, head: identity.head, signer: identity.deviceID, share_id: id, invite_id: invite.id, sha256: policy.sha256, owner: policy.account, owner_root: policy.root, inbox: identity.state.inbox!, epoch: identity.state.epoch };
+   const invited = await verifyInvite(share);
+   if (invited.root !== invite.sender || invited.invitation.id !== invite.id || await hash(unb64(invite.secret, 32)) !== invited.invitation.commitment || share.invitation?.id !== invite.id) throw new Error("This invitation failed verification.");
+   const claim: RecipientClaim = { account: identity.account, root: identity.state.root, head: identity.head, signer: identity.deviceID, share_id: id, invite_id: invite.id, sha256: invited.sha256, owner: invited.account, owner_root: invited.root, inbox: identity.state.inbox!, epoch: identity.state.epoch };
    const signed = await sign("recipient-claim", claim, identity.device.sign);
    await browserRequest(`/api/named-shares/${id}`, "POST", { action: "claim", claim: { ...signed, proof: await bindingProof(invite.secret, signed) } });
    ready();

@@ -33,7 +33,8 @@ grant is ready, `/n/<id>` works without the invitation secret on approved device
 Recipients can request approval from another device or use their recovery key
 entirely in the browser. Clearing browser storage makes it a new device.
 
-The server sees email/account access metadata and encrypted grants. Browser code
+The server sees email/account access metadata and encrypted grants. Recipients
+see only their own invitation. Browser code
 is trusted, as with existing encrypted-link viewing. Revoking a recipient stops
 new downloads; it cannot erase a key or plaintext already received.
 
@@ -81,12 +82,17 @@ publishing again creates fresh ciphertext. Already downloaded copies remain.
 
 ## Wire and persistence
 
-`POST /api/named-shares` takes an encrypted envelope and an `x-slink-policy`
-header containing a signed policy. The policy binds the owner account/root,
-current device history head/signer, ciphertext SHA-256, owner's incoming key and
-wrapper, and each invitation's email, random 24-byte ID and SHA-256 commitment to
-its 32-byte secret. The native client saves the ciphertext, key and invitation
-secrets before upload. After acknowledgment it retains a private outbox under
+`POST /api/named-shares` takes one signed invitation per recipient followed by
+the encrypted envelope in a single body; `x-slink-invitations` gives the byte
+length of the JSON invitation prefix. Each invitation binds the owner
+account/root, current device history head/signer, ciphertext SHA-256, owner's
+incoming key and wrapper, and exactly one recipient's email, random 24-byte ID
+and SHA-256 commitment to its 32-byte secret. No invitation names any other
+recipient, so a recipient never learns who else received the share, or how many
+did. One invalid invitation rejects the whole upload before anything is stored.
+Re-uploading the same ciphertext with the same recipient set is idempotent even
+when re-signed at a newer head; a different set answers 409. The native client
+saves the ciphertext, key and invitation secrets before upload. After acknowledgment it retains a private outbox under
 `~/.slink/named-shares` and backs it up inside the encrypted vault.
 
 Invitation URLs are `/n/<share>?invite=<id>#invite=<secret>&sender=<root>`.
@@ -102,14 +108,14 @@ HMAC-SHA-256 with the invitation secret over
 
 Grants use purpose `named-grant`, binding owner account/root/head/signer,
 share/invitation/hash, recipient account/root/incoming key/epoch, the claim's
-SHA-256 and the wrapped content key. Policies use `named-policy`. All use the
+SHA-256 and the wrapped content key. Invitations use `named-invite`. All use the
 existing exact-byte Ed25519 signing format. Grant and owner wrappers use the
 existing X25519/HKDF/AES-GCM construction with the context
 `named/<ciphertext_sha256>/<recipient_account>/<recipient_root>/<epoch>`.
 
 The server checks active signing devices and current recipient encryption epochs
 under the same locks used for identity changes. Native clients verify recipient
-history and the secret proof before releasing keys. Browsers verify policy,
+history and the secret proof before releasing keys. Browsers verify their invitation,
 claim, grant, historical signers and ciphertext hash before authenticated
 decryption, followed by schema/invariant checks of the plaintext.
 

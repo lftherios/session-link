@@ -96,7 +96,7 @@ part of production preparation.
 A signed object is `{payload, signature}`, both canonical unpadded base64url.
 The payload is the exact UTF-8 JSON bytes. Signatures cover
 `"slink/" + purpose + "/v1" + NUL + payload_bytes`, with separate purposes
-`event`, `vault` and `request`. Named sharing adds `named-policy`,
+`event`, `vault` and `request`. Named sharing adds `named-invite`,
 `recipient-claim` and `named-grant`. Verification never reserializes JSON. The SHA-256
 of decoded event bytes identifies each history head.
 

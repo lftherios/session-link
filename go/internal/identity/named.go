@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,16 +32,19 @@ type Invitation struct {
 	Email      string `json:"email"`
 	Commitment string `json:"commitment"`
 }
-type policy struct {
-	Account    string       `json:"account"`
-	Root       string       `json:"root"`
-	Head       string       `json:"head"`
-	Signer     string       `json:"signer"`
-	SHA256     string       `json:"sha256"`
-	Inbox      string       `json:"inbox"`
-	Epoch      int          `json:"epoch"`
-	Wrap       string       `json:"wrap"`
-	Recipients []Invitation `json:"recipients"`
+
+// invite is the sender's signed statement to ONE recipient. Each recipient
+// receives only its own, so no recipient learns who else was invited.
+type invite struct {
+	Account    string     `json:"account"`
+	Root       string     `json:"root"`
+	Head       string     `json:"head"`
+	Signer     string     `json:"signer"`
+	SHA256     string     `json:"sha256"`
+	Inbox      string     `json:"inbox"`
+	Epoch      int        `json:"epoch"`
+	Wrap       string     `json:"wrap"`
+	Invitation Invitation `json:"invitation"`
 }
 type claim struct {
 	Account   string `json:"account"`
@@ -177,10 +181,22 @@ func (c Client) nativeKeys(ctx context.Context, enable bool) (nativeKeys, error)
 	}
 	return nativeKeys{remote, state, vault, d, own, key, data}, nil
 }
+
+// framed streams the signed invitations followed by the envelope without
+// copying either, keeping the total length so the server can reject an
+// oversized upload before reading it.
+type framed struct {
+	io.Reader
+	size int64
+}
+
 func (c Client) namedRequest(ctx context.Context, method, path string, headers map[string]string, body io.Reader, out any) error {
 	req, err := http.NewRequestWithContext(ctx, method, c.Server+path, body)
 	if err != nil {
 		return err
+	}
+	if upload, ok := body.(*framed); ok {
+		req.ContentLength = upload.size
 	}
 	req.Header.Set("authorization", "Bearer "+c.APIKey)
 	for k, v := range headers {
@@ -362,18 +378,25 @@ func (c Client) NamedPublish(ctx context.Context, text string, emails []string) 
 	if err != nil {
 		return NamedResult{}, err
 	}
-	p := policy{Account: saved.Account, Root: saved.Root, Head: keys.remote.Record.head(), Signer: keys.own.ID, SHA256: saved.SHA256, Inbox: keys.state.Inbox, Epoch: keys.state.Epoch, Wrap: ownerWrap, Recipients: saved.Invitations}
-	signed, err := sign("named-policy", p, keys.device.key())
+	statements := make([]Signed, 0, len(saved.Invitations))
+	for _, invitation := range saved.Invitations {
+		statement, err := sign("named-invite", invite{Account: saved.Account, Root: saved.Root, Head: keys.remote.Record.head(), Signer: keys.own.ID, SHA256: saved.SHA256, Inbox: keys.state.Inbox, Epoch: keys.state.Epoch, Wrap: ownerWrap, Invitation: invitation}, keys.device.key())
+		if err != nil {
+			return NamedResult{}, err
+		}
+		statements = append(statements, statement)
+	}
+	prefix, err := json.Marshal(statements)
 	if err != nil {
 		return NamedResult{}, err
 	}
-	header, _ := json.Marshal(signed)
 	var ack struct {
 		ID      string `json:"id"`
 		SHA256  string `json:"sha256"`
 		Account string `json:"account_id"`
 	}
-	if err = c.namedRequest(ctx, "POST", "/api/named-shares", map[string]string{"content-type": "application/vnd.session-link.encrypted", "x-slink-policy": string(header)}, bytes.NewReader(saved.Envelope), &ack); err != nil {
+	body := &framed{Reader: io.MultiReader(bytes.NewReader(prefix), bytes.NewReader(saved.Envelope)), size: int64(len(prefix) + len(saved.Envelope))}
+	if err = c.namedRequest(ctx, "POST", "/api/named-shares", map[string]string{"content-type": "application/vnd.session-link.encrypted", "x-slink-invitations": strconv.Itoa(len(prefix))}, body, &ack); err != nil {
 		return NamedResult{}, c.discardDeleted(pending, err)
 	}
 	if !namedID.MatchString(ack.ID) || ack.SHA256 != saved.SHA256 || ack.Account != saved.Account {
