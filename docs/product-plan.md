@@ -35,7 +35,7 @@ Integration TODO:
 - [ ] Resolve iroh version support, verify Docker/Fly deployment and volume backup
   restoration, and independently review the recovery/device protocol before production;
   use the [verification notes](identity-encryption.md#verification-and-deployment).
-- [ ] Design named-recipient sharing separately from account and device recovery.
+- [x] Design named-recipient sharing separately from account and device recovery.
 - [ ] Build the [DeepSeek Harness (`dsh`)](https://github.com/deepseek-ai/deepseek-harness)
   integration. Verify its session storage and active-session identity against a
   pinned version; add discovery and import support that preserve prompts, outputs,
