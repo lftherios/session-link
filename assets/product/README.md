@@ -1,7 +1,7 @@
 # Product screenshots
 
 These are browser captures of the current local product, built from the working
-tree at `9bc212f`, including the adopted Excerpt identity. The interface is
+tree at `cc8a9eb`, including the adopted Excerpt identity. The interface is
 captured as rendered by the product, at a device scale factor of 2, so each
 file has twice the pixel dimensions listed below and stays sharp on HiDPI
 screens. Sizes are CSS pixels; the landing page declares the same sizes. The sessions are fictional examples
