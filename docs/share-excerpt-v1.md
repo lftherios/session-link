@@ -82,7 +82,9 @@ contains the note. This keeps the document inspectable by generic readers.
 The source-to-export pointer needed by **Edit selection**, the view's own draft,
 and its local save timestamp live only in
 `~/.slink/drafts/exports/<export-id>.json`; they are absent from the downloadable
-document. The source's share panel lists these saved views. The editor restores
+document. The source's share panel lists these saved views, with the link of any
+view this viewer has published (`~/.slink/drafts/published/<export-id>.json`,
+newest publish only). The editor restores
 the requested view's draft rather than substituting another working draft.
 A preview URL is local to the running viewer.
 

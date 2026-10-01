@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 export async function localRequest<T = Record<string, unknown>>(path: string, method = "GET", body?: unknown): Promise<T> {
  const response = await fetch(path, { method, headers: { "x-slink": "1", ...(body === undefined ? {} : { "content-type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body) });
  const data = await response.json();
- if (!response.ok) throw Object.assign(new Error(data.error?.message ?? `Request failed (${response.status})`), { status: response.status });
+ if (!response.ok) throw Object.assign(new Error(data.error?.message ?? `Request failed (${response.status})`), { status: response.status, code: data.error?.code, details: data.error?.details });
  return data;
 }
 
@@ -36,7 +36,7 @@ export function LocalLogin({ onSignedIn }: { onSignedIn: () => void }) {
  return <section className="sl-auth" aria-label="Sign in">
   <p>Sign in or create an account with email or GitHub. Your prepared view stays here.</p>
   {attempt?.state === "pending" ? <>
-   <p>Enter this code in the sign-in tab: <strong style={{ fontFamily: "var(--mono)", letterSpacing: ".08em" }}>{attempt.user_code}</strong></p>
+   <p role="status">Enter this code in the sign-in tab: <strong style={{ fontFamily: "var(--mono)", letterSpacing: ".08em" }}>{attempt.user_code}</strong></p>
    <p><a href={attempt.url} target="_blank" rel="noopener noreferrer">Open sign-in</a> · Return here when you’re done.</p>
    <button onClick={async () => { try { await localRequest("/api/login/cancel", "POST"); setAttempt(null); } catch (error) { setError((error as Error).message); } }}>Cancel sign-in</button>
   </> : <button className="sv-primary btn primary" disabled={busy} onClick={start}>{busy ? "Starting…" : "Sign in to continue"}</button>}

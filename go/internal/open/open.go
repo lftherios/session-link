@@ -551,6 +551,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out := s.publishFileTo(file, input.Recipients)
+		if m[1] == "api/publish-preview" && out.Status == 200 {
+			s.recordPublished(id, out.Body)
+		}
 		b, _ := json.Marshal(out.Body)
 		send(out.Status, "application/json", string(b))
 	default:

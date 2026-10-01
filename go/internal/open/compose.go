@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/lftherios/session-link/internal/handoff"
+	"github.com/lftherios/session-link/internal/identity"
 	"github.com/lftherios/session-link/internal/share"
 )
 
@@ -34,9 +35,48 @@ type savedViewRecord struct {
 	SavedAt int64        `json:"saved_at,omitempty"`
 }
 type savedViewLink struct {
-	Title   string `json:"title"`
-	URL     string `json:"url"`
-	SavedAt int64  `json:"-"`
+	Title     string         `json:"title"`
+	URL       string         `json:"url"`
+	Published *publishedView `json:"published,omitempty"`
+	SavedAt   int64          `json:"-"`
+}
+
+// publishedView remembers where this viewer published a saved view, so the
+// share panel can offer the link again after it closes or the page reloads.
+type publishedView struct {
+	URL         string `json:"url"`
+	Recipients  int    `json:"recipients,omitempty"`
+	PublishedAt int64  `json:"published_at"`
+}
+
+func (s *Server) publishedFile(id string) string {
+	return filepath.Join(s.draftsDir(), "published", id+".json")
+}
+
+// recordPublished keeps the newest link for a published preview. A failed
+// write loses only this reminder: the publish succeeded and was reported.
+func (s *Server) recordPublished(id string, body map[string]any) {
+	link, _ := body["url"].(string)
+	if link == "" || !fileID.MatchString(id) {
+		return
+	}
+	record := publishedView{URL: link, PublishedAt: time.Now().UnixMilli()}
+	if recipients, ok := body["recipients"].([]identity.NamedRecipient); ok {
+		record.Recipients = len(recipients)
+	}
+	_ = atomicJSON(s.publishedFile(id), record)
+}
+
+func (s *Server) published(id string) *publishedView {
+	raw, err := os.ReadFile(s.publishedFile(id))
+	if err != nil {
+		return nil
+	}
+	var record publishedView
+	if json.Unmarshal(raw, &record) != nil || record.URL == "" {
+		return nil
+	}
+	return &record
 }
 
 func (s *Server) viewRecord(id string) (savedViewRecord, error) {
@@ -67,7 +107,7 @@ func (s *Server) savedViews(source string) []savedViewLink {
 		if _, err := os.Stat(filepath.Join(s.previewDir(), id+".json")); err != nil {
 			continue
 		}
-		views = append(views, savedViewLink{Title: record.Draft.Title, URL: "/p/" + id, SavedAt: record.SavedAt})
+		views = append(views, savedViewLink{Title: record.Draft.Title, URL: "/p/" + id, Published: s.published(id), SavedAt: record.SavedAt})
 	}
 	sort.Slice(views, func(i, j int) bool { return views[i].SavedAt > views[j].SavedAt })
 	return views

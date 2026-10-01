@@ -342,3 +342,41 @@ func TestTypedTitleFollowsTheSessionAcrossSnapshots(t *testing.T) {
 		t.Fatal("the sessions page cannot see the typed title")
 	}
 }
+
+func TestPublishedSavedViewKeepsItsLink(t *testing.T) {
+	t.Setenv("SLINK_HOME", t.TempDir())
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received, _ := io.ReadAll(r.Body)
+		hash := sha256.Sum256(received)
+		json.NewEncoder(w).Encode(map[string]any{"id": "23456789abcdef", "sha256": hex.EncodeToString(hash[:])})
+	}))
+	defer upstream.Close()
+	s := &Server{PreviewDir: t.TempDir(), Target: upstream.URL, APIKey: "fixture-key"}
+	source, draft := researchSource(t, s)
+	w := composeRequest(s, "POST", "/api/export/"+source, draft)
+	var saved struct {
+		URL string `json:"url"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &saved) != nil {
+		t.Fatal(w.Body.String())
+	}
+	if views := s.savedViews(source); len(views) != 1 || views[0].Published != nil {
+		t.Fatalf("an unpublished view claims a link: %+v", views)
+	}
+	w = composeRequest(s, "POST", strings.Replace(saved.URL, "/p/", "/api/publish-preview/", 1), nil)
+	var published struct {
+		URL string `json:"url"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &published) != nil || published.URL == "" {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	s = &Server{PreviewDir: s.PreviewDir}
+	views := s.savedViews(source)
+	if len(views) != 1 || views[0].Published == nil || views[0].Published.URL != published.URL || views[0].Published.PublishedAt == 0 {
+		t.Fatalf("the published link was not kept with its view: %+v", views)
+	}
+	w = composeRequest(s, "GET", "/api/compose/"+source, nil)
+	if !strings.Contains(w.Body.String(), `"published":{"url":"`+upstream.URL+`/s/23456789abcdef#key=`) {
+		t.Fatal("the share panel does not receive the published link", w.Body.String())
+	}
+}

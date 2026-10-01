@@ -131,7 +131,7 @@ try {
   // A link to a span with no conversation opens the inspector over the page.
   await evaluate("location.hash='span=child'");
   await waitFor("!!document.querySelector('.sv-dialog[open]')");
-  await clickText("Raw data"); await clickText("Close inspection");
+  await clickText("Raw data"); await evaluate("document.querySelector('.sv-dialog[open] .sv-dialog-head button:last-child').click()");
   assert.equal(await evaluate("scrollY"), y);
   await evaluate("history.replaceState(null,'',location.pathname)");
   await reload(); await waitFor("!!document.querySelector('.sv-response-body table')");
@@ -175,7 +175,11 @@ try {
   await evaluate("document.querySelector('[aria-label=\"Close share panel\"]').click()");
   await clickText("Share this view"); await waitFor("!!document.querySelector('[aria-label=\"Your comment\"]')");
   assert.equal(await evaluate("document.querySelector('[aria-label=\"Your comment\"]').value"), "Please review the recommendation and the captured evidence.");
-  await clickText("Preview view"); await waitFor("!!document.querySelector('.sh-primary') && !!document.querySelector('.sh-card table')");
+  // The preview opens beside the panel, which keeps the preparation open.
+  await send("Runtime.evaluate", { expression: "Array.from(document.querySelectorAll('button')).find(el=>el.textContent==='Preview view').click()", userGesture: true });
+  await waitFor("!!document.querySelector('.sv-saved-notice a')");
+  assert.equal(await evaluate("document.querySelector('[aria-label=\"Your comment\"]').value"), "Please review the recommendation and the captured evidence.");
+  await navigate(await evaluate("document.querySelector('.sv-saved-notice a').href")); await waitFor("!!document.querySelector('.sh-primary') && !!document.querySelector('.sh-card table')");
   assert.match(await evaluate("document.querySelector('.sh-primary').textContent"), /Human input/);
   assert.equal(await evaluate("window.__RUN__.spans.length"), 4);
   assert.equal(await evaluate("JSON.stringify(window.__RUN__).includes('Earlier recovered failure')"), false);

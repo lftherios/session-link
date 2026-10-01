@@ -168,8 +168,19 @@ secondary and initially collapsed.
 Annotations never rewrite the recorded conversation.
 
 **Save locally** writes a distinct immutable view and offers **Open saved view**
-and **Download view**. **Preview view** opens that saved document. Saved views
-remain listed in the share panel after reload and server restart. Local edit
+and **Download view**. **Preview view** opens that saved document in a new tab,
+so the panel keeps the preparation. Saved views remain listed in the share panel
+after reload and server restart.
+
+**Publish link** saves the view and continues beneath the panel's actions, which
+stay in view as the panel scrolls. Who can open the view (anyone with the
+complete link, or specific people) is chosen first, before any sign-in. The
+viewer records each published link beside its saved view, in
+`~/.slink/drafts/published/<export-id>.json`. The panel keeps showing the link
+after later edits, with a reminder to publish again, and **Saved views** marks
+published views with **Copy link** or, for named shares, where to manage access.
+When the secret scan stops a publish, the message names the included piece that
+holds the match. Local edit
 provenance retains each view's own selection, title and annotation; reopening
 its editor does not substitute the latest unrelated working draft. Preparing or
 saving a view does not overwrite the older composer's working draft.
@@ -195,10 +206,12 @@ remain visible and can resolve links in another included excerpt piece.
 ## Verification
 
 SSR regressions cover action hierarchy, latest exchange selection, trailing prompts, recovered
-errors, subagent ordering, standalone/replayed tool evidence, meaningful titles,
-source-addressed share actions, Markdown structure and inert HTML/URLs. Go tests
-cover local title persistence, source/draft immutability, independent saved views,
-exact download bytes, saved-view recovery and guarded title writes.
+errors, closing exits, subagent ordering, delegated tasks and per-subagent counts,
+standalone/replayed tool evidence, verbatim tool output, end-of-exchange navigation,
+meaningful titles, source-addressed share actions, Markdown structure and inert
+HTML/URLs. Go tests cover local title persistence, source/draft immutability,
+independent saved views, exact download bytes, saved-view recovery, guarded title
+writes and published links kept with their views.
 
 `scripts/check-viewer-browser.mjs` exercises the built CLI with the fictional
 `testdata/viewer/arrival/session.json` fixture, an isolated home and browser profile,
