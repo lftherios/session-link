@@ -25,7 +25,7 @@ Usage:
 
 Quickstart:
   slink view                        # choose a session and preview locally
-  (use Publish in the browser when ready to share)
+  (use Share this view in the browser when ready to share)
   slink share                       # or publish directly from the terminal
   (nothing to import? record fresh: slink record -- python agent.py)
 

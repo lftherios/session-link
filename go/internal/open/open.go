@@ -16,6 +16,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -45,7 +46,7 @@ const css = `
   *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
   .wrap{max-width:1080px;margin:0 auto;padding:28px 24px 64px}
-  .viewer-brand{display:flex;align-items:center;margin:0 0 24px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+  .viewer-brand{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:0 0 24px;padding-bottom:18px;border-bottom:1px solid var(--line)}
   .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
   a{color:var(--signal)}
   .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
@@ -295,8 +296,12 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 		fullScript = `<script>window.__FULL__=` + string(address) + `</script>`
 	}
 	composeLink := ""
-	publishTarget := `<span class="note">encrypted → ` + html.EscapeString(s.Target) + `</span>`
-	downloadClass, downloadLabel := "btn", "download JSON"
+	target := s.Target
+	if u, err := url.Parse(s.Target); err == nil && u.Host != "" {
+		target = u.Host
+	}
+	publishTarget := `<span class="note" title="` + html.EscapeString(s.Target) + `">Encrypted before upload to ` + html.EscapeString(target) + `</span>`
+	downloadClass, downloadLabel := "btn", "Download JSON"
 	if preview {
 		composeLink = `<a class="btn" href="/compose/` + id + `">Choose what to share</a>`
 	}
@@ -314,7 +319,7 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
 	localConfig := ""
 	tools := `<div class="pub">
          ` + composeLink + `
-         <button class="btn" id="copy" title="copy this local URL, span selection included; publish to share with a colleague">copy local URL</button>
+         <button class="btn" id="copy" title="Copy this page's address on this computer. Publish to share with a colleague.">Copy local URL</button>
          <button class="` + downloadClass + `" id="dl" title="save the run document as ` + id + `.json">` + downloadLabel + `</button>
          ` + publishTarget + `
          <div id="publish-control"></div>
@@ -340,9 +345,9 @@ func (s *Server) documentPage(id string, preview bool) (string, error) {
      <script>
        const copy=document.getElementById("copy"),dl=document.getElementById("dl");
        if(copy)copy.onclick=async()=>{
-         try{await navigator.clipboard.writeText(location.href);copy.textContent="copied"}
-         catch{copy.textContent="copy failed"}
-         setTimeout(()=>{copy.textContent="copy local URL"},1200);
+         try{await navigator.clipboard.writeText(location.href);copy.textContent="Copied"}
+         catch{copy.textContent="Copy failed"}
+         setTimeout(()=>{copy.textContent="Copy local URL"},1200);
        };
        if(dl)dl.onclick=()=>{
          const u=URL.createObjectURL(new Blob([JSON.stringify(window.__RUN__)],{type:"application/json"}));
