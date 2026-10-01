@@ -223,6 +223,51 @@ test("arrival: standalone results remain inspectable and replayed tool results a
   assert.equal(count(render(doc, "transcript"), "recorded-tool-result"), 1);
 });
 
+test("reading: a tool span's own copy of a result defers to the result the model received", async () => {
+  const { buildFlow } = await sessionModel();
+  const toolCall = { role: "assistant", content: [{ type: "tool_call", id: "t1", name: "Bash", arguments: { command: "git status -sb" } }] };
+  const received = { role: "tool", content: [{ type: "tool_result", tool_call_id: "t1", content: [{ type: "text", text: "model-saw-this" }] }] };
+  const doc = run([
+    call("s1", [message("user", "check git")], [toolCall]),
+    { id: "t1", type: "tool_call", parent_id: "root", name: "Bash", input: { tool_call_id: "t1", arguments: { command: "git status -sb" } }, output: { result: { stdout: "model-saw-this", interrupted: false } } },
+    call("s2", [received], [message("assistant", "clean tree")]),
+  ], { kind: "import", harness: "claude-code", fidelity: "reconstructed" });
+  const results = buildFlow(doc).filter(block => block.msg?.content.some(part => part.type === "tool_result"));
+  assert.equal(results.length, 1, "one result per call");
+  assert.equal(results[0].msg.content[0].content[0].text, "model-saw-this");
+  assert.doesNotMatch(render(doc, "transcript"), /interrupted/);
+});
+
+test("reading: a failed tool's result stands in for its bare error status", async () => {
+  const { buildFlow } = await sessionModel();
+  const failing = (extra = {}) => ({ id: "t1", type: "tool_call", parent_id: "root", name: "Bash", status: "error", input: { tool_call_id: "t1", arguments: { command: "false" } }, ...extra });
+  const errors = doc => buildFlow(doc).filter(block => block.err).map(block => block.err);
+  const withResult = run([call("s1", [message("user", "fail")], []), failing({ output: { result: "Error: Exit code 1" } })]);
+  assert.deepEqual(errors(withResult), [], "the failed result already says so");
+  const withoutResult = run([call("s1", [message("user", "fail")], []), failing()]);
+  assert.deepEqual(errors(withoutResult), ["Recorded error"], "a failure with no result stays visible");
+  const withMessage = run([call("s1", [message("user", "fail")], []), failing({ output: { result: "x" }, error: { message: "timed out" } })]);
+  assert.deepEqual(errors(withMessage), ["timed out"]);
+});
+
+test("reading: recorded tool input and output are verbatim, never Markdown", () => {
+  const output = "## main...origin/main [ahead 2]\n  * indented, not a list\n<b>raw</b>";
+  const doc = run([
+    call("s1", [message("user", "push")], [
+      { role: "assistant", content: [{ type: "tool_call", id: "t1", name: "Bash", arguments: { command: "git status -sb\ngit push", description: "Push main", timeout: 900000 } }] },
+      { role: "tool", content: [{ type: "tool_result", tool_call_id: "t1", content: [{ type: "text", text: output }] }] },
+    ]),
+  ]);
+  const html = render(doc, "transcript");
+  assert.match(html, /<pre class="rv-tool-text">## main\.\.\.origin\/main \[ahead 2\]\n  \* indented, not a list\n&lt;b&gt;raw&lt;\/b&gt;<\/pre>/);
+  assert.doesNotMatch(html, /<h2[^>]*>main/);
+  assert.match(html, /<pre class="rv-tool-text rv-tool-command">git status -sb\ngit push<\/pre>/, "a shell command reads as the command it ran");
+  assert.match(html, /→ Bash<\/span><span class="rv-tool-note">Push main<\/span>/);
+  assert.match(html, /<dt>timeout<\/dt><dd>900000<\/dd>/);
+  assert.match(html, /← Bash result/, "a result names its tool");
+  assert.match(html, /title="Tool call t1"/); assert.doesNotMatch(html, />t1</, "call IDs stay out of the visible text");
+});
+
 test("arrival: opaque names show an untitled label and titles are only editable locally", () => {
   const doc = { ...run([call("s1", [message("user", "Compare onboarding options")], [message("assistant", "The comparison")])]), name: "01a08f55-ced0-7de0-bdf3-b979a0873181" };
   const html = render(doc, "exchange");

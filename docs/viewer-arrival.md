@@ -1,6 +1,7 @@
 # Viewer arrival
 
-Implemented locally on 2026-09-11, following the agreed first-open design.
+Implemented locally on 2026-09-11, following the agreed first-open design;
+updated 2026-10-01 with fixes from a UX review of real sessions.
 No hosted deployment is part of this slice.
 
 The [viewer content model](viewer-model.md) is the guiding product reference.
@@ -39,6 +40,16 @@ as the answer. Expanding the section reveals the thinking directly, without a
 separate closed disclosure for every reasoning block. Search and activity links
 open this section when needed. Answer selection addresses only its source parts;
 reasoning and tools remain separately includable without changing captured data.
+
+Recorded tool arguments and output are evidence, so they appear verbatim in
+monospace and are never rendered as Markdown. A shell call shows the command
+line it ran, with its description beside the tool name and any other arguments
+listed below. A result names the tool that produced it; call IDs stay in the
+tooltip and the trace. When a tool span stores its own copy of a result that
+differs from what the model received, such as Claude Code's structured
+stdout/stderr record, the reader shows the model's copy once and the span stays
+inspectable in the trace. A failed tool whose result already reports the failure
+gets no separate bare **Error** step.
 
 Unavailable reasoning is explained once inside that section. The Codex importer
 preserves readable summaries or content when present; encrypted-only events now

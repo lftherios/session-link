@@ -30,6 +30,18 @@ export function buildFlow(run: Run): FlowBlock[] {
   };
   const blocks: FlowBlock[] = [], histories = new Map<string, Message[]>(), tools = new Set<string>();
   const delta = run.source?.kind === "import" || (run.source?.kind === "sdk" && run.source.label?.startsWith("pi-extension@"));
+  // Results the model received, by agent scope and call ID. When a tool span
+  // also stores its own copy, often a structured record such as Claude Code's
+  // stdout/stderr object, the reader shows the result as the model saw it.
+  const received = new Map<string, Set<string>>(), failed = new Set<string>();
+  for (const s of run.spans) if (s.type === "tool_call" && data(s, "input").tool_call_id) received.set(`${scopeOf(s)}\0${data(s, "input").tool_call_id}`, new Set());
+  if (received.size) for (const s of run.spans) for (const side of ["input", "output"] as const)
+    for (const m of (data(s, side).messages ?? []) as Message[])
+      for (const p of m.content ?? []) if (p.type === "tool_result") {
+        const key = `${scopeOf(s)}\0${p.tool_call_id}`;
+        received.get(key)?.add(canonical(p.content));
+        if (p.is_error) failed.add(key);
+      }
   run.spans.forEach((s, si) => {
     const scope = scopeOf(s);
     if (s.type === "agent" && s.parent_id && byId.has(s.parent_id)) {
@@ -63,16 +75,21 @@ export function buildFlow(run: Run): FlowBlock[] {
     ins.forEach((m, i) => { if (!replay || i >= previous.length) push(m, `u${si}-in-${i}`, s.started_at); });
     outs.forEach((m, i) => push(m, `u${si}-out-${i}`, s.ended_at ?? s.started_at));
     if (ins.length + outs.length) histories.set(scope, [...ins, ...outs]);
+    let reported = false;
     if (s.type === "tool_call") {
       const id = String(input.tool_call_id ?? "");
       if (input.arguments != null) push({ role: "assistant", content: [{ type: "tool_call", id, name: String(input.name ?? s.name ?? "Tool"), arguments: input.arguments }] } as Message, `u${si}-call`, s.started_at);
-      if (output.result != null) {
-        const result = output.result;
-        const content = Array.isArray(result) && result[0]?.type ? result : [{ type: "text", text: typeof result === "string" ? result : JSON.stringify(result, null, 2) }];
-        push({ role: "tool", content: [{ type: "tool_result", tool_call_id: id, content, is_error: s.status === "error" }] } as Message, `u${si}-result`, s.ended_at ?? s.started_at);
-      }
+      const result = output.result;
+      const content = result == null ? null : Array.isArray(result) && result[0]?.type ? result : [{ type: "text", text: typeof result === "string" ? result : JSON.stringify(result, null, 2) }];
+      const key = `${scope}\0${id}`, copies = received.get(key), elsewhere = !!copies?.size;
+      // An identical copy shows here, where the call ended, and its replay in
+      // a later input is skipped. A different copy defers to the model's.
+      const shown = !!content && (!elsewhere || copies!.has(canonical(content)));
+      if (shown) push({ role: "tool", content: [{ type: "tool_result", tool_call_id: id, content: content!, is_error: s.status === "error" }] } as Message, `u${si}-result`, s.ended_at ?? s.started_at);
+      // A failed result already says so; a bare error status adds nothing.
+      reported = s.status === "error" && !s.error?.message && (shown || failed.has(key));
     }
-    if (error) blocks.push({ key: `u${si}-error`, kind: "msg", spanId: s.id, scope, msg: { role: "system", content: [] }, err: error, unitPrefix: `u${si}-error`, at: s.ended_at ?? s.started_at });
+    if (error && !reported) blocks.push({ key: `u${si}-error`, kind: "msg", spanId: s.id, scope, msg: { role: "system", content: [] }, err: error, unitPrefix: `u${si}-error`, at: s.ended_at ?? s.started_at });
   });
   return blocks;
 }

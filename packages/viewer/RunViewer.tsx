@@ -1,6 +1,6 @@
 "use client";
 
-import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Component, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   Braces,
@@ -75,6 +75,14 @@ export const RV_CSS = `
 @keyframes rv-pulse{0%,55%{background:var(--rv-selection)}100%{background:transparent}}
 .rv .rv-linked{animation:rv-pulse 1.5s ease 2}
 .rv .rv-visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.rv .rv-tool{border:1px solid var(--rv-line);border-radius:6px;min-width:0}
+.rv .rv-tool-head{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;padding:6px 12px;border-bottom:1px solid var(--rv-line);font:12px ${T.mono}}
+.rv .rv-tool-note{margin:0;font:12px/1.5 ${T.sans};color:var(--rv-faint)}
+.rv .rv-tool-body{display:grid;gap:8px;padding:10px;min-width:0}
+.rv .rv-tool-text{margin:0;font:12px/1.55 ${T.mono};white-space:pre-wrap;overflow-wrap:anywhere;tab-size:4}
+.rv .rv-tool-command{padding:10px 12px;border-radius:6px;background:var(--rv-soft)}
+.rv .rv-tool-args{display:grid;gap:2px;margin:0;font:11px/1.5 ${T.mono};color:var(--rv-faint)}
+.rv .rv-tool-args>div{display:flex;gap:8px;min-width:0}.rv .rv-tool-args dd{margin:0;overflow-wrap:anywhere}
 @media(max-width:880px){
   .rv .rv-cols{flex-direction:column}
   .rv .rv-tree{width:100%;border-right:none;border-bottom:1px solid var(--rv-line)}
@@ -561,6 +569,87 @@ function CopyButton({ text, label = "copy" }: { text: string; label?: string }) 
 
 const MdText = DocumentText;
 
+/* ------------------------------------------------------- tool evidence */
+
+// Tool names by call ID, so a result can say which tool produced it.
+const ToolNames = createContext<Map<string, string>>(new Map());
+const toolNameCache = new WeakMap<Run, Map<string, string>>();
+function toolNames(run: Run): Map<string, string> {
+  let names = toolNameCache.get(run);
+  if (names) return names;
+  names = new Map();
+  for (const span of run.spans) {
+    const input = (span as { input?: { tool_call_id?: unknown; name?: unknown; messages?: Message[] } }).input;
+    const output = (span as { output?: { messages?: Message[] } }).output;
+    if (span.type === "tool_call" && typeof input?.tool_call_id === "string") names.set(input.tool_call_id, String(input.name ?? span.name ?? "Tool"));
+    for (const msg of [...(input?.messages ?? []), ...(output?.messages ?? [])])
+      for (const part of msg.content ?? []) if (part.type === "tool_call" && part.id) names.set(part.id, part.name);
+  }
+  toolNameCache.set(run, names);
+  return names;
+}
+
+// A shell call reads best as the command line it ran, not as escaped JSON.
+function commandLine(args: unknown): string | null {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return null;
+  const value = (args as Record<string, unknown>).command ?? (args as Record<string, unknown>).cmd;
+  if (typeof value === "string") return value;
+  const argv = Array.isArray(value) && value.every((item) => typeof item === "string") ? (value as string[]) : null;
+  return argv?.length === 3 && /(?:^|\/)(?:ba|z)?sh$/.test(argv[0]) && /^-l?c$/.test(argv[1]) ? argv[2] : null;
+}
+
+/** Recorded tool input and output are evidence: verbatim and monospaced,
+ *  never interpreted as Markdown. */
+function ToolText({ text, full = false, command = false }: { text: string; full?: boolean; command?: boolean }) {
+  const block = (visible: string) => <pre className={command ? "rv-tool-text rv-tool-command" : "rv-tool-text"}>{visible}</pre>;
+  return full ? block(text) : <ClampedText text={text} render={block} />;
+}
+
+function ToolHead({ title, children }: { title?: string; children: React.ReactNode }) {
+  return <div className="rv-tool-head" title={title}>{children}</div>;
+}
+
+function ToolCallView({ part, full }: { part: Extract<ContentPart, { type: "tool_call" }>; full: boolean }) {
+  const args = part.arguments && typeof part.arguments === "object" && !Array.isArray(part.arguments) ? (part.arguments as Record<string, unknown>) : null;
+  const command = commandLine(part.arguments);
+  const description = typeof args?.description === "string" ? args.description : "";
+  const rest = command != null && args ? Object.entries(args).filter(([key]) => !["command", "cmd", "description"].includes(key)) : [];
+  return (
+    <div className="rv-tool">
+      <ToolHead title={part.id ? `Tool call ${part.id}` : undefined}>
+        <span style={{ color: HUES.tool_call }}>→ {part.name}</span>
+        {description && <span className="rv-tool-note">{description}</span>}
+      </ToolHead>
+      <div className="rv-tool-body">
+        {command != null ? (
+          <>
+            <ToolText text={command} full={full} command />
+            {rest.length > 0 && <dl className="rv-tool-args">{rest.map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{typeof value === "string" ? value : stringify(value)}</dd></div>)}</dl>}
+          </>
+        ) : (
+          <JsonBlock value={part.arguments} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ToolResultView({ part, full }: { part: Extract<ContentPart, { type: "tool_result" }>; full: boolean }) {
+  const name = useContext(ToolNames).get(part.tool_call_id);
+  const empty = part.content.every((p) => p.type === "text" && !p.text.trim());
+  return (
+    <div className="rv-tool">
+      <ToolHead title={part.tool_call_id ? `Result of tool call ${part.tool_call_id}` : undefined}>
+        <span style={{ color: part.is_error ? T.error : HUES.tool_call }}>← {name ? `${name} result` : "result"}</span>
+        {part.is_error && <span style={{ color: T.error }}>error</span>}
+      </ToolHead>
+      <div className="rv-tool-body">
+        {empty ? <p className="rv-tool-note">No output</p> : part.content.map((p, i) => p.type === "text" ? <ToolText key={i} text={p.text} full={full} /> : <PartView key={i} part={p} full={full} />)}
+      </div>
+    </div>
+  );
+}
+
 /* ----------------------------------------------------- message rendering */
 
 function PartView({ part, full = false }: { part: ContentPart; full?: boolean }) {
@@ -612,54 +701,9 @@ function PartView({ part, full = false }: { part: ContentPart; full?: boolean })
         </details>
       );
     case "tool_call":
-      return (
-        <div style={{ border: `1px solid ${T.line}`, borderRadius: 6 }}>
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              alignItems: "baseline",
-              padding: "6px 12px",
-              borderBottom: `1px solid ${T.line}`,
-              fontFamily: T.mono,
-              fontSize: 12,
-            }}
-          >
-            <span style={{ color: HUES.tool_call }}>→ {part.name}</span>
-            <span style={{ color: T.faint }}>{part.id}</span>
-          </div>
-          <div style={{ padding: 10 }}>
-            <JsonBlock value={part.arguments} />
-          </div>
-        </div>
-      );
+      return <ToolCallView part={part} full={full} />;
     case "tool_result":
-      return (
-        <div style={{ border: `1px solid ${T.line}`, borderRadius: 6 }}>
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              alignItems: "baseline",
-              padding: "6px 12px",
-              borderBottom: `1px solid ${T.line}`,
-              fontFamily: T.mono,
-              fontSize: 12,
-            }}
-          >
-            <span style={{ color: part.is_error ? T.error : HUES.tool_call }}>
-              ← result
-            </span>
-            <span style={{ color: T.faint }}>{part.tool_call_id}</span>
-            {part.is_error && <span style={{ color: T.error }}>error</span>}
-          </div>
-          <div style={{ padding: 10, display: "grid", gap: 8 }}>
-            {part.content.map((p, i) => (
-              <PartView key={i} part={p} />
-            ))}
-          </div>
-        </div>
-      );
+      return <ToolResultView part={part} full={full} />;
     case "image":
       return part.url ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -1270,6 +1314,7 @@ export function RunViewer({ run, src, local, initialView = "exchange" }: { run?:
       <Boundary
         fallback={(message) => <ViewerFallback message={message} src={src} />}
       >
+        <ToolNames.Provider value={toolNames(resolved)}>
         {shareInfo(resolved)
           ? <ShareView run={resolved} share={shareInfo(resolved)!} renderText={(text, definitions) => <DocumentText text={text} definitions={definitions} />} />
           : initialView !== "exchange" ? <LoadedViewer run={resolved} initialMode={initialView} />
@@ -1278,6 +1323,7 @@ export function RunViewer({ run, src, local, initialView = "exchange" }: { run?:
               renderSpan={span => <SpanDetail span={span} />}
               renderTree={() => <LoadedViewer run={resolved} initialMode="tree" compact />}
               stats={sessionStats(resolved)} />}
+        </ToolNames.Provider>
       </Boundary>
     </>
   );
