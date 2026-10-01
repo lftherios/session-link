@@ -23,6 +23,8 @@ fictional. The view preparation screenshot shows the current local-only save
 and download flow; it must not be presented as hosted excerpt publishing.
 Keep the hero's declared width and height in CSS pixels; the 2x files scale down
 in the browser.
+The landing page's live example is `sessions[0]` from the same fixture file,
+copied to the server repo as `public/demo/session.json`; keep the two in step.
 
 ## Regenerate
 
