@@ -15,7 +15,7 @@ const session = (name, harness, id, spans) => ({
 });
 
 export const sessions = [
-  session("A shorter path to the first useful result", "claude-code", "demo-research", [
+  session("Go ahead, search this session", "claude-code", "demo-research", [
     exchange("brief", 0, "Compare the onboarding flows in the Atlas and Beacon sample notes. Where do people get stuck?",
       "Atlas asks people to connect a workspace before they can try it. Beacon starts with a sample project. The main difference is how much setup comes before the first useful result."),
     exchange("evidence", 2, "Separate what the notes show from what we still need to test.",
