@@ -22,8 +22,8 @@ New publishes encrypt the prepared session locally with a fresh AES-256-GCM key.
 The compatible hosted server stores ciphertext in iroh-blobs and serves it to the
 browser for decryption. Email links and one-time codes join GitHub sign-in.
 The hosted service at session.link has accepted these uploads since 2026-09-12.
-The client refuses to fall back to plaintext on older servers. Releases up to
-v0.5.0 predate this flow; build from source until the next release.
+The client refuses to fall back to plaintext on older servers. Releases from
+v0.6.0 include this flow; v0.5.0 and earlier predate it.
 
 Anyone with the complete `/s/<id>#key=…` link can read it. Keep the private receipts
 in `~/.slink/shares` backed up; account login cannot restore a lost encryption key.

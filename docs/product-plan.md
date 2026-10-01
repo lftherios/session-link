@@ -39,8 +39,8 @@ Integration TODO:
 - [ ] Resolve iroh version support, rehearse volume backup restoration, and
   independently review the recovery/device protocol; use the
   [verification notes](identity-encryption.md#verification-and-deployment).
-- [ ] Cut the first client release after v0.5.0 so released binaries gain encrypted
-  and named sharing; releases to date predate both.
+- [x] Cut the first client release after v0.5.0 so released binaries gain encrypted
+  and named sharing: v0.6.0 (2026-10-01).
 - [x] Design named-recipient sharing separately from account and device recovery.
 - [ ] Build the [DeepSeek Harness (`dsh`)](https://github.com/deepseek-ai/deepseek-harness)
   integration. Verify its session storage and active-session identity against a
