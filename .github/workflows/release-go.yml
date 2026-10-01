@@ -1,24 +1,33 @@
-# Go release via goreleaser (P4). DISABLED BY DEFAULT — the migration
-# doc's hard gate: the maintainer flips the trigger and pushes the first
-# v* tag deliberately, alongside the npm sunset. Until then this never runs.
+# Go release via goreleaser plus the npm binary channel.
 #
-# To arm it: change the `if:` guard below (or remove it) and set the
-# HOMEBREW_TAP_TOKEN secret (a PAT with contents:write on lftherios/
-# homebrew-tap). NPM_TOKEN is NOT used here — npm publishing stays in the
-# existing release.yml until sunset.
+# A pushed v* tag runs both jobs in order: goreleaser publishes the GitHub
+# Release, archives, packages, checksums and the Homebrew cask, then the npm
+# job publishes the platform packages and the session.link launcher. The two
+# are separate jobs so an npm failure (a token problem, say) can be retried
+# without re-running goreleaser against a release that already exists:
+# either `gh run rerun <id> --failed`, or dispatch this workflow by hand with
+# the version of an existing tag, which runs the npm job alone.
+#
+# Both jobs stay behind the GO_RELEASE_ENABLED repo variable on tag pushes so
+# a tag cannot ship binaries by accident. HOMEBREW_TAP_TOKEN must have
+# contents:write on lftherios/homebrew-tap; NPM_TOKEN must be allowed to
+# publish every @session-link/* package and session.link without a one-time
+# password (a granular token with 2FA bypass, or trusted publishing).
 name: release-go
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version of an existing v* tag to publish to npm, without the v (e.g. 0.6.0)"
+        required: true
+        type: string
 
 jobs:
   goreleaser:
-    # HARD GATE: the release is armed only when this repo variable is "on".
-    # Set it (Settings → Variables → GO_RELEASE_ENABLED = on) when cutting
-    # over. Absent/anything-else, the job is skipped — a tag can't ship Go
-    # binaries by accident.
-    if: vars.GO_RELEASE_ENABLED == 'on'
+    if: github.event_name == 'push' && vars.GO_RELEASE_ENABLED == 'on'
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the GitHub Release
@@ -45,13 +54,36 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-      # The npm binary channel: platform packages + the session.link
-      # launcher. This REPLACES the JS session.link package on npm — at
-      # cutover, remove session.link from release.yml's publish loop so the
-      # two don't fight over the name. Uses the tag as the version.
+
+  npm:
+    # On a tag push this follows a successful goreleaser job. On a manual
+    # dispatch goreleaser is skipped and this job runs alone for the given
+    # existing tag. `!cancelled()` is what lets it run after a skipped job.
+    needs: goreleaser
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.goreleaser.result == 'success') }}
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A dispatch publishes the code the tag points at, not main.
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.version) || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - run: npm ci
+      - run: npm run build:viewer && node scripts/golden.mjs --check
+      # Platform packages + the session.link launcher, cross-compiled by Go.
+      # build-npm.mjs skips any package whose version is already on npm, so a
+      # partially failed publish can simply be rerun.
       - name: publish npm binary channel
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
-          node scripts/build-npm.mjs "${GITHUB_REF_NAME#v}" --publish
+          node scripts/build-npm.mjs "${RELEASE_VERSION#v}" --publish

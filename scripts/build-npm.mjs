@@ -100,14 +100,33 @@ writeFileSync(
 );
 console.log("✓ session.link launcher");
 
+// True when name@version is already on the registry. npm refuses to publish
+// over an existing version, so a rerun after a partial failure (one platform
+// package published, the next refused) must skip what already landed.
+function alreadyPublished(name) {
+  try {
+    const out = execFileSync("npm", ["view", `${name}@${version}`, "version"], {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out.toString().trim() === version;
+  } catch {
+    return false; // E404: that version does not exist yet
+  }
+}
+
+function publishPackage(name, cwd) {
+  if (alreadyPublished(name)) {
+    console.log(`skip ${name}@${version} (already on npm)`);
+    return;
+  }
+  execFileSync("npm", ["publish", "--access", "public"], { cwd, stdio: "inherit" });
+}
+
 if (publish) {
   // Platform packages first, launcher last (so its optional deps resolve).
   for (const [goos, goarch] of TARGETS) {
-    execFileSync("npm", ["publish", "--access", "public"], {
-      cwd: path.join(outDir, `cli-${goos}-${goarch}`),
-      stdio: "inherit",
-    });
+    publishPackage(`@session-link/cli-${goos}-${goarch}`, path.join(outDir, `cli-${goos}-${goarch}`));
   }
-  execFileSync("npm", ["publish", "--access", "public"], { cwd: launcherDir, stdio: "inherit" });
+  publishPackage("session.link", launcherDir);
   console.log("✓ published the npm binary channel");
 }
