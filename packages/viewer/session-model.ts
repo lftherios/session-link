@@ -214,24 +214,37 @@ export function exchangesFor(run: Run, flow = buildFlow(run)): Exchange[] {
 }
 
 export const responseFor = (exchange: Exchange) => exchange.blocks.filter(b => b.msg.role === "assistant" && messageText(b.msg).trim()).at(-1);
-export const defaultExchange = (exchanges: Exchange[]) => exchanges.filter(e => !e.child).at(-1) ?? exchanges.at(-1);
+// A closing "exit" with no answer ends a session; reading starts before it.
+const farewell = (e: Exchange) => /^\/?(?:exit|quit|q|bye|logout)[.!]?$/i.test(promptText(e)) && !responseFor(e);
+export const defaultExchange = (exchanges: Exchange[]) => {
+  const main = exchanges.filter(e => !e.child);
+  let end = main.length;
+  while (end > 1 && farewell(main[end - 1])) end--;
+  return main[end - 1] ?? exchanges.at(-1);
+};
 // The readable text a person typed, or "" when the prompt carries none.
-export const promptText = (e: Exchange) => e.prompts.map(p => messageText(p.msg)).filter(t => t.trim() && !HARNESS_WRAPPER.test(t)).at(-1)?.trim() ?? "";
+// Codex records an attached image as its own text part naming the file.
+const IMAGE_TAG = /^\s*<image\b[^>]*>\s*(?:<\/image>\s*)?$/i;
+const typedText = (msg: Message) => msg.content.filter(p => p.type === "text" && !IMAGE_TAG.test(p.text)).map(p => (p as { text: string }).text).join("\n\n");
+export const promptText = (e: Exchange) => e.prompts.map(p => typedText(p.msg)).filter(t => t.trim() && !HARNESS_WRAPPER.test(t)).at(-1)?.trim() ?? "";
 // What the prompt list shows: the text, or what the prompt contains instead.
 export const promptLabel = (e: Exchange) => {
   const text = promptText(e);
   if (text) return text;
-  const types = new Set(e.prompts.flatMap(p => p.msg.content.map(part => part.type)));
-  return types.has("tool_result") ? "Tool result" : types.has("image") ? "Image" : "Human input without text";
+  const parts = e.prompts.flatMap(p => p.msg.content), types = new Set(parts.map(part => part.type));
+  const image = types.has("image") || parts.some(part => part.type === "text" && IMAGE_TAG.test(part.text));
+  return types.has("tool_result") ? "Tool result" : image ? "Image" : "Human input without text";
 };
 // A one-line preview for lists and outlines, without Markdown syntax.
-export const previewText = (text: string, max = 86) => shortText(text
+export const previewText = (text: string, max = 86) => shortText(beforeTable(text)
   .replace(/```\w*/g, " ")
   .replace(/`([^`]*)`/g, "$1")
   .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
   .replace(/(\*\*|__)(.+?)\1/g, "$2")
   .replace(/^\s{0,3}(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s?)/gm, "")
   .replace(/\|?\s*:?-{3,}:?\s*/g, " ").replace(/\|/g, " "), max);
+// Tables read poorly flattened into a line; preview the prose that leads into one.
+const beforeTable = (text: string) => { const lead = text.split(/\n[ \t]*\|/)[0].trim(); return lead && !lead.startsWith("|") ? lead : text; };
 export const shortText = (text: string, max = 86) => { const clean = text.replace(/\s+/g, " ").trim(); return clean.length > max ? clean.slice(0, max - 1).trimEnd() + "…" : clean; };
 // A recorded time for display: time of day, with the date only when it falls
 // on a different day from the session start. The title carries the full

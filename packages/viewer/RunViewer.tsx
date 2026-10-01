@@ -1968,6 +1968,9 @@ function LoadedViewer({ run, initialMode, compact = false }: { run: Run; initial
   const select = (id: string) => {
     setSel(id);
     setCopied(false);
+    // Inside the reader's trace dialog, browsing must not become the page's
+    // deep link, which would override the saved reading place on reload.
+    if (compact) return;
     try {
       history.replaceState(null, "", withAnchor(window.location.href, id));
     } catch {

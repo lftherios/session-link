@@ -53,7 +53,8 @@ test("arrival: latest input and answer open beneath scoped search and one share 
   assert.doesNotMatch(html, />Prompt<|>Response</);
   assert.doesNotMatch(html.replace(/<style>[\s\S]*?<\/style>/g, ""), />[^<]*\bexchange|aria-label="[^"]*exchange/i, "the reader never shows the internal word exchange");
   assert.ok(html.indexOf("current-question") < html.indexOf("current-answer"));
-  assert.doesNotMatch(html, /old-answer|old-question/);
+  assert.doesNotMatch(html.slice(0, html.indexOf('aria-label="Continue reading"')), /old-answer|old-question/, "the earlier exchange is only named in the navigation after the answer");
+  assert.doesNotMatch(html, /old-answer/);
   assert.match(html, /Share this view/);
   assert.match(html, /aria-label="Search scope"/);
   assert.match(html, /Search this view/);
@@ -266,6 +267,46 @@ test("reading: recorded tool input and output are verbatim, never Markdown", () 
   assert.match(html, /<dt>timeout<\/dt><dd>900000<\/dd>/);
   assert.match(html, /← Bash result/, "a result names its tool");
   assert.match(html, /title="Tool call t1"/); assert.doesNotMatch(html, />t1</, "call IDs stay out of the visible text");
+});
+
+test("arrival: a closing exit with no answer is not where reading starts", () => {
+  const doc = run([
+    call("s1", [message("user", "Compare the onboarding flows")], [message("assistant", "the-real-answer")]),
+    { id: "tail", parent_id: "root", type: "custom", input: { messages: [message("user", "exit")] } },
+  ], { kind: "import" });
+  const html = render(doc, "exchange");
+  assert.match(html, /the-real-answer/);
+  assert.match(html, /<strong>1<\/strong> <span class="sv-of">of (?:<!-- -->)?2<\/span>/, "the exit stays in the conversation");
+  doc.spans[2].input.messages = [message("user", "and the pricing?")];
+  assert.match(render(doc, "exchange"), /No response captured/, "a real trailing question still leads");
+});
+
+test("navigation: reading continues at the end of an exchange", () => {
+  const doc = run([
+    call("s1", [message("user", "first-question")], [message("assistant", "first-answer")]),
+    call("s2", [message("user", "second-question")], [message("assistant", "second-answer")]),
+  ]);
+  const local = render(doc, "exchange", { source: "fixture" });
+  const nav = local.slice(local.indexOf('aria-label="Continue reading"'));
+  assert.match(nav, /Previous<\/span><span class="sv-endnav-text">first-question</);
+  assert.doesNotMatch(local, /first-answer/);
+  assert.doesNotMatch(nav, /Copy link/, "local addresses are not for sharing");
+  assert.match(render(doc, "exchange"), /aria-label="Continue reading"[\s\S]*Copy link/, "hosted readers can link to what they read");
+});
+
+test("navigation: an attached image's file tag is not the prompt's text", async () => {
+  const { exchangesFor, promptLabel } = await sessionModel();
+  const tag = { type: "text", text: '<image name=[Image #1] path="/tmp/Screenshot.png">' };
+  const doc = run([
+    call("s1", [{ role: "user", content: [tag, { type: "text", text: "Why is this layout broken?" }] }], [message("assistant", "a")]),
+    call("s2", [{ role: "user", content: [tag] }], [message("assistant", "b")]),
+  ], { kind: "import" });
+  assert.deepEqual(exchangesFor(doc).map(promptLabel), ["Why is this layout broken?", "Image"]);
+});
+
+test("navigation: previews lead with the prose before a table", async () => {
+  const { previewText } = await sessionModel();
+  assert.equal(previewText("## Recommendation\n\nCompare both paths.\n\n| Product | Setup |\n| --- | --- |\n| Atlas | Self serve |", 200), "Recommendation Compare both paths.");
 });
 
 test("reading: a subagent's input is a delegated task, not human input", () => {

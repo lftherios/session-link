@@ -11,6 +11,9 @@ is a presentation of agent activity, which can itself be the focus of inspection
 ## Opening a session
 
 The default reader starts on the latest exchange in the main conversation.
+A trailing exchange whose human input is only an exit word (exit, quit, bye)
+and that has no response is skipped; reading starts before it, and the exit
+stays in the conversation. Any other trailing prompt still leads.
 A user prompt and its associated response form the reading unit. Consecutive
 prompt messages within the same recorded call stay together. Earlier assistant
 steps, tool arguments/results and recorded failures remain in supporting steps.
@@ -95,7 +98,10 @@ publish); that flow is being redesigned. A wide, central search bar is always vi
 default scope: the current exchange, including its agent activity, or the full
 session when that layout is showing. **Whole session** also searches other
 exchanges, subagents and recorded span payloads. Results identify individual
-matching content and reveal the relevant response, context or activity.
+matching content and reveal the relevant response, context or activity. When
+**This view** finds fewer conversation matches than the whole session, the
+results offer the whole-session count. A chosen result shows its message in
+full, even where the full session or activity would clamp it.
 
 A compact navigation row sits beneath search. On the left, a pager groups the
 previous and next arrows around a **12 of 62** position button that opens the
@@ -111,7 +117,11 @@ with no conversational representation opens an inspector instead.
 
 Previous/next controls navigate main exchanges; the outline includes subagent
 exchanges too, marked ↳. A subagent's exchanges count among themselves, such as
-**Research assistant 1 of 2**. The full session layout renders every exchange and never paginates. It opens at
+**Research assistant 1 of 2**. Previous and next also close each focused
+exchange, naming the neighbouring human input, so a long answer doesn't send
+the reader back to the top. On hosted pages, **Copy link** there copies an
+`#exchange=` link that keeps the share's key. Browsing the trace explorer
+dialog does not rewrite the page's link. The full session layout renders every exchange and never paginates. It opens at
 the active exchange; within it, the pager, the outline and search results scroll
 to the matching card instead of switching layouts, and the position follows the
 card at the top of the screen.

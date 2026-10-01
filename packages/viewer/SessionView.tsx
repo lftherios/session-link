@@ -37,7 +37,7 @@ const CSS = `
 .sv .sv-reading{max-width:780px;margin:0 auto;min-width:0}.sv .sv-prompt{padding:18px 22px;border-left:3px solid var(--rv-line);background:var(--rv-soft);border-radius:0 8px 8px 0;margin-bottom:32px;overflow-wrap:anywhere}
 .sv .sv-label{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;font:11px ui-monospace,monospace;color:var(--rv-faint);letter-spacing:.08em;text-transform:uppercase}
 .sv .sv-label-main{display:inline-flex;align-items:baseline;min-width:0}.sv .sv-time{margin-left:10px;padding-left:10px;border-left:1px solid var(--rv-line);font:11px ui-monospace,monospace;letter-spacing:0;text-transform:none;color:var(--rv-faint);font-variant-numeric:tabular-nums;white-space:nowrap}
-.sv .sv-response{overflow-wrap:anywhere}.sv .sv-response-body{font-size:15px;line-height:1.75}
+.sv .sv-response{overflow-wrap:anywhere}.sv .sv-response-body,.sv .sv-response-body .rv-document{font-size:15px;line-height:1.75}
 .sv .sv-thinking{white-space:pre-wrap;font-size:13px;line-height:1.7;color:var(--rv-faint);margin:12px 0}
 .sv .sv-block{position:relative;min-width:0;border-radius:5px;scroll-margin-top:32px}
 .sv .sv-support{margin:30px 0;border-top:1px solid var(--rv-line);padding-top:16px}.sv summary{cursor:pointer;color:var(--rv-faint);font-size:12px;line-height:1.6}.sv .sv-step{padding:24px 0;border-bottom:1px solid var(--rv-line);overflow-wrap:anywhere}.sv .sv-linked{outline:2px solid var(--rv-signal);outline-offset:7px;border-radius:4px}
@@ -61,8 +61,12 @@ const CSS = `
 .sv .sv-outline-prompt{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--rv-ink);font-size:13px;line-height:1.45}.sv .sv-outline.sv-nav-outline .sv-preview{margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--rv-faint)}
 .sv .sv-outline.sv-nav-outline button[aria-current=true]{background:var(--rv-soft);box-shadow:inset 3px 0 0 var(--rv-signal)}.sv .sv-nav-outline button[aria-current=true] .sv-outline-n{color:var(--rv-signal);font-weight:600}
 .sv .sv-block button{user-select:none}
+.sv button.sv-link-button{display:inline;border:0;background:none;padding:0;font:inherit;color:var(--rv-signal);text-decoration:underline;text-underline-offset:2px}.sv button.sv-link-button:hover:not(:disabled){background:none}
+.sv .sv-endnav{max-width:780px;margin:44px auto 0;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:12px;align-items:stretch}.sv .sv-endnav>span{min-width:0}
+.sv button.sv-endnav-step{display:grid;justify-content:stretch;justify-items:start;align-content:start;gap:4px;min-width:0;padding:12px 14px;border-radius:10px;text-align:left;font-size:13px;line-height:1.45}.sv button.sv-endnav-next{justify-items:end;text-align:right;grid-column:3}
+.sv .sv-endnav-text{max-width:100%;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}.sv .sv-endnav-link{align-self:center;grid-column:2}
 .sv .sv-context-menu{position:fixed;z-index:20;display:grid;gap:2px;min-width:210px;max-width:260px;padding:5px;border:1px solid var(--rv-line);border-radius:10px;background:var(--rv-panel);box-shadow:0 12px 32px #00000024,0 2px 6px #0000000f}.sv .sv-context-menu button{justify-content:flex-start;gap:10px;border:0;border-radius:7px;background:transparent;padding:8px 10px;font-size:13px;color:var(--rv-ink)}.sv .sv-context-menu button:disabled{opacity:.45}.sv .sv-context-menu button:hover:not(:disabled),.sv .sv-context-menu button:focus-visible{background:var(--rv-soft);outline:none}.sv .sv-context-menu svg{color:var(--rv-faint)}.sv .sv-context-menu .sv-meta{margin:2px 10px 6px}
-@media(max-width:600px){.sv .sv-header{gap:8px;flex-wrap:wrap;margin-bottom:22px}.sv .sv-heading{flex-basis:100%;order:3}.sv h1,.sv .sv-title-input{font-size:25px}.sv .sv-edit-title{opacity:1}.sv .sv-share{font-size:12px;padding:10px 12px}.sv .sv-search{flex-wrap:wrap;gap:8px;padding:10px 12px}.sv .sv-search input{width:calc(100% - 32px);flex:auto}.sv .sv-search-scope{margin-left:26px}.sv .sv-toolbar{gap:8px}.sv .sv-layout button{padding:0 9px}.sv .sv-facts{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 16px;padding:16px}.sv .sv-details-synopsis{flex-basis:100%;margin-left:25px}.sv .sv-raw-label{display:none}.sv .sv-toolbar .sv-raw-button{width:36px;padding:0}.sv .sv-position{padding:0 6px 0 9px!important}.sv .sv-prompt{padding:16px 14px}.sv .sv-conversation-card{padding:16px}.sv .sv-dialog{padding:18px;max-height:90vh}.sv .sv-dialog-head,.sv .sv-share-dialog .sv-dialog-head{top:-18px}.sv .sv-dialog-head h2{font-size:22px}.sv .sv-included-heading{flex-wrap:wrap}.sv .sv-label{font-size:10px}}
+@media(max-width:600px){.sv .sv-header{gap:8px;flex-wrap:wrap;margin-bottom:22px}.sv .sv-heading{flex-basis:100%;order:3}.sv h1,.sv .sv-title-input{font-size:25px}.sv .sv-edit-title{opacity:1}.sv .sv-share{font-size:12px;padding:10px 12px}.sv .sv-search{flex-wrap:wrap;gap:8px;padding:10px 12px}.sv .sv-search input{width:calc(100% - 32px);flex:auto}.sv .sv-search-scope{margin-left:26px}.sv .sv-toolbar{gap:8px}.sv .sv-layout button{padding:0 9px}.sv .sv-facts{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 16px;padding:16px}.sv .sv-details-synopsis{flex-basis:100%;margin-left:25px}.sv .sv-raw-label{display:none}.sv .sv-toolbar .sv-raw-button{width:36px;padding:0}.sv .sv-position{padding:0 6px 0 9px!important}.sv .sv-prompt{padding:16px 14px}.sv .sv-conversation-card{padding:16px}.sv .sv-dialog{padding:18px;max-height:90vh}.sv .sv-dialog-head,.sv .sv-share-dialog .sv-dialog-head{top:-18px}.sv .sv-dialog-head h2{font-size:22px}.sv .sv-included-heading{flex-wrap:wrap}.sv .sv-label{font-size:10px}.sv .sv-endnav{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.sv .sv-endnav-link{grid-column:1/-1;grid-row:2;justify-self:center}.sv button.sv-endnav-next{grid-column:2}.sv .sv-pager button,.sv .sv-layout button{height:36px}.sv .sv-pager .sv-step{width:36px}.sv .sv-search-scope button{padding:9px 11px}.sv .sv-edit-title{padding:9px!important}}
 `;
 
 function Inspector({ span, renderSpan, close }: { span: Span; renderSpan: Props["renderSpan"]; close: () => void }) {
@@ -257,8 +261,10 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
         range.setStart(node, at); range.setEnd(node, Math.min((node.textContent ?? "").length, at + searchTarget.query.length));
         if (!range.getClientRects().length) continue;
         window.scrollTo({ top: Math.max(0, window.scrollY + range.getBoundingClientRect().top - 160) });
-        break;
+        return;
       }
+      // Text the browser can't see (in a collapsed or clamped part) still has a place.
+      root.scrollIntoView({ block: "center" });
   }, [searchTarget, active, linked]);
 
   // The selection menu closes on a click elsewhere, Escape, scrolling or resizing.
@@ -426,11 +432,11 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
       {endedWithError && <p className="sv-notice sv-error">Error: {last.err}</p>}
       {response ? <section className="sv-response" aria-label="Agent response">
         <div className="sv-label"><span className="sv-label-main">Agent response<Stamp at={response.at} start={run.created_at} /></span></div>
-        <div className="sv-response-body">{showBlock(response, !compact)}</div>
+        <div className="sv-response-body">{showBlock(response, !compact || linked === response.key)}</div>
       </section> : <div className="sv-notice">No response captured.{run.metadata?.in_progress === true && exchange.id === initial?.id ? " The session was still recording when this snapshot was saved." : ""}</div>}
       {supporting.length > 0 && <SupportingSteps key={`${exchange.id}-${linked}`} count={visibleSupporting.length} duration={elapsed(exchange.prompts[0]?.at, exchange.blocks.map(block => block.at).filter(Boolean).at(-1))} initiallyOpen={supporting.some(b => b.key === linked)} render={() => <>
         {unavailableReasoning.length > 0 && <p className={`sv-notice sv-reasoning-unavailable${unavailableTarget ? " sv-linked" : ""}`} id={unavailableTarget ? `message-${unavailableTarget.key}` : undefined}>{readableReasoning ? "Some reasoning text isn’t available in this capture." : "Reasoning text isn’t available in this capture."}{encryptedReasoning ? " The source contains encrypted reasoning without a readable summary." : " Reasoning events were recorded without readable text."}</p>}
-        {visibleSupporting.map(block => <div className="sv-step" key={block.key}><div className="sv-label"><span className="sv-label-main">{block.err ? "Error" : block.msg.content.length > 0 && block.msg.content.every(part => part.type === "thinking") ? "Reasoning" : block.msg.content.some(part => part.type === "tool_call") ? "Tool call" : block.msg.role === "assistant" ? "Agent message" : readingRole(block.msg) === "context" ? "Provided context" : readingRole(block.msg) === "tool" ? "Tool result" : block.msg.role}<Stamp at={block.at} start={run.created_at} seconds /></span></div>{showBlock(block)}</div>)}
+        {visibleSupporting.map(block => <div className="sv-step" key={block.key}><div className="sv-label"><span className="sv-label-main">{block.err ? "Error" : block.msg.content.length > 0 && block.msg.content.every(part => part.type === "thinking") ? "Reasoning" : block.msg.content.some(part => part.type === "tool_call") ? "Tool call" : block.msg.role === "assistant" ? "Agent message" : readingRole(block.msg) === "context" ? "Provided context" : readingRole(block.msg) === "tool" ? "Tool result" : block.msg.role}<Stamp at={block.at} start={run.created_at} seconds /></span></div>{showBlock(block, linked === block.key)}</div>)}
       </>} />}
 
     </>;
@@ -452,6 +458,13 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
     }
     return hits;
   }, [exchanges, current, mode, searchScope, query, run]);
+  // How many conversation matches the whole session has, offered when this view has fewer.
+  const sessionMatches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q || searchScope === "session" || mode === "conversation") return null;
+    return exchanges.reduce((n, exchange) => n + [...exchange.prompts, ...exchange.blocks].filter(block => searchableBlock(block).lower.includes(q)).length, 0);
+  }, [exchanges, searchScope, mode, query]);
+  const wholeSession = () => { setSearchScope("session"); setSearchOpen(true); setLimit(50); };
   const snippet = ({ text, lower }: { text: string; lower: string }) => {
     const at = Math.max(0, lower.indexOf(query.trim().toLowerCase()));
     return `${at > 50 ? "…" : ""}${shortText(text.slice(Math.max(0, at - 50), at + 400), 170)}`;
@@ -490,13 +503,14 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
         </div>
       </nav>
       {!!query.trim() && searchOpen && <section id="sv-search-results" className="sv-outline sv-results" aria-label="Search results" onKeyDown={event => { if (event.key === "Escape") { search.current?.focus(); setSearchOpen(false); } }}>
-        <div className="sv-results-head"><span className="sv-meta" role="status">{matches.length} {matches.length === 1 ? "match" : "matches"} · {searchScope === "view" ? "this view" : "whole session"}</span><button className="sv-quiet" onClick={() => setSearchOpen(false)}>Close results</button></div>
+        <div className="sv-results-head"><span className="sv-meta" role="status">{matches.length} {matches.length === 1 ? "match" : "matches"} · {searchScope === "view" && mode !== "conversation" ? "this view" : "whole session"}{matches.length > 0 && !!sessionMatches && sessionMatches > matches.length && <> · <button className="sv-link-button" onClick={wholeSession}>{sessionMatches} in the whole session</button></>}</span><button className="sv-quiet" onClick={() => setSearchOpen(false)}>Close results</button></div>
         <div className="sv-outline-list">{matches.slice(0, limit).map(hit => <button key={hit.block?.key ?? `span-${hit.span}`} onClick={() => { if (hit.exchange) { if (mode === "conversation") { setActive(hit.exchange.id); spyHold.current = true; } else navigate(hit.exchange, false); setLinked(hit.block?.key ?? null); if (hit.block) setSearchTarget({ key: hit.block.key, query: query.trim().toLowerCase() }); } else { focusButton.current = search.current; setInspect(hit.span); } setSearchOpen(false); }}><span className="sv-meta">{hit.block ? hit.block.err ? "Error" : readingRole(hit.block.msg) === "human" ? hit.exchange?.child ? "Delegated task" : "Human input" : readingRole(hit.block.msg) === "context" ? "Provided context" : hit.exchange && responseFor(hit.exchange) === hit.block ? "Agent response" : "Agent activity" : "Raw data"}{hit.exchange?.child ? ` · ${hit.exchange.agent ?? "Subagent"}` : ""}</span><span className="sv-preview">{snippet(hit.entry)}</span></button>)}
-          {!matches.length && <p className="sv-meta">No matches.{searchScope === "view" && <> <button className="sv-quiet" onClick={() => setSearchScope("session")}>Search the whole session</button></>}</p>}{matches.length > limit && <button onClick={() => setLimit(value => value + 50)}>Show more matches</button>}
+          {!matches.length && <p className="sv-meta">{searchScope === "view" && mode !== "conversation" ? <>No matches in this view. <button className="sv-link-button" onClick={wholeSession}>{sessionMatches ? `Show ${sessionMatches} in the whole session` : "Search the whole session"}</button></> : "No matches."}</p>}{matches.length > limit && <button onClick={() => setLimit(value => value + 50)}>Show more matches</button>}
         </div>
       </section>}
     </div>
     <div className="sv-reading" onContextMenu={openMenu}>{mode === "exchange" ? focusedBody ?? <p className="sv-notice">No conversation was captured. Open session details to inspect the recorded data.</p> : conversation}</div>
+    {mode === "exchange" && current && (sequence.length > 1 || !local) && <EndNav key={current.id} previous={sequence[position - 1]} next={sequence[position + 1]} link={local ? undefined : current.id} move={moveTo} />}
     <details className="sv-details" open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}>
       <summary><ChevronRight size={15} className="sv-details-chevron" aria-hidden="true" /><span className="sv-details-title">Session details</span><span className="sv-details-synopsis">{synopsis}</span></summary>
       {detailsOpen && <>
@@ -529,6 +543,23 @@ const searchable = <T extends object>(cache: WeakMap<T, { text: string; lower: s
 };
 const searchableBlock = (block: MessageBlock) => searchable(blockSearch, block, canonicalMessage);
 const searchableSpan = (span: Span) => searchable(spanSearch, span, item => JSON.stringify(item));
+
+// Reading continues at the end of an exchange, where a long answer leaves you.
+// Hosted readers can also copy a link to the part they are reading.
+function EndNav({ previous, next, link, move }: { previous?: Exchange; next?: Exchange; link?: string; move: (e: Exchange) => void }) {
+  const [copied, setCopied] = useState("");
+  const copy = async () => {
+    const url = new URL(withAnchor(location.href, "")), params = new URLSearchParams(url.hash.slice(1));
+    params.set("exchange", link!); url.hash = params.toString();
+    try { await navigator.clipboard.writeText(url.href); setCopied("Link copied"); } catch { setCopied("Could not copy"); }
+  };
+  const step = (e: Exchange | undefined, label: string) => e ? <button className={`sv-endnav-step${label === "Next" ? " sv-endnav-next" : ""}`} onClick={() => move(e)}><span className="sv-meta">{label}</span><span className="sv-endnav-text">{e.child ? `${e.agent ?? "Agent"} · ` : ""}{previewText(promptLabel(e), 90)}</span></button> : <span />;
+  return <nav className="sv-endnav" aria-label="Continue reading">
+    {step(previous, "Previous")}
+    {link && <button className="sv-quiet sv-endnav-link" onClick={copy} aria-live="polite">{copied || "Copy link"}</button>}
+    {step(next, "Next")}
+  </nav>;
+}
 
 function SupportingSteps({ count, duration, initiallyOpen, render }: { count: number; duration: string; initiallyOpen: boolean; render: () => ReactNode }) {
   const [open, setOpen] = useState(initiallyOpen);
