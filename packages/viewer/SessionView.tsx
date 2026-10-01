@@ -61,6 +61,7 @@ const CSS = `
 .sv .sv-outline-prompt{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--rv-ink);font-size:13px;line-height:1.45}.sv .sv-outline.sv-nav-outline .sv-preview{margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--rv-faint)}
 .sv .sv-outline.sv-nav-outline button[aria-current=true]{background:var(--rv-soft);box-shadow:inset 3px 0 0 var(--rv-signal)}.sv .sv-nav-outline button[aria-current=true] .sv-outline-n{color:var(--rv-signal);font-weight:600}
 .sv .sv-block button{user-select:none}
+.sv button.sv-select-share{position:fixed;z-index:19;gap:8px;padding:8px 12px;border-radius:9px;font-size:13px;box-shadow:0 10px 28px #00000024,0 2px 6px #0000000f}
 .sv button.sv-link-button{display:inline;border:0;background:none;padding:0;font:inherit;color:var(--rv-signal);text-decoration:underline;text-underline-offset:2px}.sv button.sv-link-button:hover:not(:disabled){background:none}
 .sv .sv-endnav{max-width:780px;margin:44px auto 0;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:12px;align-items:stretch}.sv .sv-endnav>span{min-width:0}
 .sv button.sv-endnav-step{display:grid;justify-content:stretch;justify-items:start;align-content:start;gap:4px;min-width:0;padding:12px 14px;border-radius:10px;text-align:left;font-size:13px;line-height:1.45}.sv button.sv-endnav-next{justify-items:end;text-align:right;grid-column:3}
@@ -157,7 +158,8 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
   const search = useRef<HTMLInputElement>(null), shareButton = useRef<HTMLButtonElement>(null);
   const navRef = useRef<HTMLDivElement>(null), positionButton = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; text: string; passage: Passage | null; keyboard: boolean } | null>(null), [passage, setPassage] = useState<Passage | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null), readingArea = useRef<HTMLDivElement>(null);
+  const [chip, setChip] = useState<{ x: number; y: number; passage: Passage } | null>(null);
   const [linked, setLinked] = useState<string | null>(null), [inspect, setInspect] = useState<string | null>(null);
   const [title, setTitle] = useState(local?.title || sessionTitle(run, exchanges)), [editing, setEditing] = useState(false), [titleValue, setTitleValue] = useState(title), [titleStatus, setTitleStatus] = useState(""), [titleError, setTitleError] = useState(false);
   const titleSaving = useRef(false), label = sessionLabel(run);
@@ -287,6 +289,23 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
     return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", key); window.removeEventListener("scroll", close); window.removeEventListener("resize", close); window.removeEventListener("blur", close); };
   }, [menu]);
 
+  // Selecting text within one message offers to comment on and share it,
+  // beside the selection, for touch and trackpad as well as right-click.
+  useEffect(() => {
+    if (!local) return;
+    let timer = 0;
+    const update = () => { window.clearTimeout(timer); timer = window.setTimeout(() => {
+      const selection = window.getSelection(), range = selection && !selection.isCollapsed && selection.rangeCount ? selection.getRangeAt(0) : null;
+      const text = selection?.toString() ?? "";
+      const found = range && text.trim() && readingArea.current?.contains(range.commonAncestorContainer) ? passageFor(range, text) : null;
+      if (!range || !found) { setChip(null); return; }
+      const rects = range.getClientRects(), end = rects[rects.length - 1] ?? range.getBoundingClientRect();
+      setChip({ x: end.right, y: end.bottom, passage: found });
+    }, 180); };
+    document.addEventListener("selectionchange", update); window.addEventListener("scroll", update, { passive: true }); window.addEventListener("resize", update);
+    return () => { window.clearTimeout(timer); document.removeEventListener("selectionchange", update); window.removeEventListener("scroll", update); window.removeEventListener("resize", update); };
+  }, [local, unitText]);
+
   // The outline is a popover: a click elsewhere or Escape closes it.
   useEffect(() => {
     if (!outline) return;
@@ -390,7 +409,7 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
   const commentOn = (selected: Passage) => {
     const scope = `passage:${selected.unit}:${selected.start}-${selected.end}`;
     setViewDraft(preparations.current.get(scope) ?? { title: shareTitle, note: "", items: [{ id: selected.unit, start: selected.start, end: selected.end }], primary: selected.unit });
-    preparedScope.current = scope; setPassage(selected); setMenu(null);
+    preparedScope.current = scope; setPassage(selected); setMenu(null); setChip(null);
     focusButton.current = shareButton.current; setPanel("annotate");
     window.getSelection()?.removeAllRanges();
   };
@@ -509,7 +528,7 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
         </div>
       </section>}
     </div>
-    <div className="sv-reading" onContextMenu={openMenu}>{mode === "exchange" ? focusedBody ?? <p className="sv-notice">No conversation was captured. Open session details to inspect the recorded data.</p> : conversation}</div>
+    <div className="sv-reading" ref={readingArea} onContextMenu={openMenu}>{mode === "exchange" ? focusedBody ?? <p className="sv-notice">No conversation was captured. Open session details to inspect the recorded data.</p> : conversation}</div>
     {mode === "exchange" && current && (sequence.length > 1 || !local) && <EndNav key={current.id} previous={sequence[position - 1]} next={sequence[position + 1]} link={local ? undefined : current.id} move={moveTo} />}
     <details className="sv-details" open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}>
       <summary><ChevronRight size={15} className="sv-details-chevron" aria-hidden="true" /><span className="sv-details-title">Session details</span><span className="sv-details-synopsis">{synopsis}</span></summary>
@@ -525,6 +544,7 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
     {inspected && <Inspector key={inspected.id} span={inspected} renderSpan={renderSpan} close={closeInspector} />}
     {rawOpen && <SessionData run={run} close={() => { setRawOpen(false); focusButton.current?.focus({ preventScroll: true }); }} />}
     {traceOpen && <TraceDialog render={renderTree} close={() => { setTraceOpen(false); focusButton.current?.focus({ preventScroll: true }); }} />}
+    {chip && !menu && !panel && <button className="sv-select-share" style={{ left: Math.max(8, Math.min(chip.x - 80, window.innerWidth - 200)), top: Math.max(8, Math.min(chip.y + 10, window.innerHeight - 52)) }} onMouseDown={event => event.preventDefault()} onClick={() => commentOn(chip.passage)}><MessageSquare size={14} aria-hidden="true" />Comment and share</button>}
     {menu && <div ref={menuRef} className="sv-context-menu" role="menu" aria-label="Selected text" style={{ left: Math.max(8, Math.min(menu.x, window.innerWidth - 268)), top: Math.max(8, Math.min(menu.y, window.innerHeight - 140)) }}>
       <button role="menuitem" disabled={!menu.passage} onClick={() => { if (menu.passage) commentOn(menu.passage); }}><MessageSquare size={15} aria-hidden="true" />Comment and share</button>
       <button role="menuitem" onClick={() => copySelection(menu.text)}><Copy size={15} aria-hidden="true" />Copy</button>

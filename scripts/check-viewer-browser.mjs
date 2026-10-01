@@ -221,6 +221,17 @@ try {
   assert.ok(JSON.stringify(commentDoc).includes("Is this the documentation we should trust?"));
   console.log("PASS: right-clicking selected text comments on and shares exactly that passage");
 
+  // Selecting text also offers the same action beside the selection, for touch and trackpads.
+  await evaluate("document.querySelector('[aria-label=\"Close share panel\"]')?.click()"); await waitFor("!document.querySelector('.sv-share-dialog')");
+  assert.equal(await evaluate("!!document.querySelector('.sv-select-share')"), false, "nothing is offered without a selection");
+  const chosen = await evaluate("(()=>{const p=document.querySelector('.sv-response-body p');const walker=document.createTreeWalker(p,NodeFilter.SHOW_TEXT);const node=walker.nextNode();const r=document.createRange();r.setStart(node,0);r.setEnd(node,Math.min(node.textContent.length,24));const s=getSelection();s.removeAllRanges();s.addRange(r);return s.toString();})()");
+  await waitFor("!!document.querySelector('.sv-select-share')");
+  await evaluate("document.querySelector('.sv-select-share').click()"); await waitFor("document.activeElement?.getAttribute('aria-label')==='Your comment'");
+  assert.equal(await evaluate("document.querySelector('.sv-share-dialog h2').textContent"), "Comment and share");
+  assert.ok(await evaluate(`document.querySelector('.sv-included-item').textContent.includes(${JSON.stringify(chosen.trim())})`), "the selected passage is what is included");
+  assert.equal(await evaluate("!!document.querySelector('.sv-select-share')"), false);
+  console.log("PASS: selecting text offers Comment and share beside the selection");
+
   // Session details summarize the capture; raw data and the trace open on demand.
   await evaluate("document.querySelector('[aria-label=\"Close share panel\"]')?.click()"); await waitFor("!document.querySelector('.sv-share-dialog')");
   await evaluate("document.querySelector('.sv-details > summary').click()"); await waitFor("document.querySelectorAll('.sv-facts .sv-fact').length>=6");

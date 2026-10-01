@@ -141,8 +141,9 @@ explorer** buttons that open dialogs instead of unfolding inline.
 ## Selection, annotation and sharing
 
 Messages carry no per-message controls. To share part of a message, select any
-text in it and right-click the selection: a small menu offers **Comment and
-share** and **Copy**. **Comment and share** opens the share panel with exactly
+text in it: a **Comment and share** button appears beside the selection, which
+also works on touch screens. Right-clicking the selection opens a small menu
+with **Comment and share** and **Copy**. **Comment and share** opens the share panel with exactly
 that passage and the comment field focused. The rendered selection is mapped back
 to the source text, allowing for Markdown syntax, and widened so bold text and
 links it cuts through stay whole. A selection that spans messages, or that can't
@@ -203,8 +204,8 @@ exact download bytes, saved-view recovery and guarded title writes.
 `testdata/viewer/arrival/session.json` fixture, an isolated home and browser profile,
 and an inactive local publishing target. It checks desktop/mobile arrival, explicit
 links, saved reading position, scoped search, detail navigation, comments,
-exact passages, right-click passage sharing, saved-view discovery, and exact recipient
-content. Set
+exact passages, right-click and selection-button passage sharing, saved-view
+discovery, and exact recipient content. Set
 `SLINK_BINARY` and `BROWSER_BINARY` to override the default local binary and Brave
 paths. Screenshots are written into its printed temporary artifact directory.
 
