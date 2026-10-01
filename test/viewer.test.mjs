@@ -304,6 +304,17 @@ test("navigation: an attached image's file tag is not the prompt's text", async 
   assert.deepEqual(exchangesFor(doc).map(promptLabel), ["Why is this layout broken?", "Image"]);
 });
 
+test("search: messages read as the page shows them, not as stored JSON", async () => {
+  const { readableText } = await sessionModel();
+  const prose = readableText({ role: "assistant", content: [{ type: "text", text: "## Plan\n**Try** the [docs](https://example.test/docs).\n\n| Path | Setup |\n| --- | --- |\n| Atlas | Self serve |" }] });
+  assert.equal(prose.replace(/\s+/g, " ").trim(), "Plan Try the docs https://example.test/docs. Path Setup Atlas Self serve");
+  const call = readableText({ role: "assistant", content: [{ type: "tool_call", id: "t1", name: "Bash", arguments: { command: "git status -sb", description: "Check the tree" } }] });
+  assert.equal(call, "Bash git status -sb\nCheck the tree");
+  const result = readableText({ role: "tool", content: [{ type: "tool_result", tool_call_id: "t1", content: [{ type: "text", text: "## main...origin/main\n | kept | verbatim |" }] }] });
+  assert.equal(result, "## main...origin/main\n | kept | verbatim |", "recorded output is not rewritten");
+  assert.doesNotMatch(prose + call + result, /"type"|\\n/);
+});
+
 test("navigation: previews lead with the prose before a table", async () => {
   const { previewText } = await sessionModel();
   assert.equal(previewText("## Recommendation\n\nCompare both paths.\n\n| Product | Setup |\n| --- | --- |\n| Atlas | Self serve |", 200), "Recommendation Compare both paths.");

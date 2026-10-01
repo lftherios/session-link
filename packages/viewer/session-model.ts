@@ -236,13 +236,29 @@ export const promptLabel = (e: Exchange) => {
   return types.has("tool_result") ? "Tool result" : image ? "Image" : "Human input without text";
 };
 // A one-line preview for lists and outlines, without Markdown syntax.
-export const previewText = (text: string, max = 86) => shortText(beforeTable(text)
+export const previewText = (text: string, max = 86) => shortText(plainText(beforeTable(text)), max);
+// Markdown reduced to its words, for previews and search.
+const plainText = (text: string) => text
   .replace(/```\w*/g, " ")
   .replace(/`([^`]*)`/g, "$1")
   .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
   .replace(/(\*\*|__)(.+?)\1/g, "$2")
   .replace(/^\s{0,3}(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s?)/gm, "")
-  .replace(/\|?\s*:?-{3,}:?\s*/g, " ").replace(/\|/g, " "), max);
+  .replace(/\|?\s*:?-{3,}:?\s*/g, " ").replace(/\|/g, " ");
+// What search matches and quotes: a message as the reader shows it. Prose
+// loses its Markdown syntax but keeps link targets; recorded tool input and
+// output stay verbatim; anything else falls back to its JSON.
+export function readableText(msg: Message): string {
+  const value = (v: unknown): string => typeof v === "string" ? v : Array.isArray(v) ? v.map(value).join(" ")
+    : v && typeof v === "object" ? Object.values(v).map(value).join("\n") : JSON.stringify(v) ?? "";
+  const part = (p: ContentPart, prose: boolean): string =>
+    p.type === "text" ? prose ? plainText(p.text.replace(/!?\[([^\]]*)\]\(([^)\s]*)\)/g, "$1 $2")) : p.text
+    : p.type === "thinking" ? p.text
+    : p.type === "tool_call" ? `${p.name} ${value(p.arguments)}`
+    : p.type === "tool_result" ? p.content.map(inner => part(inner, false)).join("\n")
+    : JSON.stringify(p);
+  return msg.content.map(p => part(p, true)).filter(Boolean).join("\n");
+}
 // Tables read poorly flattened into a line; preview the prose that leads into one.
 const beforeTable = (text: string) => { const lead = text.split(/\n[ \t]*\|/)[0].trim(); return lead && !lead.startsWith("|") ? lead : text; };
 export const shortText = (text: string, max = 86) => { const clean = text.replace(/\s+/g, " ").trim(); return clean.length > max ? clean.slice(0, max - 1).trimEnd() + "…" : clean; };

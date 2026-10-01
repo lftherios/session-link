@@ -4,7 +4,7 @@ import { ViewDialog } from "./ViewDialog";
 import { withAnchor } from "./encryption";
 import type { ViewDraft } from "./view-draft";
 import type { ContentPart, Run, Span } from "@session-link/format";
-import { buildFlow, defaultExchange, duration, elapsed, eventTime, exchangesFor, harnessName, messageText, previewText, promptLabel, promptText, partUnit, readerFlow, readingKey, readingRole, reasoningUnavailable, responseFor, selectionPrefixes, sessionLabel, sessionTitle, shortText, sourceRange, type Exchange, type MessageBlock } from "./session-model";
+import { buildFlow, defaultExchange, duration, elapsed, eventTime, exchangesFor, harnessName, messageText, previewText, promptLabel, promptText, partUnit, readableText, readerFlow, readingKey, readingRole, reasoningUnavailable, responseFor, selectionPrefixes, sessionLabel, sessionTitle, shortText, sourceRange, type Exchange, type MessageBlock } from "./session-model";
 
 export type LocalViewer = { source: string; project?: string; title?: string };
 type Passage = { unit: string; start: number; end: number };
@@ -556,7 +556,7 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
   </div>;
 }
 
-const canonicalMessage = (block: MessageBlock) => [messageText(block.msg), block.err ?? "", ...block.msg.content.filter(p => p.type !== "text").map(p => JSON.stringify(p))].join("\n");
+const canonicalMessage = (block: MessageBlock) => [readableText(block.msg), block.err ?? ""].filter(Boolean).join("\n");
 // Search text is derived once per message and span, not on every keystroke.
 const blockSearch = new WeakMap<MessageBlock, { text: string; lower: string }>(), spanSearch = new WeakMap<Span, { text: string; lower: string }>();
 const searchable = <T extends object>(cache: WeakMap<T, { text: string; lower: string }>, item: T, read: (item: T) => string) => {

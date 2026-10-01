@@ -98,7 +98,9 @@ publish); that flow is being redesigned. A wide, central search bar is always vi
 default scope: the current exchange, including its agent activity, or the full
 session when that layout is showing. **Whole session** also searches other
 exchanges, subagents and recorded span payloads. Results identify individual
-matching content and reveal the relevant response, context or activity. When
+matching content and reveal the relevant response, context or activity. They
+match and quote text as the page shows it: prose without Markdown syntax, and
+tool input and output verbatim, never as stored JSON. When
 **This view** finds fewer conversation matches than the whole session, the
 results offer the whole-session count. A chosen result shows its message in
 full, even where the full session or activity would clamp it.
