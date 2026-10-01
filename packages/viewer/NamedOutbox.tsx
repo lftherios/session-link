@@ -22,7 +22,7 @@ export function NamedOutbox() {
  return <main className="sl-private" style={{ maxWidth: 720, margin: "24px auto", lineHeight: 1.6, overflowWrap: "anywhere" }}>
   <PrivateSharingStyle />
   <h1>Shared with people</h1>
-  <p>Send each person their invitation link. Keep a local viewer running until they accept; access is granted automatically. Unaccepted invitations expire after seven days.</p>
+  <p>Send each person their invitation link. After each person accepts, this viewer grants their access, so keep it running or run slink view again later. Unaccepted invitations expire after seven days.</p>
   <button disabled={busy} onClick={() => refresh()}>{busy ? "Checking access…" : "Refresh access"}</button>
   {error && <p role="alert">{error} <a href="/settings">Recovery and devices</a></p>}
   {!busy && !shares.length && <p>No shares with named recipients on this device yet. Open a session, prepare a view, and choose Specific people when publishing.</p>}

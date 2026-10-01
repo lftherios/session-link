@@ -56,7 +56,7 @@ export function PublishPanel({ endpoint, title, ready = false, onPublished, loca
   {url && recipients.length ? <>
    <p role="status">Published for the people below. Send each person their own invitation link.</p>
    <RecipientLinks recipients={recipients} />
-   <p>Keep a local viewer running until they accept. Their access is granted automatically. Unaccepted invitations expire after seven days.</p>
+   <p>After each person accepts, this viewer grants their access. Keep it running, or run <code>slink view</code> again later. Unaccepted invitations expire after seven days.</p>
    <a href="/shared" target="_blank" rel="noopener noreferrer">Check or revoke access</a>
   </> : url ? <>
    <p role="status">Published{copied ? " · link copied" : ""}. Anyone with the complete link can view it.</p>
@@ -66,10 +66,10 @@ export function PublishPanel({ endpoint, title, ready = false, onPublished, loca
   </> : <>
    {/* Who can open it is the first decision, before any sign-in. */}
    <label>Who can open this view? <select aria-label="Who can open this view?" value={audience} disabled={busy} onChange={e => { setAudience(e.target.value); setError(""); }}><option value="link">Anyone with the complete link</option><option value="named">Specific people</option></select></label>
-   <p>Only the prepared view is encrypted and uploaded. {audience === "named" ? "Recipients sign in with their invited email and unlock an approved browser or device." : "Anyone with the complete link can view it."}</p>
+   <p>Only the prepared view is encrypted and uploaded. {audience === "named" ? "Each person signs in with the email you invite and opens it in a browser or device they have approved." : "Anyone with the complete link can view it."}</p>
    {audience === "named" && <><label>Recipient emails<textarea aria-label="Recipient emails" value={emails} disabled={busy} onChange={e => setEmails(e.target.value)} placeholder="alex@example.com, sam@example.com" rows={2} style={{display:"block",width:"100%",boxSizing:"border-box",margin:"8px 0",padding:10}} /></label><p>Up to ten people. You’ll copy an invitation link for each person after publishing.</p></>}
    {signedIn === false ? <LocalLogin onSignedIn={() => { setSignedIn(true); setError(""); }} /> : signedIn === true ? <>
-    {audience === "named" && keysReady === false && <IdentitySettings onReady={() => setKeysReady(true)} />}
+    {audience === "named" && keysReady === false && <><p>Sharing with specific people needs your own encryption key on this device. Set it up once:</p><IdentitySettings embedded onReady={() => setKeysReady(true)} /></>}
     <p>Publish <strong>{title}</strong> to {server}?</p>
     <button className="sv-primary btn primary" disabled={busy || (audience === "named" && (!keysReady || !emails.trim()))} onClick={publish}>{busy ? "Encrypting and publishing…" : audience === "named" ? "Share with these people" : "Publish encrypted link"}</button>
    </> : <p role="status">Checking sign-in…</p>}

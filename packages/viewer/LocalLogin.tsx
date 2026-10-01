@@ -8,7 +8,8 @@ export async function localRequest<T = Record<string, unknown>>(path: string, me
 }
 
 type Attempt = { id: string; state: string; url?: string; user_code?: string; error?: string };
-export function LocalLogin({ onSignedIn }: { onSignedIn: () => void }) {
+// `preparing` is true when a prepared view waits for the sign-in to finish.
+export function LocalLogin({ onSignedIn, preparing = true }: { onSignedIn: () => void; preparing?: boolean }) {
  const [attempt, setAttempt] = useState<Attempt | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(false);
  useEffect(() => {
   if (attempt?.state !== "pending") return;
@@ -17,7 +18,7 @@ export function LocalLogin({ onSignedIn }: { onSignedIn: () => void }) {
    try {
     const next = await localRequest<Attempt>("/api/login/status");
     if (!live) return;
-    if (next.id !== attempt.id) { setAttempt(null); setError("Sign-in was cancelled. Your prepared view is still here."); }
+    if (next.id !== attempt.id) { setAttempt(null); setError(preparing ? "Sign-in was cancelled. Your prepared view is still here." : "Sign-in was cancelled."); }
     else if (next.state === "complete") { setAttempt(next); onSignedIn(); }
     else if (next.state === "error") { setAttempt(next); setError(next.error ?? "Sign-in expired. Try again."); }
    } catch { /* A brief connection interruption should not discard the draft. */ }
@@ -34,7 +35,7 @@ export function LocalLogin({ onSignedIn }: { onSignedIn: () => void }) {
   finally { setBusy(false); }
  };
  return <section className="sl-auth" aria-label="Sign in">
-  <p>Sign in or create an account with email or GitHub. Your prepared view stays here.</p>
+  <p>Sign in or create an account with email or GitHub.{preparing ? " Your prepared view stays here." : ""}</p>
   {attempt?.state === "pending" ? <>
    <p role="status">Enter this code in the sign-in tab: <strong style={{ fontFamily: "var(--mono)", letterSpacing: ".08em" }}>{attempt.user_code}</strong></p>
    <p><a href={attempt.url} target="_blank" rel="noopener noreferrer">Open sign-in</a> · Return here when you’re done.</p>
