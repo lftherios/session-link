@@ -165,6 +165,8 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
   const current = exchanges.find(e => e.id === active) ?? initial;
   const main = exchanges.filter(e => !e.child), position = current ? (current.child ? exchanges : main).indexOf(current) : -1;
   const sequence = current?.child ? exchanges : main;
+  // A subagent's exchanges count among themselves, as the main conversation does.
+  const peers = (e: Exchange) => exchanges.filter(x => x.child && x.scope === e.scope);
 
   useEffect(() => { if (local) document.title = `${title || label} · session.link`; }, [title, label, local]);
 
@@ -344,7 +346,7 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
       !!project && { label: "Project", value: project.split(/[\\/]/).filter(Boolean).at(-1) ?? project, title: project },
       { label: "Started", value: valid ? started.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : run.created_at, title: valid ? started.toLocaleString(undefined, { dateStyle: "full", timeStyle: "long" }) : undefined },
       !!duration(stats.durMs ?? 0) && { label: "Duration", value: duration(stats.durMs ?? 0) },
-      { label: "Human input", value: plural(mainCount, "message", "messages"), note: subagents ? `${exact(subagents)} more in subagents` : undefined },
+      { label: "Human input", value: plural(mainCount, "message", "messages"), note: subagents ? `Plus ${plural(subagents, "task", "tasks")} delegated to subagents` : undefined },
       { label: "Recorded spans", value: exact(run.spans.length), note: `${plural(stats.modelCalls, "model call", "model calls")} · ${plural(stats.toolCalls, "tool call", "tool calls")}` },
       (stats.tokensIn != null || stats.tokensOut != null) && { label: "Tokens", value: `${compact(stats.tokensIn ?? 0)} in · ${compact(stats.tokensOut ?? 0)} out`, title: `${exact(stats.tokensIn ?? 0)} in · ${exact(stats.tokensOut ?? 0)} out` },
       stats.cost != null && { label: "Cost", value: `$${stats.cost < 0.01 ? stats.cost.toFixed(4) : stats.cost.toFixed(2)}` },
@@ -416,11 +418,11 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
     const readableReasoning = supporting.some(block => block.msg.content.some(part => part.type === "thinking" && !reasoningUnavailable(part, run)));
     const last = exchange.blocks.at(-1), endedWithError = last?.err && (!response || exchange.blocks.indexOf(last) >= exchange.blocks.indexOf(response));
     return <>
-      {exchange.prompts.length > 0 && <div className="sv-prompt"><p className="sv-label"><span className="sv-label-main">Human input<Stamp at={exchange.prompts[0].at} start={run.created_at} /></span></p>{exchange.prompts.map(block => {
+      {exchange.prompts.length > 0 && <div className="sv-prompt"><p className="sv-label"><span className="sv-label-main">{exchange.child ? "Delegated task" : "Human input"}<Stamp at={exchange.prompts[0].at} start={run.created_at} /></span></p>{exchange.prompts.map(block => {
         const long = messageText(block.msg).length > 600;
         return showBlock(block, true, long);
       })}</div>}
-      {!exchange.prompts.length && <p className="sv-meta">Human input not captured.</p>}
+      {!exchange.prompts.length && <p className="sv-meta">{exchange.child ? "Delegated task not captured." : "Human input not captured."}</p>}
       {endedWithError && <p className="sv-notice sv-error">Error: {last.err}</p>}
       {response ? <section className="sv-response" aria-label="Agent response">
         <div className="sv-label"><span className="sv-label-main">Agent response<Stamp at={response.at} start={run.created_at} /></span></div>
@@ -474,10 +476,10 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
         {current && <div className="sv-nav" ref={navRef}>
           <div className="sv-pager">
             <button className="sv-step" aria-label="Previous in conversation" title="Previous" disabled={position <= 0} onClick={() => moveTo(sequence[position - 1])}><ChevronLeft size={16} /></button>
-            <button ref={positionButton} className="sv-position" aria-expanded={outline} aria-controls="sv-outline" title="Conversation outline" onClick={() => { setOutline(value => !value); setSearchOpen(false); }}>{current.child && <><span className="sv-agent">{current.agent ?? "Agent"}</span>{" "}</>}<strong>{position + 1}</strong>{" "}<span className="sv-of">of {sequence.length}</span><ChevronDown size={14} className="sv-caret" aria-hidden="true" /></button>
+            <button ref={positionButton} className="sv-position" aria-expanded={outline} aria-controls="sv-outline" title="Conversation outline" onClick={() => { setOutline(value => !value); setSearchOpen(false); }}>{current.child && <><span className="sv-agent">{current.agent ?? "Agent"}</span>{" "}</>}<strong>{current.child ? peers(current).indexOf(current) + 1 : position + 1}</strong>{" "}<span className="sv-of">of {current.child ? peers(current).length : sequence.length}</span><ChevronDown size={14} className="sv-caret" aria-hidden="true" /></button>
             <button className="sv-step" aria-label="Next in conversation" title="Next" disabled={position >= sequence.length - 1} onClick={() => moveTo(sequence[position + 1])}><ChevronRight size={16} /></button>
           </div>
-          {outline && <section id="sv-outline" className="sv-outline sv-nav-outline" aria-label="Conversation outline"><div className="sv-outline-list">{exchanges.map(exchange => <button key={exchange.id} className={exchange.child ? "sv-child" : undefined} aria-current={exchange.id === active} onClick={() => moveTo(exchange)}><span className="sv-outline-n">{(exchange.child ? exchanges : main).indexOf(exchange) + 1}</span><span className="sv-outline-text"><span className="sv-outline-prompt">{exchange.child ? `${exchange.agent ?? "Agent"} · ` : ""}{previewText(promptLabel(exchange), 120)}</span><span className="sv-preview">{previewText(messageText(responseFor(exchange)?.msg ?? { role: "assistant", content: [] }), 140) || "No response captured"}</span></span></button>)}</div></section>}
+          {outline && <section id="sv-outline" className="sv-outline sv-nav-outline" aria-label="Conversation outline"><div className="sv-outline-list">{exchanges.map(exchange => <button key={exchange.id} className={exchange.child ? "sv-child" : undefined} aria-current={exchange.id === active} onClick={() => moveTo(exchange)}><span className="sv-outline-n" aria-hidden={exchange.child || undefined}>{exchange.child ? "↳" : main.indexOf(exchange) + 1}</span><span className="sv-outline-text"><span className="sv-outline-prompt">{exchange.child ? `${exchange.agent ?? "Agent"} · ` : ""}{previewText(promptLabel(exchange), 120)}</span><span className="sv-preview">{previewText(messageText(responseFor(exchange)?.msg ?? { role: "assistant", content: [] }), 140) || "No response captured"}</span></span></button>)}</div></section>}
         </div>}
         <div className="sv-toolbar-end">
           {mode === "conversation" && <button className="sv-raw-button" aria-label="Raw data" title="Open the whole session as JSON" onClick={event => { focusButton.current = event.currentTarget; setRawOpen(true); }}><FileJson size={14} aria-hidden="true" /><span className="sv-raw-label">Raw data</span></button>}
@@ -489,7 +491,7 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
       </nav>
       {!!query.trim() && searchOpen && <section id="sv-search-results" className="sv-outline sv-results" aria-label="Search results" onKeyDown={event => { if (event.key === "Escape") { search.current?.focus(); setSearchOpen(false); } }}>
         <div className="sv-results-head"><span className="sv-meta" role="status">{matches.length} {matches.length === 1 ? "match" : "matches"} · {searchScope === "view" ? "this view" : "whole session"}</span><button className="sv-quiet" onClick={() => setSearchOpen(false)}>Close results</button></div>
-        <div className="sv-outline-list">{matches.slice(0, limit).map(hit => <button key={hit.block?.key ?? `span-${hit.span}`} onClick={() => { if (hit.exchange) { if (mode === "conversation") { setActive(hit.exchange.id); spyHold.current = true; } else navigate(hit.exchange, false); setLinked(hit.block?.key ?? null); if (hit.block) setSearchTarget({ key: hit.block.key, query: query.trim().toLowerCase() }); } else { focusButton.current = search.current; setInspect(hit.span); } setSearchOpen(false); }}><span className="sv-meta">{hit.block ? hit.block.err ? "Error" : readingRole(hit.block.msg) === "human" ? "Human input" : readingRole(hit.block.msg) === "context" ? "Provided context" : hit.exchange && responseFor(hit.exchange) === hit.block ? "Agent response" : "Agent activity" : "Raw data"}{hit.exchange?.child ? ` · ${hit.exchange.agent ?? "Subagent"}` : ""}</span><span className="sv-preview">{snippet(hit.entry)}</span></button>)}
+        <div className="sv-outline-list">{matches.slice(0, limit).map(hit => <button key={hit.block?.key ?? `span-${hit.span}`} onClick={() => { if (hit.exchange) { if (mode === "conversation") { setActive(hit.exchange.id); spyHold.current = true; } else navigate(hit.exchange, false); setLinked(hit.block?.key ?? null); if (hit.block) setSearchTarget({ key: hit.block.key, query: query.trim().toLowerCase() }); } else { focusButton.current = search.current; setInspect(hit.span); } setSearchOpen(false); }}><span className="sv-meta">{hit.block ? hit.block.err ? "Error" : readingRole(hit.block.msg) === "human" ? hit.exchange?.child ? "Delegated task" : "Human input" : readingRole(hit.block.msg) === "context" ? "Provided context" : hit.exchange && responseFor(hit.exchange) === hit.block ? "Agent response" : "Agent activity" : "Raw data"}{hit.exchange?.child ? ` · ${hit.exchange.agent ?? "Subagent"}` : ""}</span><span className="sv-preview">{snippet(hit.entry)}</span></button>)}
           {!matches.length && <p className="sv-meta">No matches.{searchScope === "view" && <> <button className="sv-quiet" onClick={() => setSearchScope("session")}>Search the whole session</button></>}</p>}{matches.length > limit && <button onClick={() => setLimit(value => value + 50)}>Show more matches</button>}
         </div>
       </section>}
@@ -536,9 +538,9 @@ function SupportingSteps({ count, duration, initiallyOpen, render }: { count: nu
 // The full session renders every exchange; it never paginates.
 function Conversation({ exchanges, render }: { exchanges: Exchange[]; render: (e: Exchange, compact: boolean) => ReactNode }) {
   // Positions match the navigation row: main exchanges count among themselves,
-  // subagent exchanges by their place in the whole session. The interface
+  // and each subagent's exchanges among that subagent's. The interface
   // shows no noun for the unit until a better name than "exchange" is chosen.
   const main = exchanges.filter(e => !e.child);
-  const position = (e: Exchange) => e.child ? `${e.agent ?? "Agent"} · ${exchanges.indexOf(e) + 1} of ${exchanges.length}` : `${main.indexOf(e) + 1} of ${main.length}`;
+  const position = (e: Exchange) => { const peers = exchanges.filter(x => x.child && x.scope === e.scope); return e.child ? `${e.agent ?? "Agent"} · ${peers.indexOf(e) + 1} of ${peers.length}` : `${main.indexOf(e) + 1} of ${main.length}`; };
   return <>{exchanges.map(e => <article id={`exchange-${e.id}`} className="sv-conversation-card" key={e.id}><div className="sv-label"><span>{position(e)}</span></div>{render(e, true)}</article>)}</>;
 }

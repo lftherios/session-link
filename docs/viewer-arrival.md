@@ -15,6 +15,8 @@ A user prompt and its associated response form the reading unit. Consecutive
 prompt messages within the same recorded call stay together. Earlier assistant
 steps, tool arguments/results and recorded failures remain in supporting steps.
 Subagent exchanges remain navigable and do not replace the main landing point.
+A subagent's input reads **Delegated task**, because the main agent wrote it,
+not a person.
 
 Human input means what a person contributed. Some harnesses record other
 material with the user role, so the reader and the share catalog apply one rule.
@@ -108,7 +110,8 @@ open the readable exchange and reveal supporting material when needed. A span
 with no conversational representation opens an inspector instead.
 
 Previous/next controls navigate main exchanges; the outline includes subagent
-exchanges too. The full session layout renders every exchange and never paginates. It opens at
+exchanges too, marked ↳. A subagent's exchanges count among themselves, such as
+**Research assistant 1 of 2**. The full session layout renders every exchange and never paginates. It opens at
 the active exchange; within it, the pager, the outline and search results scroll
 to the matching card instead of switching layouts, and the position follows the
 card at the top of the screen.

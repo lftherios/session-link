@@ -268,6 +268,28 @@ test("reading: recorded tool input and output are verbatim, never Markdown", () 
   assert.match(html, /title="Tool call t1"/); assert.doesNotMatch(html, />t1</, "call IDs stay out of the visible text");
 });
 
+test("reading: a subagent's input is a delegated task, not human input", () => {
+  const doc = run([
+    { id: "child", parent_id: "root", type: "agent", name: "Researcher" },
+    call("c1", [message("user", "child-task")], [message("assistant", "child-result")], { parent_id: "child" }),
+  ]);
+  const html = render(doc, "exchange");
+  assert.match(html, /child-task/);
+  assert.match(html, />Delegated task</);
+  assert.doesNotMatch(html, />Human input</);
+});
+
+test("navigation: each subagent's exchanges count among themselves", () => {
+  const doc = run([
+    { id: "a", parent_id: "root", type: "agent", name: "Planner" },
+    call("a1", [message("user", "plan")], [message("assistant", "planned")], { parent_id: "a" }),
+    { id: "b", parent_id: "root", type: "agent", name: "Reviewer" },
+    call("b1", [message("user", "review one")], [message("assistant", "one")], { parent_id: "b" }),
+    call("b2", [message("user", "review two")], [message("assistant", "two")], { parent_id: "b" }),
+  ]);
+  assert.match(render(doc, "exchange"), /<span class="sv-agent">Reviewer<\/span> <strong>2<\/strong> <span class="sv-of">of (?:<!-- -->)?2<\/span>/);
+});
+
 test("arrival: opaque names show an untitled label and titles are only editable locally", () => {
   const doc = { ...run([call("s1", [message("user", "Compare onboarding options")], [message("assistant", "The comparison")])]), name: "01a08f55-ced0-7de0-bdf3-b979a0873181" };
   const html = render(doc, "exchange");
