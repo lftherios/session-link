@@ -31,6 +31,20 @@ declare global {
   }
 }
 
+// A hosted page can hand over the session without any inline script, which
+// keeps it compatible with a strict Content-Security-Policy: a small session
+// travels in <script type="application/json" id="run-data">, a large one is
+// named by data-src on #root and fetched by the viewer. The local viewer keeps
+// setting window.__RUN__ directly; that path wins when both are present.
+function hostedSession(root: HTMLElement | null): { run?: Run; src?: string } {
+  const embedded = document.getElementById("run-data")?.textContent;
+  if (embedded) {
+    try { return { run: JSON.parse(embedded) as Run }; } catch { /* fall through to data-src */ }
+  }
+  const src = root?.dataset.src;
+  return src ? { src } : {};
+}
+
 function LocalSession({ reading, full, local }: { reading: Run; full?: string; local?: LocalViewer }) {
   const [run, setRun] = useState(reading);
   useEffect(() => {
@@ -46,7 +60,8 @@ function LocalSession({ reading, full, local }: { reading: Run; full?: string; l
 }
 
 const el = document.getElementById("root");
-if (el) createRoot(el).render(window.__NAMED__ ? <NamedView id={window.__NAMED__.id} /> : window.__NAMED_OUTBOX__ ? <NamedOutbox /> : window.__BROWSER_IDENTITY__ ? <IdentitySettings browser /> : window.__IDENTITY__ ? <IdentitySettings /> : window.__SEALED__ ? <EncryptedView id={window.__SEALED__.id} /> : window.__COMPOSE__ ? <ShareComposer source={window.__COMPOSE__.source} /> : <LocalSession reading={window.__RUN__} full={window.__FULL__} local={window.__LOCAL__} />);
+const hosted = window.__RUN__ ? {} : hostedSession(el);
+if (el) createRoot(el).render(window.__NAMED__ ? <NamedView id={window.__NAMED__.id} /> : window.__NAMED_OUTBOX__ ? <NamedOutbox /> : window.__BROWSER_IDENTITY__ ? <IdentitySettings browser /> : window.__IDENTITY__ ? <IdentitySettings /> : window.__SEALED__ ? <EncryptedView id={window.__SEALED__.id} /> : window.__COMPOSE__ ? <ShareComposer source={window.__COMPOSE__.source} /> : hosted.src ? <RunViewer src={hosted.src} /> : <LocalSession reading={hosted.run ?? window.__RUN__} full={window.__FULL__} local={window.__LOCAL__} />);
 
 const publish = document.getElementById("publish-control");
 if (publish && window.__PUB__) createRoot(publish).render(<PublishPanel {...window.__PUB__} />);
