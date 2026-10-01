@@ -1,6 +1,6 @@
 # session.link product plan
 
-Working draft · updated 2026-09-12 · based on the planning conversation.
+Working draft · updated 2026-10-01 · based on the planning conversation.
 
 The [success criteria](success-criteria.md) record the nine agreed requirements:
 easy installation anywhere, a tiny and efficient daemon, current and dependable
@@ -8,7 +8,9 @@ harness integrations, an inviting viewer, user control of data, and simple
 sharing, plus trustworthy records, uninterrupted agent work, and immediate
 recipient value. The [KPI scorecard](kpis.md) proposes targets and measurement
 methods. The selected encrypted-sharing prototype direction is iroh-blobs with
-a persistent hosted provider and browser decryption; recovery and device approval are implemented locally; named-recipient sharing remains separate work. See [identity and encryption](identity-encryption.md).
+a persistent hosted provider and browser decryption; recovery, device approval
+and named-recipient sharing are implemented and live on the hosted service
+(v30, 2026-10-01). See [identity and encryption](identity-encryption.md).
 Use these criteria to prioritize the work below.
 
 The [viewer content model](viewer-model.md) is the agreed reference for session
@@ -19,8 +21,8 @@ Execution update: CLI-to-web handoff and local excerpt composition are
 implemented in this checkout. See [handoff design and verification](handoff-design.md)
 for the journeys and harness matrix, and the [excerpt contract](share-excerpt-v1.md)
 for selection, author context, saved drafts, recipient preview and omission
-checks. Encrypted excerpt publishing is implemented and locally verified against
-the sibling hosted service; production rollout remains pending.
+checks. Encrypted excerpt publishing is live on the hosted service (since
+2026-09-12); the client side ships in the first release after v0.5.0.
 The [viewer arrival slice](viewer-arrival.md) adds the latest-exchange landing,
 local titles, compact navigation, prominent scoped search, hover selection,
 annotation, local saved views and Markdown document rendering. Saved diffs and
@@ -32,9 +34,13 @@ Integration TODO:
   hosted retention and HTTPS browser delivery, with email/GitHub authentication.
 - [x] Resume the prepared excerpt through viewer sign-in; add encrypted key backup,
   recovery-secret enrollment, device approval and revocation with vault rotation.
-- [ ] Resolve iroh version support, verify Docker/Fly deployment and volume backup
-  restoration, and independently review the recovery/device protocol before production;
-  use the [verification notes](identity-encryption.md#verification-and-deployment).
+- [x] Verify the Docker/Fly deployment: v29 (encrypted sharing) on 2026-09-12 and
+  v30 (named sharing, email sign-in) on 2026-10-01.
+- [ ] Resolve iroh version support, rehearse volume backup restoration, and
+  independently review the recovery/device protocol; use the
+  [verification notes](identity-encryption.md#verification-and-deployment).
+- [ ] Cut the first client release after v0.5.0 so released binaries gain encrypted
+  and named sharing; releases to date predate both.
 - [x] Design named-recipient sharing separately from account and device recovery.
 - [ ] Build the [DeepSeek Harness (`dsh`)](https://github.com/deepseek-ai/deepseek-harness)
   integration. Verify its session storage and active-session identity against a

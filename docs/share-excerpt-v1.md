@@ -2,7 +2,7 @@
 
 2026-09-11 · implementation of milestone 3 in the [product plan](product-plan.md).
 This checkout supports local composition, recipient preview and download.
-Hosted excerpt publishing is not enabled yet.
+Hosted encrypted excerpt publishing has been live since 2026-09-12.
 
 ## Sender and recipient
 

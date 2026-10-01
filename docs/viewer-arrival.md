@@ -153,7 +153,7 @@ Preparations are retained while the session reader remains open, including when
 closing the panel or navigating. Save explicitly to retain a view after reload.
 The saved presentation currently includes a starting point and source-ordered
 context; custom ordering and expanded/collapsed state remain future work.
-Hosted excerpt publishing remains disabled pending hosted compatibility checks.
+Hosted encrypted excerpt publishing has been live since 2026-09-12.
 
 Existing excerpt recipients start with the author note and the sender's chosen
 material. Labels follow the [content model](viewer-model.md): the reader shows

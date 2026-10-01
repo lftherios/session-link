@@ -1,6 +1,8 @@
 # Identity and encrypted sharing
 
-2026-09-12 · locally tested implementation; Fly rollout remains pending.
+2026-09-12, updated 2026-10-01 · deployed: encrypted sharing live since 2026-09-12
+(v29), named sharing and email sign-in since 2026-10-01 (v30). Independent
+protocol review and a volume restore rehearsal remain open.
 
 The Go client scans and encrypts the prepared export locally. The hosted
 `session-link-server` stores ciphertext in iroh-blobs FsStore and serves it over
@@ -183,6 +185,6 @@ publication, and approval/recovery across three native device profiles.
 
 See the server's [implementation guide](../../session-link-server/docs/encrypted-sharing.md)
 for the ciphertext envelope, iroh version decision, Fly configuration, smoke
-commands and outstanding deployment/volume restore checks. The single-machine
-Fly design remains unchanged. No deployment or real email delivery is performed
-by these local checks.
+commands and the outstanding volume restore check. The single-machine Fly design
+runs in production unchanged (v30 since 2026-10-01) with Resend email sign-in
+configured. These local checks perform no deployment or real email delivery.

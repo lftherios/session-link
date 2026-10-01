@@ -21,8 +21,9 @@
 New publishes encrypt the prepared session locally with a fresh AES-256-GCM key.
 The compatible hosted server stores ciphertext in iroh-blobs and serves it to the
 browser for decryption. Email links and one-time codes join GitHub sign-in.
-This prototype is not yet deployed: use an upgraded server with `/api/shares`.
-The client refuses to fall back to plaintext on older servers.
+The hosted service at session.link has accepted these uploads since 2026-09-12.
+The client refuses to fall back to plaintext on older servers. Releases up to
+v0.5.0 predate this flow; build from source until the next release.
 
 Anyone with the complete `/s/<id>#key=…` link can read it. Keep the private receipts
 in `~/.slink/shares` backed up; account login cannot restore a lost encryption key.
@@ -202,4 +203,5 @@ access is granted. **Shared with people** shows status and revocation controls.
 See [named-recipient sharing](docs/named-recipient-sharing.md).
 
 See the [identity and crypto guide](docs/identity-encryption.md) for the key model,
-recovery instructions and prototype limits. Fly deployment remains pending.
+recovery instructions and prototype limits. Named-recipient sharing has been live
+on the hosted service since 2026-10-01.

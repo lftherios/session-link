@@ -108,5 +108,6 @@ The outgoing document and `/api/runs` contract are unchanged and verified
 against a local mock receiver. The hosted service is outside this checkout;
 no live publication or hosted compatibility test was performed. Local selection,
 author context and export projection are implemented in the next slice; see the
-[excerpt contract and verification](share-excerpt-v1.md). Excerpt publishing
-remains gated. Richer document rendering and saved diffs remain separate milestones.
+[excerpt contract and verification](share-excerpt-v1.md). Excerpt publishing was
+gated at the time; the hosted service has accepted encrypted excerpts since
+2026-09-12. Richer document rendering and saved diffs remain separate milestones.

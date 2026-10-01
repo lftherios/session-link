@@ -161,5 +161,6 @@ This uses a loopback mailbox and isolated browser profiles. It checks the exact
 prepared bytes, first-account acceptance, sender restart, forwarded-link denial,
 native-to-browser approval, browser recovery, incoming-key rotation, old grants,
 recipient revocation, mobile layout and plaintext/key absence in hosted requests
-and storage. These are local checks; Fly deployment and real mail delivery are
-still pending, as is independent protocol review.
+and storage. These are local checks. The hosted service has run this code since
+2026-10-01 (v30) with Resend email sign-in configured; independent protocol
+review is still open.

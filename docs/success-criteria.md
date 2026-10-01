@@ -43,8 +43,9 @@ more dependable, or more trustworthy.
    what is recorded, retained, included in a share, and published, and understand
    who can read it. Make stopping capture, exporting, changing retention, and
    deleting data understandable. Local files and the open format should remain
-   useful independently of the hosted service. Prototype encrypted sharing
-   using iroh-blobs, with locally tested recovery and device approval; access for named recipients remains future work.
+   useful independently of the hosted service. Encrypted sharing with iroh-blobs,
+   recovery, device approval and named-recipient access is implemented and live
+   on the hosted service (2026-10-01).
 
 6. **Sharing is super simple.** Move from the intended session or passage to
    a useful link with minimal steps. A whole-session share should be easy;
