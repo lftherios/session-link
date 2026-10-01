@@ -1,5 +1,6 @@
 {
-  "captured_at": "2026-09-12T11:26:34.766Z",
+  "captured_at": "2026-10-01T08:47:06.975Z",
+  "device_scale_factor": 2,
   "fixtures": "testdata/landing/sessions.mjs",
   "viewer": "Built slink local viewer; unmodified UI",
   "branding": "Original Excerpt: brackets, two lines, and a dot",

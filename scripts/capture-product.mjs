@@ -12,6 +12,7 @@ import { validateRun } from "../packages/format/validate.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const output = path.resolve(process.env.SCREENSHOT_DIR ?? path.join(root, "assets/product"));
+const SCALE = 2; // device scale factor; the landing page sizes images in CSS px
 const workspace = await realpath(await mkdtemp(path.join(os.tmpdir(), "slink-product-")));
 const project = path.join(workspace, "sample-project");
 const localHome = path.join(workspace, "slink");
@@ -88,24 +89,25 @@ try {
     el.dispatchEvent(new Event('input',{bubbles:true}));
   })()`);
   const capture = async (name, width = 1280, height = 940) => {
-    await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+    // 2x so the hero stays sharp on HiDPI displays; the page declares CSS sizes.
+    await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: SCALE, mobile: false });
     await evaluate("document.activeElement?.blur();document.fonts.ready.then(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))");
     assert.equal(await evaluate("document.documentElement.scrollWidth > innerWidth"), false, `${name}: horizontal overflow`);
-    const { data } = await send("Page.captureScreenshot", { format: "webp", quality: 92 });
+    const { data } = await send("Page.captureScreenshot", { format: "webp", quality: 88 });
     await writeFile(path.join(output, `${name}.webp`), Buffer.from(data, "base64"));
-    console.log(`Captured ${name}.webp (${width} × ${height})`);
+    console.log(`Captured ${name}.webp (${width} × ${height} CSS px at ${SCALE}x)`);
   };
   await send("Runtime.enable"); await send("Page.enable");
   await send("Emulation.setTimezoneOverride", { timezoneId: "Europe/Berlin" });
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
-  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 940, deviceScaleFactor: 1, mobile: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 940, deviceScaleFactor: SCALE, mobile: false });
   await send("Page.navigate", { url: base });
   await waitFor("document.querySelectorAll('.row[data-source]').length===3");
   await capture("sessions", 1100, 680);
   await click('[data-source="0"]');
   await waitFor("!!document.querySelector('.sv-response-body table')");
   assert.match(await evaluate("document.querySelector('.sv-position').textContent"), /4 of 4/);
-  await capture("focused-mobile", 390, 1000);
+  await capture("focused-mobile", 390, 740);
   await capture("focused", 1280, 940);
   await click(".sv-share");
   await waitFor("document.querySelectorAll('.sv-included-item').length===2");
@@ -126,7 +128,7 @@ try {
   await waitFor("document.querySelector('.sv-support').open");
   await capture("agent-activity", 1280, 1200);
   assert.deepEqual(errors, [], "browser runtime errors");
-  const manifest = { captured_at: new Date().toISOString(), fixtures: "testdata/landing/sessions.mjs", viewer: "Built slink local viewer; unmodified UI", branding: "Original Excerpt: brackets, two lines, and a dot", files: ["sessions", "focused", "focused-mobile", "prepare-view", "search", "agent-activity"].map(name => `${name}.webp`) };
+  const manifest = { captured_at: new Date().toISOString(), device_scale_factor: SCALE, fixtures: "testdata/landing/sessions.mjs", viewer: "Built slink local viewer; unmodified UI", branding: "Original Excerpt: brackets, two lines, and a dot", files: ["sessions", "focused", "focused-mobile", "prepare-view", "search", "agent-activity"].map(name => `${name}.webp`) };
   await writeFile(path.join(output, "capture.json"), JSON.stringify(manifest, null, 2) + "\n");
   console.log(`Product screenshots: ${output}`);
 } finally {

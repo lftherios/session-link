@@ -1,15 +1,17 @@
 # Product screenshots
 
 These are browser captures of the current local product, built from the working
-tree based on `d8d2b84`, including the adopted Excerpt identity. The interface is
-captured as rendered by the product. The sessions are fictional examples
+tree at `9bc212f`, including the adopted Excerpt identity. The interface is
+captured as rendered by the product, at a device scale factor of 2, so each
+file has twice the pixel dimensions listed below and stays sharp on HiDPI
+screens. Sizes are CSS pixels; the landing page declares the same sizes. The sessions are fictional examples
 from [`testdata/landing/sessions.mjs`](../../testdata/landing/sessions.mjs), not
 private transcripts or claims about real companies.
 
 | Asset | Size | Product state |
 | --- | --- | --- |
 | `focused.webp` | 1280 × 940 | Latest human input and answer, scoped search, compact navigation, collapsed activity |
-| `focused-mobile.webp` | 390 × 1000 | The same reading view at phone width |
+| `focused-mobile.webp` | 390 × 740 | The same reading view at phone width, cropped to about one phone screen |
 | `sessions.webp` | 1100 × 680 | Searchable project list with individual cards and day groups |
 | `search.webp` | 1280 × 940 | Whole-session search, including earlier answers and agent activity |
 | `agent-activity.webp` | 1280 × 1200 | Recorded command and test output expanded beneath the answer |
@@ -19,6 +21,8 @@ Use `focused.webp` as the landing hero, with `focused-mobile.webp` for narrow
 screens. Link screenshots to their full-size assets. Label the examples as
 fictional. The view preparation screenshot shows the current local-only save
 and download flow; it must not be presented as hosted excerpt publishing.
+Keep the hero's declared width and height in CSS pixels; the 2x files scale down
+in the browser.
 
 ## Regenerate
 
