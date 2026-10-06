@@ -43,7 +43,7 @@ or an implemented slice.
 
 | File | Summary |
 |------|---------|
-| [README.md](../README.md) | User-facing overview: install channels, quickstart, importer table, privacy model, components, roadmap and contributing |
+| [README.md](../README.md) | User-facing overview: install, `slink view` and sharing, privacy model, repository layout and development commands |
 | [packages/pi-extension/README.md](../packages/pi-extension/README.md) | The pi extension: `/slink` and `/slink view` commands, install steps, exact-fidelity in-process capture and publishing |
 | [packaging/README.md](../packaging/README.md) | The four CLI distribution channels driven from a tag: goreleaser archives, curl installer, npm binary channel, Homebrew tap |
 | [assets/brand/README.md](../assets/brand/README.md) | Excerpt mark and wordmark; `build:viewer` copies brand CSS and icons into the Go embed; the server repo keeps matching copies |
