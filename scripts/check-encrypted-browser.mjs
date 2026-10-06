@@ -22,8 +22,9 @@ try {
     browser.stderr.on("data", chunk=>{ text+=chunk; const match=text.match(/DevTools listening on (ws:\/\/\S+)/); if(match){clearTimeout(timeout);resolve(match[1]);} });
     browser.on("error",reject);
   });
-  const targets=await (await fetch(`http://127.0.0.1:${new URL(endpoint).port}/json/list`)).json();
-  socket=new WebSocket(targets.find(t=>t.type==="page").webSocketDebuggerUrl);
+  // The first page can appear a moment after the debugging endpoint does.
+  let target;for(let i=0;i<100&&!target;i++){target=(await (await fetch(`http://127.0.0.1:${new URL(endpoint).port}/json/list`)).json()).find(t=>t.type==="page");if(!target)await new Promise(r=>setTimeout(r,50));}
+  socket=new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve,reject)=>{socket.onopen=resolve;socket.onerror=reject;});
   let seq=0; const pending=new Map(), errors=[], requests=[];
   socket.onmessage=({data})=>{
@@ -58,21 +59,23 @@ try {
   }
 
   // Exercise the actual email UI with secure, HttpOnly cookies on localhost.
-  await navigate(base+"/login");await waitFor("!!document.querySelector('input[name=email]')");
+  // Sign-in pages stream their React payload after the form; submitting before the
+  // page finishes loading cuts that stream off and React reports "Connection closed".
+  await navigate(base+"/login");await waitFor("document.readyState==='complete' && !!document.querySelector('input[name=email]')");
   await evaluate("document.querySelector('input[name=email]').value='browser@example.test';document.querySelector('form').requestSubmit()");
-  await waitFor("!!document.querySelector('input[name=code]')");
+  await waitFor("document.readyState==='complete' && !!document.querySelector('input[name=code]')");
   let email=await (await fetch(process.env.SLINK_BROWSER_MAIL)).json();
   const code=email.text.match(/code is (\d{8})/)[1];
   await evaluate(`document.querySelector('input[name=code]').value=${JSON.stringify(code)};document.querySelector('form').requestSubmit()`);
   await waitFor("location.pathname==='/account' && document.body.innerText.includes('browser@example.test')");
   await screenshot("email-account");
   await evaluate("document.querySelector('form[action=\"/api/auth/logout\"]').requestSubmit()");
-  await waitFor("!!document.querySelector('input[name=email]')");
+  await waitFor("document.readyState==='complete' && !!document.querySelector('input[name=email]')");
   await evaluate("document.querySelector('input[name=email]').value='browser@example.test';document.querySelector('form').requestSubmit()");
-  await waitFor("!!document.querySelector('input[name=code]')");
+  await waitFor("document.readyState==='complete' && !!document.querySelector('input[name=code]')");
   email=await (await fetch(process.env.SLINK_BROWSER_MAIL)).json();
   const magicLink=email.text.match(/http:\/\/[^\s]+#token=[\w-]+/)[0];
-  await navigate(magicLink);await waitFor("!!document.querySelector('input[name=token]')");
+  await navigate(magicLink);await waitFor("document.readyState==='complete' && !!document.querySelector('input[name=token]')");
   assert.match(await evaluate("location.pathname"),/^\/login\/email\//,"GET consumed magic link");
   await evaluate("document.querySelector('form').requestSubmit()");
   await waitFor("location.pathname==='/account' && document.body.innerText.includes('browser@example.test')");

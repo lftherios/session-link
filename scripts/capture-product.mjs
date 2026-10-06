@@ -52,8 +52,13 @@ try {
     "--remote-debugging-port=0", `--user-data-dir=${path.join(workspace, "browser")}`, "about:blank",
   ], { stdio: ["ignore", "ignore", "pipe"] });
   const endpoint = await startup(browser, "stderr", /ws:\/\/[^\s]+/);
-  const targets = await (await fetch(`http://127.0.0.1:${new URL(endpoint).port}/json/list`)).json();
-  socket = new WebSocket(targets.find(target => target.type === "page").webSocketDebuggerUrl);
+  // The first page can appear a moment after the debugging endpoint does.
+  let pageTarget;
+  for (let i = 0; i < 100 && !pageTarget; i++) {
+    pageTarget = (await (await fetch(`http://127.0.0.1:${new URL(endpoint).port}/json/list`)).json()).find(item => item.type === "page");
+    if (!pageTarget) await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  socket = new WebSocket(pageTarget.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
   let sequence = 0;
   const pending = new Map(), errors = [];

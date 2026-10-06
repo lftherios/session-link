@@ -32,13 +32,17 @@ try {
  const browser=spawn(executable,["--headless=new","--disable-gpu","--no-first-run","--no-default-browser-check","--remote-debugging-port=0",`--user-data-dir=${path.join(dir,"browser")}`,"about:blank"],{stdio:["ignore","ignore","pipe"]});processes.push(browser);
  const endpoint=await waitOutput(browser,"stderr",/ws:\/\/[^\s]+/),debug=`http://127.0.0.1:${new URL(endpoint).port}`;
  const targets=async()=>await(await fetch(debug+"/json/list")).json();
- const page=await connect((await targets()).find(t=>t.type==="page"));
+ // The first page can appear a moment after the debugging endpoint does.
+ const firstPage=async()=>{for(let i=0;i<100;i++){const t=(await targets()).find(t=>t.type==="page");if(t)return t;await new Promise(r=>setTimeout(r,50))}throw new Error("The browser opened no page")};
+ const page=await connect(await firstPage());
  const controller=await connect({webSocketDebuggerUrl:endpoint},true);
  const newPage=async(url,isolated=false)=>{const context=isolated?await controller.send("Target.createBrowserContext"):{};const {targetId}=await controller.send("Target.createTarget",{url,...context});return connect((await targets()).find(t=>t.id===targetId));};
  const login=async(p,email)=>{
-  await p.wait("!!document.querySelector('input[name=email]')");
+  // Sign-in pages stream their React payload after the form; submitting before the
+  // page finishes loading cuts that stream off and React reports "Connection closed".
+  await p.wait("document.readyState==='complete' && !!document.querySelector('input[name=email]')");
   await p.evaluate(`document.querySelector('input[name=email]').value=${JSON.stringify(email)};document.querySelector('form').requestSubmit()`);
-  await p.wait("!!document.querySelector('input[name=code]')");
+  await p.wait("document.readyState==='complete' && !!document.querySelector('input[name=code]')");
   const mail=await(await fetch(process.env.SLINK_BROWSER_MAIL)).json(),code=mail.text.match(/code is (\d{8})/)[1];
   await p.evaluate(`document.querySelector('input[name=code]').value=${JSON.stringify(code)};document.querySelector('form').requestSubmit()`);
  };

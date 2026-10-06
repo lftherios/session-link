@@ -33,7 +33,9 @@ try{
  const browser=spawn(executable,["--headless=new","--disable-gpu","--no-first-run","--no-default-browser-check","--remote-debugging-port=0",`--user-data-dir=${path.join(dir,"browser")}`,"about:blank"],{stdio:["ignore","ignore","pipe"]});processes.push(browser);
  const endpoint=await waitOutput(browser,"stderr",/ws:\/\/[^\s]+/),debug=`http://127.0.0.1:${new URL(endpoint).port}`;
  const targets=async()=>await(await fetch(debug+"/json/list")).json();
- const page=await connect((await targets()).find(t=>t.type==="page"));
+ // The first page can appear a moment after the debugging endpoint does.
+ const firstPage=async()=>{for(let i=0;i<100;i++){const t=(await targets()).find(t=>t.type==="page");if(t)return t;await new Promise(r=>setTimeout(r,50))}throw new Error("The browser opened no page")};
+ const page=await connect(await firstPage());
  const newPage=async url=>{const {targetId}=await page.send("Target.createTarget",{url});const p=await connect((await targets()).find(t=>t.id===targetId));return p};
  await page.navigate(a.url+"#span=s8");await page.wait("!!document.querySelector('.sv h1')");
  await page.click("Share this view");await page.wait("document.querySelectorAll('.sv-included-item').length===2");
@@ -44,10 +46,12 @@ try{
  await page.click("Sign in to continue");await page.wait("!!document.querySelector('.sl-auth strong')");await page.click("Cancel sign-in");await page.wait("document.body.innerText.includes('Sign in to continue')");
  await page.click("Sign in to continue");await page.wait("!!document.querySelector('.sl-auth strong')");const code=await page.evaluate("document.querySelector('.sl-auth strong').textContent");
  const authURL=await page.evaluate("document.querySelector('.sl-auth a').href");let target;for(let i=0;i<60;i++){target=(await targets()).find(t=>t.url===authURL);if(target)break;await new Promise(r=>setTimeout(r,100))}assert.ok(target,"sign-in tab opened");
- const auth=await connect(target);await auth.wait("document.body.innerText.includes('Continue to sign in')");await auth.click("Continue to sign in");await auth.wait("!!document.querySelector('input[name=email]')");
- await auth.evaluate("document.querySelector('input[name=email]').value='first-share@example.test';document.querySelector('form').requestSubmit()");await auth.wait("!!document.querySelector('input[name=code]')");
+ // Sign-in pages stream their React payload after the form; submitting before the
+ // page finishes loading cuts that stream off and React reports "Connection closed".
+ const auth=await connect(target);await auth.wait("document.body.innerText.includes('Continue to sign in')");await auth.click("Continue to sign in");await auth.wait("document.readyState==='complete' && !!document.querySelector('input[name=email]')");
+ await auth.evaluate("document.querySelector('input[name=email]').value='first-share@example.test';document.querySelector('form').requestSubmit()");await auth.wait("document.readyState==='complete' && !!document.querySelector('input[name=code]')");
  const mail=await(await fetch(process.env.SLINK_BROWSER_MAIL)).json(),emailCode=mail.text.match(/code is (\d{8})/)[1];
- await auth.evaluate(`document.querySelector('input[name=code]').value=${JSON.stringify(emailCode)};document.querySelector('form').requestSubmit()`);await auth.wait("!!document.querySelector('input[name=user_code]')");
+ await auth.evaluate(`document.querySelector('input[name=code]').value=${JSON.stringify(emailCode)};document.querySelector('form').requestSubmit()`);await auth.wait("document.readyState==='complete' && !!document.querySelector('input[name=user_code]')");
  await auth.evaluate(`document.querySelector('input[name=user_code]').value=${JSON.stringify(code)};document.querySelector('form').requestSubmit()`);
  await page.wait("document.body.innerText.includes('Publish encrypted link')");assert.equal(await page.evaluate("location.href"),before);assert.equal(await page.evaluate("document.querySelector('.sv-saved-notice a').href"),prepared);assert.equal(await page.evaluate("document.querySelector('[aria-label=\"Your comment\"]').value"),"PRIVATE_FIRST_SHARE_NOTE");
  await page.click("Publish encrypted link");await page.wait("document.querySelector('.sl-publish')?.innerText.includes('Published')");const shared=await page.evaluate("document.querySelector('.sl-publish a').href");assert.ok(new URLSearchParams(new URL(shared).hash.slice(1)).get("key"));

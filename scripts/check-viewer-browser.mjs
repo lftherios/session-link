@@ -26,8 +26,13 @@ try {
   const base = new URL(url).origin, source = new URL(url).pathname.split("/").pop();
   browser = spawn(process.env.BROWSER_BINARY ?? "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", ["--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--remote-debugging-port=0", `--user-data-dir=${path.join(home, "browser")}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
   const endpoint = await waitOutput(browser, "stderr", /ws:\/\/[^\s]+/);
-  const targets = await (await fetch(`http://127.0.0.1:${new URL(endpoint).port}/json/list`)).json();
-  socket = new WebSocket(targets.find(target => target.type === "page").webSocketDebuggerUrl);
+  // The first page can appear a moment after the debugging endpoint does.
+  let pageTarget;
+  for (let i = 0; i < 100 && !pageTarget; i++) {
+    pageTarget = (await (await fetch(`http://127.0.0.1:${new URL(endpoint).port}/json/list`)).json()).find(item => item.type === "page");
+    if (!pageTarget) await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  socket = new WebSocket(pageTarget.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
   let seq = 0; const pending = new Map(), errors = [];
   socket.onmessage = ({ data }) => {
