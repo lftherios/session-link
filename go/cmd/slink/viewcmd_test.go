@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,6 +54,9 @@ func stopView(t *testing.T, address string) {
 	base := address[:strings.Index(address[7:], "/")+7]
 	req, _ := http.NewRequest("POST", base+"/api/stop", nil)
 	req.Header.Set("x-slink", "1")
+	u, _ := url.Parse(address)
+	fragment, _ := url.ParseQuery(u.Fragment)
+	req.Header.Set("X-Slink-Access", fragment.Get("access"))
 	client := &http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -114,7 +118,11 @@ func TestViewCLIBackgroundAndForeground(t *testing.T) {
 				}
 			}()
 			client := &http.Client{Timeout: 3 * time.Second}
-			resp, err := client.Get(address)
+			req, _ := http.NewRequest("GET", address, nil)
+			u, _ := url.Parse(address)
+			fragment, _ := url.ParseQuery(u.Fragment)
+			req.Header.Set("X-Slink-Access", fragment.Get("access"))
+			resp, err := client.Do(req)
 			if err != nil {
 				t.Fatal(err)
 			}

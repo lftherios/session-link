@@ -54,6 +54,8 @@ and `npm run validate`. Run the parts your change touches before finishing.
   --session testdata/viewer/arrival/session.json --no-browser`. Never point
   checks at the real `~/.slink`; it holds the user's captures, previews, drafts
   and share receipts.
+- `node scripts/check-security-browser.mjs` checks private capture permissions,
+  local viewer access, framing restrictions and external-image privacy.
 - `node scripts/check-viewer-browser.mjs` drives the built binary in a headless
   Chromium-family browser. It reads `SLINK_BINARY` (default
   `/tmp/session-link-slink`) and `BROWSER_BINARY`. The encrypted, identity and

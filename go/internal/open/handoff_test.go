@@ -22,6 +22,7 @@ import (
 func action(s *Server, method, path, origin, header string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, "http://127.0.0.1:4400"+path, nil)
 	r.Header.Set("Origin", origin)
+	r.Header.Set("X-Slink-Access", s.accessToken())
 	r.Header.Set("x-slink", header)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, r)

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, fchmodSync, mkdirSync, openSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type {
@@ -92,7 +92,10 @@ const nowIso = () => new Date().toISOString();
 function newCaptureFile(): string {
   const home = process.env.SLINK_HOME || path.join(os.homedir(), ".slink");
   const dir = path.join(home, "runs");
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  chmodSync(home, 0o700);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
   const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${Math.random().toString(16).slice(2, 8)}`;
@@ -118,7 +121,11 @@ export default function (pi: ExtensionAPI): void {
 
   const flush = () =>
     guard(() => {
-      if (capture && captureFile) writeFileSync(captureFile, JSON.stringify(capture.run, null, 2));
+      if (capture && captureFile) {
+        const file = openSync(captureFile, "w", 0o600);
+        try { fchmodSync(file, 0o600); writeFileSync(file, JSON.stringify(capture.run, null, 2)); }
+        finally { closeSync(file); }
+      }
     });
 
   pi.on("session_start", (_e: SessionStartEvent, ctx: ExtensionContext) =>

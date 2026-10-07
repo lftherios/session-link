@@ -120,7 +120,7 @@ func InstallService(port int) ServiceResult {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			return ServiceResult{Error: err.Error()}
 		}
-		os.MkdirAll(filepath.Dir(TapLogPath()), 0o755)
+		os.MkdirAll(filepath.Dir(TapLogPath()), 0o700)
 		if err := os.WriteFile(p, []byte(LaunchdPlist(args, TapLogPath(), ServiceLabel)), 0o644); err != nil {
 			return ServiceResult{Error: err.Error()}
 		}

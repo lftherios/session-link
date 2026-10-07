@@ -99,7 +99,7 @@ func runOpen(args []string) {
 		die(fmt.Sprintf("cannot start the local viewer: %v\n  try slink view --port 0 to use a free port", err))
 	}
 	defer closeServer()
-	url := addr + focus
+	url := srv.AccessURL(addr + focus)
 	fmt.Println(url) // Machine-readable handoff; diagnostics stay on stderr.
 	child := os.Getenv("SLINK_VIEW_CHILD") == "1"
 	if child {

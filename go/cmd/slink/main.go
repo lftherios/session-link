@@ -43,6 +43,22 @@ func main() {
 // dispatch runs a named subcommand; false means the name is unknown.
 // record/view are the canonical names; dev/open remain as aliases.
 func dispatch(cmd string, args []string) bool {
+	// Do not touch local data for help/completion or shell environment commands.
+	dataCommand := false
+	switch cmd {
+	case "tap", "setup", "status", "list", "ls", "push", "prune", "login", "logout", "view", "open", "record", "dev", "import", "share", "delete", "doctor":
+		dataCommand = true
+	}
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" || arg == "-help" {
+			dataCommand = false
+		}
+	}
+	if dataCommand {
+		if err := cli.SecureHome(); err != nil {
+			die("cannot protect local session data: " + err.Error())
+		}
+	}
 	switch cmd {
 	case "tap":
 		runTap(args)

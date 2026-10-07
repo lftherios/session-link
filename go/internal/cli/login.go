@@ -21,7 +21,7 @@ import (
 // WriteConfig persists ~/.slink/config.json at 0600 — it holds the API key.
 func WriteConfig(c Config) (string, error) {
 	dir := Home()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	file := filepath.Join(dir, "config.json")

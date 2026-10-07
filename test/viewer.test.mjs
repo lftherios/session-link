@@ -42,6 +42,21 @@ const run = (spans, source = { kind: "proxy", fidelity: "exact" }) => ({
 const render = (doc, initialView = "transcript", local) => renderToStaticMarkup(createElement(RunViewer, { run: doc, initialView, local }));
 const count = (html, text) => html.split(text).length - 1;
 
+test("privacy: transcript images never load remote or local HTTP resources", () => {
+  const doc = run([call("s1", [message("user", "Review this")], [{ role:"assistant", content:[
+    {type:"text",text:"![Diagram](https://external.test/private-marker.png)"},
+    {type:"image",url:"http://127.0.0.1:4400/api/stop"},
+    {type:"image",url:"javascript:alert(1)"},
+    {type:"image",url:"data:image/svg+xml,<svg onload='alert(1)'/>"},
+    {type:"image",url:"data:image/png;base64,iVBORw0KGgo="},
+  ]}])]);
+  const html = render(doc, "exchange");
+  assert.doesNotMatch(html, /<img[^>]+src="(?:https?:|javascript:|data:image\/svg)/);
+  assert.match(html, /href="https:\/\/external.test\/private-marker.png" target="_blank" rel="noopener noreferrer"/);
+  assert.match(html, /Open external image/);
+  assert.match(html, /<img[^>]+src="data:image\/png;base64,/);
+});
+
 test("arrival: latest input and answer open beneath scoped search and one share action", () => {
   const doc = { ...run([
     call("s1", [message("user", "old-question")], [message("assistant", "old-answer")]),

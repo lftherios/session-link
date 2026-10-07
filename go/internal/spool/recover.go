@@ -133,7 +133,7 @@ func HealStranded(captureJSON string) bool {
 			return err
 		}
 		tmp := fmt.Sprintf("%s.%s.tmp", captureJSON, randHex(4))
-		if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		if err := os.WriteFile(tmp, b, 0o600); err != nil {
 			return err
 		}
 		if err := os.Rename(tmp, captureJSON); err != nil {

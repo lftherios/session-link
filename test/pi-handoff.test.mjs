@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -44,6 +44,10 @@ console.log(process.argv[2]==='view'?'http://127.0.0.1:4400/p/saved':'https://ex
   assert.equal(published[0], "push");
   assert.equal(published[1], "--yes");
   assert.match(published[2], /runs[/\\].+\.json$/);
+  if (process.platform !== "win32") {
+    assert.equal((await stat(published[2])).mode & 0o777, 0o600);
+    assert.equal((await stat(path.dirname(published[2]))).mode & 0o777, 0o700);
+  }
   assert.match(notices.at(-1).text, /published.*https:\/\/example\.test/);
 
   await invoke("typo", ctx);

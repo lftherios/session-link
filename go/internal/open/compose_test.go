@@ -24,6 +24,7 @@ func composeRequest(s *Server, method, path string, value any) *httptest.Respons
 	data, _ := json.Marshal(value)
 	r := httptest.NewRequest(method, "http://127.0.0.1:4400"+path, bytes.NewReader(data))
 	r.Header.Set("Origin", "http://127.0.0.1:4400")
+	r.Header.Set("X-Slink-Access", s.accessToken())
 	r.Header.Set("x-slink", "1")
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, r)

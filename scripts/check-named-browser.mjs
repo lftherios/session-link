@@ -12,7 +12,7 @@ const dir=await mkdtemp(path.join(os.tmpdir(),"slink-named-browser-")),processes
 const waitOutput=(child,stream,pattern)=>new Promise((resolve,reject)=>{let text="";const timer=setTimeout(()=>reject(new Error(`Startup timed out: ${text.slice(-600)}`)),20000);child[stream].on("data",b=>{text+=b;const match=text.match(pattern);if(match){clearTimeout(timer);resolve(match[0])}});child.on("error",reject);child.on("exit",code=>{clearTimeout(timer);reject(new Error(`Exited ${code}: ${text.slice(-600)}`))});});
 async function viewer(home){
  const child=spawn(process.env.SLINK_BINARY??"/tmp/session-link-slink",["view","--session",path.join(root,"testdata/viewer/arrival/session.json"),"--no-browser"],{cwd:root,env:{...process.env,SLINK_HOME:home,SLINK_SERVER:base,SLINK_API_KEY:""},stdio:["ignore","pipe","pipe"]});processes.push(child);
- const url=await waitOutput(child,"stdout",/http:\/\/127\.0\.0\.1:\d+\/p\/[\w.-]+/);return {url,origin:new URL(url).origin,home,child};
+ const url=await waitOutput(child,"stdout",/http:\/\/127\.0\.0\.1:\d+\/p\/[^\s]+/);return {url,origin:new URL(url).origin,home,child};
 }
 async function connect(target,browser=false){
  const socket=new WebSocket(target.webSocketDebuggerUrl);sockets.push(socket);await new Promise((resolve,reject)=>{socket.onopen=resolve;socket.onerror=reject});let seq=0;const pending=new Map();
@@ -52,7 +52,7 @@ try {
  const credential=await page.evaluate(`(async()=>{const pending=await(await fetch('/api/auth/cli',{method:'POST'})).json();await fetch('/api/auth/cli/'+pending.code+'/approve',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({user_code:pending.user_code})});return(await fetch('/api/auth/cli/'+pending.code)).json()})()`);
  assert.match(credential.key,/^rk_/);
  let a=await viewer(path.join(dir,"owner"));await writeFile(path.join(a.home,"config.json"),JSON.stringify({api_key:credential.key,server:base,user_id:credential.user_id,login:"named-owner@example.test"}),{mode:0o600});
- const local=await newPage(a.url+"#span=s8");await local.wait("!!document.querySelector('.sv h1')");await local.click("Share this view");await local.wait("document.querySelectorAll('.sv-included-item').length===2");
+ const local=await newPage(a.url+"&span=s8");await local.wait("!!document.querySelector('.sv h1')");await local.click("Share this view");await local.wait("document.querySelectorAll('.sv-included-item').length===2");
  await local.evaluate("document.querySelector('.sv-author-fields').open=true");await local.fill('[aria-label="View title"]',"PRIVATE_NAMED_TITLE");await local.fill('[aria-label="Your comment"]',"PRIVATE_NAMED_NOTE");
  await local.click("Publish link");await local.wait("!!document.querySelector('select[aria-label]')");
  await local.evaluate("const el=document.querySelector('select[aria-label]');el.value='named';el.dispatchEvent(new Event('change',{bubbles:true}))");
@@ -89,7 +89,7 @@ try {
  assert.equal(await wrong.evaluate(`fetch('/api/named-shares/${id}/blob').then(r=>r.status)`),403);
  // A browser belonging to the sender needs approval from the native device.
  await page.navigate(canonical);await page.wait("document.body.innerText.includes('Request device approval')");await page.fill('[aria-label="Device name"]',"Sender browser");await page.click("Request device approval");await page.wait("!!document.querySelector('strong.secret')");const pairing=await page.evaluate("document.querySelector('strong.secret').textContent");
- await local.navigate(a.origin+"/settings");await local.wait("document.body.innerText.includes('Waiting for approval')");await local.fill('[aria-label="Approval code for Sender browser"]',pairing);await local.click("Approve device");await local.wait("!document.body.innerText.includes('Waiting for approval')");await page.click("Check approval");await page.wait("document.body.innerText.includes('PRIVATE_NAMED_NOTE')");
+ await local.navigate(a.origin+"/settings"+new URL(a.url).hash);await local.wait("document.body.innerText.includes('Waiting for approval')");await local.fill('[aria-label="Approval code for Sender browser"]',pairing);await local.click("Approve device");await local.wait("!document.body.innerText.includes('Waiting for approval')");await page.click("Check approval");await page.wait("document.body.innerText.includes('PRIVATE_NAMED_NOTE')");
  // Recovery works entirely in a fresh recipient browser; rotation retains old grants.
  const recovered=await newPage(canonical,true);await recovered.wait("document.body.innerText.includes('Sign in to open this share')");await recovered.click("Sign in to open this share");await login(recovered,"named-reader@example.test");await recovered.wait("document.body.innerText.includes('Recover share keys')");await recovered.fill('[aria-label="Device name"]',"Recovered reader");await recovered.fill('input[type=password]',recovery);await recovered.click("Recover share keys");await recovered.wait("document.body.innerText.includes('PRIVATE_NAMED_NOTE')");
  await recovered.navigate(base+"/devices");await recovered.wait("document.body.innerText.includes('Reader browser')");await recovered.click("Revoke");await recovered.click("Confirm revocation");await recovered.wait("!document.body.innerText.includes('Reader browser')");
@@ -100,7 +100,7 @@ try {
  assert.equal(await recovered.evaluate("fetch('/api/identity',{headers:{authorization:'Bearer invalid'}}).then(r=>r.status)"),401);
  // Revoking the recipient is owner-only and stops all future downloads.
  assert.equal(await recovered.evaluate(`fetch('/api/named-shares/${id}',{method:'POST',headers:{'x-slink':'1','content-type':'application/json'},body:JSON.stringify({action:'revoke',invite_id:${JSON.stringify(remote.invitation.id)}})}).then(r=>r.status)`),403);
- await local.navigate(a.origin+"/shared");await local.wait("document.body.innerText.includes('Access granted')");await local.click("Revoke named-reader@example.test");await local.click("Confirm revocation");await local.wait("document.body.innerText.includes('Access revoked')");
+ await local.navigate(a.origin+"/shared"+new URL(a.url).hash);await local.wait("document.body.innerText.includes('Access granted')");await local.click("Revoke named-reader@example.test");await local.click("Confirm revocation");await local.wait("document.body.innerText.includes('Access revoked')");
  assert.equal(await recovered.evaluate(`fetch('/api/named-shares/${id}/blob').then(r=>r.status)`),403);
  const secrets=["PRIVATE_NAMED_NOTE","PRIVATE_NAMED_TITLE",outbox.key,ownerRecovery,recovery,...Object.values(outbox.secrets)];
  for(const request of requests.filter(r=>r.url.startsWith(base))){for(const secret of secrets){assert.equal(request.url.includes(secret),false);assert.equal(JSON.stringify(request.headers).includes(secret),false);assert.equal((request.postData??"").includes(secret),false)}}

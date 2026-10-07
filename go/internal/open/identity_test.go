@@ -16,6 +16,7 @@ func TestLocalIdentityAndLoginRequireActionHeaderAndOrigin(t *testing.T) {
 				req.Header.Set("origin", origin)
 			}
 			response := httptest.NewRecorder()
+			req.Header.Set("X-Slink-Access", server.accessToken())
 			server.ServeHTTP(response, req)
 			if response.Code != 403 {
 				t.Fatalf("%s origin=%s: status %d", route, origin, response.Code)
@@ -28,6 +29,7 @@ func TestLocalIdentityAndLoginRequireActionHeaderAndOrigin(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://127.0.0.1:4321/api/login/status", nil)
 	req.Header.Set("x-slink", "1")
 	res := httptest.NewRecorder()
+	req.Header.Set("X-Slink-Access", server.accessToken())
 	server.ServeHTTP(res, req)
 	if res.Code != 200 || strings.Contains(res.Body.String(), server.APIKey) {
 		t.Fatal("safe sign-in status failed")

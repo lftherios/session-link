@@ -26,7 +26,14 @@ annotations; materializing a live recorder's spool still updates its capture.
 Later source changes and failed uploads do not replace a saved preview.
 
 The server binds loopback on a free port and prints its ready URL to stdout;
-diagnostics go to stderr. Browser launch failure leaves the URL usable.
+diagnostics go to stderr. The complete URL includes a random per-launch access
+key in its fragment. The browser sends that key in a private request header;
+all session reads and actions require it. Keep the complete local URL private.
+The key is scoped to this viewer process, survives local navigation and copied
+links, and never enters a query string or a cookie. Browser launch failure
+leaves the URL usable. Pages reject framing and send no referrer. Transcript
+images embedded as raster data remain visible; external image URLs require an
+explicit click and are never fetched merely by opening a session.
 `--background` waits for that URL before releasing the calling harness and
 stores diagnostics in `~/.slink/viewer-*.log`. Publishing returns the link in
 the browser and the foreground terminal, or the background log. A background

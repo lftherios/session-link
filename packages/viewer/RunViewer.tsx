@@ -18,6 +18,7 @@ import { ShareView, shareInfo } from "./ShareView";
 import { SessionView, type LocalViewer, type SessionStats } from "./SessionView";
 import { buildFlow, reasoningUnavailable } from "./session-model";
 import { DocumentText, DOCUMENT_CSS } from "./DocumentText";
+import { SessionImage } from "./SessionImage";
 
 /* ---------------------------------------------------------------- tokens */
 
@@ -706,17 +707,7 @@ function PartView({ part, full = false }: { part: ContentPart; full?: boolean })
       return <ToolResultView part={part} full={full} />;
     case "image":
       return part.url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={part.url}
-          alt="attachment"
-          style={{
-            maxWidth: "min(100%, 360px)",
-            borderRadius: 6,
-            border: `1px solid ${T.line}`,
-            display: "block",
-          }}
-        />
+        <SessionImage src={part.url} alt="Attachment" />
       ) : (
         <div
           style={{

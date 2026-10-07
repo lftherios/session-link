@@ -83,7 +83,7 @@ const css = `
 
 func page(title, body string) string {
 	return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>` + html.EscapeString(title) + `</title>` + favicon + `<style>` + css + brandCSS + `</style><div class="wrap">` + brandHeader + body + `</div>`
+<script src="/assets/local-access.js"></script><title>` + html.EscapeString(title) + `</title>` + favicon + `<style>` + css + brandCSS + `</style><div class="wrap">` + brandHeader + body + `</div>`
 }
 
 // Server carries the open UI's state.
@@ -102,6 +102,8 @@ type Server struct {
 	loginMu        sync.Mutex
 	login          *viewerLogin
 	identityMu     sync.Mutex
+	accessOnce     sync.Once
+	accessKey      string
 }
 
 func (s *Server) indexPage() string {
@@ -456,7 +458,7 @@ func (s *Server) publishFileTo(file string, recipients []string) publishResult {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
+	securityHeaders(w)
 	// A loopback bind alone does not stop a rebinding hostname from reading
 	// local sessions. Browser URLs must use the loopback host we advertise.
 	host, _, err := net.SplitHostPort(r.Host)
@@ -465,6 +467,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if host != "127.0.0.1" && host != "localhost" {
 		http.Error(w, "use the local URL printed by slink view", http.StatusForbidden)
+		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/assets/local-access.js" {
+		w.Header().Set("Content-Type", "text/javascript")
+		io.WriteString(w, localAccessJS)
+		return
+	}
+	// The bundle is public code, with no session data or per-launch secret.
+	publicAsset := r.Method == http.MethodGet && r.URL.Path == "/assets/viewer.js"
+	if !publicAsset && !s.authorized(r) {
+		if accessPage(r) {
+			w.Header().Set("Content-Type", "text/html")
+			io.WriteString(w, accessShell)
+		} else {
+			http.Error(w, "local viewer access required", http.StatusForbidden)
+		}
 		return
 	}
 	send := func(status int, ctype, body string) {

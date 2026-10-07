@@ -53,7 +53,7 @@ func EncodeLine(v any) ([]byte, error) {
 // the spool is missing or empty; every append to a non-empty spool starts
 // on a fresh line; isClosed is the last gate before bytes land.
 func Append(captureJSON string, spans [][]byte, skeleton []byte, isClosed func() bool) error {
-	if err := os.MkdirAll(filepath.Dir(captureJSON), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(captureJSON), 0o700); err != nil {
 		return err
 	}
 	spool := SpoolPath(captureJSON)
@@ -76,11 +76,14 @@ func Append(captureJSON string, spans [][]byte, skeleton []byte, isClosed func()
 	for _, s := range spans {
 		payload.Write(s)
 	}
-	f, err := os.OpenFile(spool, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(spool, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+	if err := f.Chmod(0600); err != nil {
+		return err
+	}
 	_, err = f.Write(payload.Bytes())
 	return err
 }
@@ -373,7 +376,7 @@ func withCommitLock(captureJSON string, wait time.Duration, fn func(stillHeld fu
 	token := fmt.Sprintf("%d:%s", os.Getpid(), randHex(6))
 	deadline := time.Now().Add(wait)
 	for {
-		f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
 			// The token must land: an unverifiable lock (ENOSPC mid-write)
 			// would mask the disk error as an eternal ErrCommitRetry.
@@ -416,7 +419,7 @@ func withCommitLock(captureJSON string, wait time.Duration, fn func(stillHeld fu
 
 func atomicWrite(path string, body []byte) error {
 	tmp := fmt.Sprintf("%s.%s.tmp", path, randHex(4))
-	if err := os.WriteFile(tmp, body, 0o644); err != nil {
+	if err := os.WriteFile(tmp, body, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

@@ -1,6 +1,7 @@
 import { Children, isValidElement, memo, useId, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { SessionImage } from "./SessionImage";
 
 export const DOCUMENT_CSS = `
 .rv .rv-document{font-size:14px;line-height:1.75;overflow-wrap:anywhere;min-width:0}
@@ -31,7 +32,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
 // tables on every render, dropping any text selection inside them.
 const MARKDOWN_COMPONENTS: NonNullable<Parameters<typeof Markdown>[0]["components"]> = {
   a: ({ href, children }) => href ? <a href={href} target={href.startsWith("#") ? undefined : "_blank"} rel="noopener noreferrer">{children}</a> : <span>{children}</span>,
-  img: ({ src, alt }) => src && /^https?:\/\//i.test(src) ? <img src={src} alt={alt ?? ""} loading="lazy" /> : <span>{alt || "Image unavailable"}</span>,
+  img: ({ src, alt }) => <SessionImage src={typeof src === "string" ? src : undefined} alt={alt} />,
   pre: CodeBlock,
   table: ({ children }) => <div className="rv-table"><table>{children}</table></div>,
 };

@@ -45,7 +45,8 @@ try {
     env: { ...process.env, SLINK_HOME: localHome, SLINK_SERVER: "http://127.0.0.1:1", SLINK_API_KEY: "" },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const base = await startup(cli, "stdout", /http:\/\/127\.0\.0\.1:\d+/);
+  const localURL = await startup(cli, "stdout", /http:\/\/127\.0\.0\.1:\d+[^\s]*/);
+  const base = new URL(localURL).origin;
   browser = spawn(process.env.BROWSER_BINARY ?? "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", [
     "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
     "--disable-background-networking", "--disable-component-update", "--disable-sync",
@@ -106,7 +107,7 @@ try {
   await send("Emulation.setTimezoneOverride", { timezoneId: "Europe/Berlin" });
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 940, deviceScaleFactor: SCALE, mobile: false });
-  await send("Page.navigate", { url: base });
+  await send("Page.navigate", { url: base + new URL(localURL).hash });
   await waitFor("document.querySelectorAll('.row[data-source]').length===3");
   await capture("sessions", 1100, 680);
   await click('[data-source="0"]');
@@ -125,7 +126,7 @@ try {
   await evaluate("[...document.querySelectorAll('.sv-search-scope button')].find(b=>b.textContent==='Whole session').click()");
   await waitFor("document.querySelectorAll('#sv-search-results .sv-outline-list>button').length>2");
   await capture("search", 1280, 940);
-  await send("Page.navigate", { url: base });
+  await send("Page.navigate", { url: base + new URL(localURL).hash });
   await waitFor("document.querySelectorAll('.row[data-source]').length===3");
   await click('[data-source="1"]');
   await waitFor("!!document.querySelector('.sv-response-body') && document.querySelector('.sv-position').textContent.includes('3 of 3')");

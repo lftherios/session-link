@@ -238,8 +238,7 @@ func importToFile(f importFlags) imported {
 		return imported{file: prev, name: name, harness: harness, spans: len(spans), created: created}
 	}
 	file := spool.NewCapturePath(cli.CaptureDir(), time.Now())
-	os.MkdirAll(filepath.Dir(file), 0o755)
-	if err := os.WriteFile(file, b, 0o644); err != nil {
+	if err := cli.WritePrivate(file, b); err != nil {
 		die(fmt.Sprintf("write: %v", err))
 	}
 

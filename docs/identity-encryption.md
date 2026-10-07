@@ -143,7 +143,9 @@ log or independently verified human identity.
 
 ## Storage, scope and limits
 
-- Local config and device private keys use mode 0600. Device records are scoped
+- Local captures, spools, config and device private keys use mode 0600, with
+  mode 0700 data directories. CLI startup repairs permissions on existing local
+  data without following symlinks. Device records are scoped
   by server and account under `~/.slink/identity`. Their containing directory is
   mode 0700. These files rely on local OS/disk protection; no OS keychain
   integration is included yet.
@@ -164,6 +166,12 @@ log or independently verified human identity.
   secrets through this protocol.
 - Initial limits: 32 active devices, 512 device events, 16 pending requests,
   10,000 backed-up links and 4 MiB vault plaintext. Requests are capped at 12 MiB.
+  Signed envelopes contain only payload and signature. Encoded payload limits
+  are 4 KiB per device request, 32 KiB per event and 8 MiB per vault. The stored
+  record plus pending requests is capped at 10 MiB, leaving response space for
+  owned-share hints within the client's 12 MiB read limit. Body admission is
+  shared across ingest, encrypted uploads and identity operations: at most two
+  operations buffer data at once, including chunked requests.
   History compaction, recovery-key replacement, passkeys and
   key transparency need separate work.
 

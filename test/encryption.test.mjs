@@ -32,3 +32,10 @@ test("passage navigation and copied links retain the encryption key", () => {
   assert.equal(new URLSearchParams(selected.hash.slice(1)).get("span"), "step.1");
   assert.equal(withAnchor(selected.href, ""), "https://session.link/s/23456789abcdef#key=private-key");
 });
+
+
+test("local passage navigation retains its viewer access key", () => {
+  const link = "http://127.0.0.1:4400/p/saved#access=local-key&message=old";
+  assert.equal(withAnchor(link, "step.1"), "http://127.0.0.1:4400/p/saved#access=local-key&span=step.1");
+  assert.equal(withAnchor(link, ""), "http://127.0.0.1:4400/p/saved#access=local-key");
+});

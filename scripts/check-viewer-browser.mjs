@@ -22,7 +22,7 @@ const waitOutput = (child, stream, pattern) => new Promise((resolve, reject) => 
   child.once("exit", code => { clearTimeout(timer); reject(new Error(`Process exited ${code}: ${output.slice(-500)}`)); });
 });
 try {
-  const url = await waitOutput(cli, "stdout", /http:\/\/127\.0\.0\.1:\d+\/p\/[\w.-]+/);
+  const url = await waitOutput(cli, "stdout", /http:\/\/127\.0\.0\.1:\d+\/p\/[^\s]+/);
   const base = new URL(url).origin, source = new URL(url).pathname.split("/").pop();
   browser = spawn(process.env.BROWSER_BINARY ?? "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", ["--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--remote-debugging-port=0", `--user-data-dir=${path.join(home, "browser")}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
   const endpoint = await waitOutput(browser, "stderr", /ws:\/\/[^\s]+/);
@@ -86,11 +86,11 @@ try {
   await screenshot("activity-expanded");
   await evaluate("document.querySelector('.sv-support>summary').click()");
   await waitFor("document.querySelectorAll('.sv-thinking').length===0");
-  await navigate(url + "#message=u8-out-0");
+  await navigate(url + "&message=u8-out-0");
   await waitFor("!!document.querySelector('.sv-reasoning-unavailable.sv-linked')");
   assert.equal(await evaluate("document.querySelectorAll('.sv-step .sv-thinking').length"), 5);
   assert.equal(await evaluate("document.querySelector('.sv-support').textContent.includes('[reasoning]')"), false);
-  await navigate(url + "#span=s8"); await waitFor("!document.querySelector('.sv-support').open");
+  await navigate(url + "&span=s8"); await waitFor("!document.querySelector('.sv-support').open");
   await evaluate("window.scrollTo(0,0)");
   await setField('[aria-label="Search session content"]', "thinking-evidence-5");
   await waitFor("document.querySelectorAll('#sv-search-results .sv-outline-list>button').length===1");
@@ -98,7 +98,7 @@ try {
   await waitFor("document.querySelector('.sv-support').open");
   assert.match(await evaluate("document.querySelector('.sv-linked').textContent"), /thinking-evidence-5/);
   assert.equal(await evaluate("document.querySelector('.sv-response-body').textContent.includes('thinking-evidence')"), false);
-  await navigate(url + "#span=s8"); await waitFor("!!document.querySelector('.sv-response-body table') && !document.querySelector('.sv-support').open");
+  await navigate(url + "&span=s8"); await waitFor("!!document.querySelector('.sv-response-body table') && !document.querySelector('.sv-support').open");
   console.log("PASS: one activity section shows readable reasoning and a single missing-text note; legacy placeholders stay out of the reader and links still resolve");
 
   await setField('[aria-label="Search session content"]', "Finding 7");
@@ -109,7 +109,7 @@ try {
   await waitFor("document.querySelector('.sv-response-body').textContent.includes('Finding 7')");
   await reload(); await waitFor("!!document.querySelector('.sv-response-body')");
   assert.match(await evaluate("document.querySelector('.sv-response-body').textContent"), /Finding 7/);
-  await navigate(url + "#span=s8"); await waitFor("!!document.querySelector('.sv-response-body table')");
+  await navigate(url + "&span=s8"); await waitFor("!!document.querySelector('.sv-response-body table')");
   await setField('[aria-label="Search session content"]', "source-check-42");
   await waitFor("document.querySelectorAll('#sv-search-results .sv-outline-list>button').length===1");
   await evaluate("document.querySelector('#sv-search-results .sv-outline-list>button').click()");
@@ -130,7 +130,7 @@ try {
   await waitFor("!document.querySelector('.sv-raw-dialog') && document.activeElement.classList.contains('sv-raw-button')");
   await clickText("Focused");
   await waitFor("!document.querySelector('.sv-conversation-card')");
-  await navigate(url + "#span=s8"); await waitFor("!!document.querySelector('.sv-response-body table')");
+  await navigate(url + "&span=s8"); await waitFor("!!document.querySelector('.sv-response-body table')");
   await evaluate("history.replaceState(null,'',location.pathname);window.scrollTo(0,450)");
   const y = await evaluate("scrollY");
   // A link to a span with no conversation opens the inspector over the page.
@@ -190,7 +190,7 @@ try {
   assert.equal(await evaluate("JSON.stringify(window.__RUN__).includes('Earlier recovered failure')"), false);
   console.log("PASS: the comment persists while the reader stays open; preview contains only chosen material");
 
-  await navigate(url + "#span=s8"); await waitFor("!!document.querySelector('.sv-response-body table')");
+  await navigate(url + "&span=s8"); await waitFor("!!document.querySelector('.sv-response-body table')");
   await clickText("Share this view"); await waitFor("document.querySelectorAll('.sv-included-item').length===2");
   // Keep only the agent response, narrowed to an exact passage.
   await evaluate("(()=>{const input=[...document.querySelectorAll('.sv-included-item')].find(el=>el.querySelector('summary').textContent.includes('Human input'));[...input.querySelectorAll('button')].find(b=>b.textContent==='Remove').click();})()");
@@ -210,7 +210,7 @@ try {
 
   // Right-clicking selected text comments on and shares exactly that passage.
   await evaluate("document.querySelector('[aria-label=\"Close share panel\"]')?.click()"); await waitFor("!document.querySelector('.sv-share-dialog')");
-  await navigate(url + "#span=s8"); await waitFor("!!document.querySelector('.sv-response-body table')");
+  await navigate(url + "&span=s8"); await waitFor("!!document.querySelector('.sv-response-body table')");
   assert.equal(await evaluate("(()=>{getSelection().removeAllRanges();const el=document.querySelector('.sv-response-body p');const b=el.getBoundingClientRect();return el.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:b.left+4,clientY:b.top+4}));})()"), true, "without a selection the browser menu stays");
   assert.equal(await evaluate("!!document.querySelector('.sv-context-menu')"), false);
   const selected = await evaluate("(()=>{const li=[...document.querySelectorAll('.sv-response li')].find(el=>el.textContent.startsWith('Read the'));const walker=document.createTreeWalker(li,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);const first=nodes.find(n=>n.textContent.includes('Read the'));const link=li.querySelector('a').firstChild;const r=document.createRange();r.setStart(first,first.textContent.indexOf('Read the'));r.setEnd(link,link.textContent.length);const s=getSelection();s.removeAllRanges();s.addRange(r);const b=r.getClientRects()[0];const text=s.toString();li.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:b.left+3,clientY:b.top+b.height/2}));return text;})()");
@@ -265,7 +265,7 @@ try {
   console.log(`Screenshots: ${home}`);
   const original = JSON.parse(await readFile(path.join(home, "previews", `${source}.json`), "utf8"));
   assert.equal(original.name, "Onboarding research");
-  await fetch(base + "/api/stop", { method: "POST", headers: { "x-slink": "1" } });
+  await fetch(base + "/api/stop", { method: "POST", headers: { "x-slink": "1", "x-slink-access": new URLSearchParams(new URL(url).hash.slice(1)).get("access") } });
 } finally {
   socket?.close(); browser?.kill("SIGTERM"); cli.kill("SIGTERM");
 }
