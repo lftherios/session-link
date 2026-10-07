@@ -1,9 +1,9 @@
 {
-  "captured_at": "2026-10-01T16:39:57.109Z",
+  "captured_at": "2026-10-07T13:10:49.931Z",
   "device_scale_factor": 2,
   "fixtures": "testdata/landing/sessions.mjs",
   "viewer": "Built slink local viewer; unmodified UI",
-  "branding": "Original Excerpt: brackets, two lines, and a dot",
+  "branding": "Elision: brackets around three dots",
   "files": [
     "sessions.webp",
     "focused.webp",

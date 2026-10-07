@@ -133,7 +133,7 @@ try {
   await waitFor("document.querySelector('.sv-support').open");
   await capture("agent-activity", 1280, 1200);
   assert.deepEqual(errors, [], "browser runtime errors");
-  const manifest = { captured_at: new Date().toISOString(), device_scale_factor: SCALE, fixtures: "testdata/landing/sessions.mjs", viewer: "Built slink local viewer; unmodified UI", branding: "Original Excerpt: brackets, two lines, and a dot", files: ["sessions", "focused", "focused-mobile", "prepare-view", "search", "agent-activity"].map(name => `${name}.webp`) };
+  const manifest = { captured_at: new Date().toISOString(), device_scale_factor: SCALE, fixtures: "testdata/landing/sessions.mjs", viewer: "Built slink local viewer; unmodified UI", branding: "Elision: brackets around three dots", files: ["sessions", "focused", "focused-mobile", "prepare-view", "search", "agent-activity"].map(name => `${name}.webp`) };
   await writeFile(path.join(output, "capture.json"), JSON.stringify(manifest, null, 2) + "\n");
   console.log(`Product screenshots: ${output}`);
 } finally {

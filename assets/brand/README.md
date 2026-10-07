@@ -1,8 +1,10 @@
 # session.link identity
 
-The adopted mark is the original **Excerpt** concept: brackets around two
-lines and a dot. Pair it with the compact sans wordmark in `brand.css`.
-The diagonal-arrow explorations were not selected.
+The adopted mark is **Elision**: brackets around three dots, the editorial
+sign for an excerpt. Pair it with the compact sans wordmark in `brand.css`.
+It keeps the brackets, stroke and proportions of the original Excerpt mark
+(two lines and a dot), which it replaced on 2026-10-07. The diagonal-arrow
+explorations were not selected.
 
 `mark.svg` uses the surrounding `--signal` color when embedded inline, including
 the local viewer's dark theme. `favicon.svg` adapts to light and dark browser
