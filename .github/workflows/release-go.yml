@@ -3,16 +3,17 @@
 # A pushed v* tag runs both jobs in order: goreleaser publishes the GitHub
 # Release, archives, packages, checksums and the Homebrew cask, then the npm
 # job publishes the platform packages and the session.link launcher. The two
-# are separate jobs so an npm failure (a token problem, say) can be retried
-# without re-running goreleaser against a release that already exists:
-# either `gh run rerun <id> --failed`, or dispatch this workflow by hand with
-# the version of an existing tag, which runs the npm job alone.
+# are separate jobs so an npm failure can be retried without re-running
+# goreleaser against a release that already exists: either `gh run rerun <id>
+# --failed`, or dispatch this workflow by hand with the version of an
+# existing tag, which runs the npm job alone.
 #
 # Both jobs stay behind the GO_RELEASE_ENABLED repo variable on tag pushes so
 # a tag cannot ship binaries by accident. HOMEBREW_TAP_TOKEN must have
-# contents:write on lftherios/homebrew-tap; NPM_TOKEN must be allowed to
-# publish every @session-link/* package and session.link without a one-time
-# password (a granular token with 2FA bypass, or trusted publishing).
+# contents:write on lftherios/homebrew-tap. The npm job needs no secret: it
+# uses npm trusted publishing, so session.link and every
+# @session-link/cli-* package must name this workflow file as a trusted
+# publisher on npm (packaging/README.md has the commands).
 name: release-go
 
 on:
@@ -62,6 +63,9 @@ jobs:
     needs: goreleaser
     if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.goreleaser.result == 'success') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # lets npm verify that this workflow is the publisher
     env:
       RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
     steps:
@@ -73,17 +77,18 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          registry-url: "https://registry.npmjs.org"
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
       - run: npm ci
       - run: npm run build:viewer && node scripts/golden.mjs --check
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
+      - run: npm install -g npm@11
       # Platform packages + the session.link launcher, cross-compiled by Go.
       # build-npm.mjs skips any package whose version is already on npm, so a
-      # partially failed publish can simply be rerun.
+      # partially failed publish can simply be rerun. npm accepts the publish
+      # because it comes from this workflow file in this repository, which
+      # each package names as a trusted publisher on npm; no token is stored.
       - name: publish npm binary channel
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
-          node scripts/build-npm.mjs "${RELEASE_VERSION#v}" --publish
+        run: node scripts/build-npm.mjs "${RELEASE_VERSION#v}" --publish

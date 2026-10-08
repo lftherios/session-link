@@ -9,13 +9,23 @@ name: release
 # LAUNCHER, published by release-go.yml's binary-channel step — NOT here.
 # The standalone binaries come from goreleaser (release-go.yml), not the old
 # Bun build. This workflow only ships the format + viewer libraries.
+#
+# Publishing uses npm trusted publishing: npm accepts the publish because it
+# comes from this workflow file in this repository, which each package names
+# as a trusted publisher on npm. There is no token to store or rotate. A
+# manual run publishes whatever versions on the chosen ref are not on npm yet,
+# so a publish that failed can be repeated without a new tag.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
   npm:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # lets npm verify that this workflow is the publisher
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,12 +33,12 @@ jobs:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
+      - run: npm install -g npm@11
       # format before viewer (viewer depends on it). Publish each only if its
       # version isn't already on the registry. session.link is deliberately
       # NOT here — the Go launcher owns that name now (release-go.yml).
       - name: publish changed libraries
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           published=0
           for dir in packages/format packages/viewer; do
