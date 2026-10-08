@@ -66,6 +66,12 @@ func resolveImport(f importFlags) (string, importers.Input, *importers.Found, st
 		// Not a file on disk? A pasted session id (Claude Code names its
 		// transcripts <uuid>.jsonl) is worth trying before giving up.
 		if !fileExists(target) {
+			// An aider run has no file of its own: its id is the time it
+			// started, in the project's chat history.
+			if found, ok := aiderRunByID(target); ok && (f.from == "" || f.from == "aider") {
+				in, err := found.Load()
+				return "aider", in, found, "", err
+			}
 			if p, ok := transcriptByID(target); ok {
 				target = p
 			} else {
@@ -155,8 +161,8 @@ func shellPath(p string) string {
 	return displayPath(p)
 }
 
-// transcriptByID resolves a bare Claude Code session id to its transcript
-// file for this project (walking up like the auto-detect does).
+// transcriptByID resolves a bare Claude Code or dsh session id to its
+// transcript file for this project (walking up like the auto-detect does).
 func transcriptByID(id string) (string, bool) {
 	if strings.ContainsAny(id, "/\\.") {
 		return "", false
@@ -166,8 +172,23 @@ func transcriptByID(id string) (string, bool) {
 		if p, ok := importers.ClaudeTranscript(dir, id); ok {
 			return p, true
 		}
+		if p, ok := importers.DshTranscript(dir, id); ok {
+			return p, true
+		}
 	}
 	return "", false
+}
+
+// aiderRunByID finds the aider run that started at the time id names, in the
+// chat history of this project.
+func aiderRunByID(id string) (*importers.Found, bool) {
+	cwd, _ := os.Getwd()
+	for _, dir := range importers.ProjectDirs(cwd) {
+		if found, ok := importers.AiderRun(dir, id); ok {
+			return found, true
+		}
+	}
+	return nil, false
 }
 
 type imported struct {
@@ -285,7 +306,7 @@ func firstNonEmptyStr(vals ...string) string {
 
 func runImport(args []string) {
 	fs := flag.NewFlagSet("import", flag.ExitOnError)
-	from := fs.String("from", "", "agent: claude-code|codex|pi|omp|opencode|hermes")
+	from := fs.String("from", "", "agent: claude-code|codex|pi|omp|opencode|hermes|dsh|aider")
 	session := fs.String("session", "", "session id, or a transcript path")
 	setUsage(fs, "slink import [flags] [transcript]",
 		"Convert your coding agent's newest session for this project into a\n  local session — no re-run needed. Marked fidelity: reconstructed.",
@@ -304,7 +325,7 @@ func runImport(args []string) {
 // publish, and print the way back.
 func runShare(args []string) {
 	fs := flag.NewFlagSet("share", flag.ExitOnError)
-	from := fs.String("from", "", "agent: claude-code|codex|pi|omp|opencode|hermes")
+	from := fs.String("from", "", "agent: claude-code|codex|pi|omp|opencode|hermes|dsh|aider")
 	session := fs.String("session", "", "session id, or a transcript path")
 	pick := fs.Bool("pick", false, "choose from recent sessions")
 	yes := fs.Bool("yes", false, "publish without confirmation")

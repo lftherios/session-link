@@ -1,0 +1,112 @@
+{
+  "created_at": "2026-10-08T09:41:22.045Z",
+  "metadata": {
+    "cwd": "/work/retry",
+    "model_retries": 1,
+    "session_format": 4,
+    "session_id": "session-6191ec45-7232-4ebb-b97d-bf77f783bca9"
+  },
+  "name": "A hello after a retry",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "dsh",
+    "kind": "import",
+    "label": "session-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-08T09:41:22.692Z",
+      "id": "root",
+      "name": "A hello after a retry",
+      "parent_id": null,
+      "started_at": "2026-10-08T09:41:22.045Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-08T09:41:22.134Z",
+      "error": {
+        "message": "mock overload (SERVER)"
+      },
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "You are an AI agent powered by DeepSeek Harness.\n\nYou are a coding agent powered by the deepseek-flash model.\n\nCheck the [exit code: N] marker on every bash result; investigate failures before moving …",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          },
+          {
+            "content": [
+              {
+                "text": "FLAKY: say hello",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          },
+          {
+            "content": [
+              {
+                "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify file…",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          }
+        ]
+      },
+      "model": {
+        "id": "deepseek-flash",
+        "provider": "deepseek-official"
+      },
+      "name": "turn",
+      "output": {
+        "messages": []
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T09:41:22.091Z",
+      "status": "error",
+      "type": "llm_call"
+    },
+    {
+      "ended_at": "2026-10-08T09:41:22.691Z",
+      "id": "s2",
+      "input": {
+        "messages": []
+      },
+      "model": {
+        "id": "deepseek-flash",
+        "provider": "deepseek-official"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Hello. Nothing to run here.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T09:41:22.670Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "total_tokens": 138
+      }
+    }
+  ]
+}

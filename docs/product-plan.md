@@ -1,6 +1,6 @@
 # session.link product plan
 
-Working draft · updated 2026-10-01 · based on the planning conversation.
+Working draft · updated 2026-10-08 · based on the planning conversation.
 
 The [success criteria](success-criteria.md) record the nine agreed requirements:
 easy installation anywhere, a tiny and efficient daemon, current and dependable
@@ -42,14 +42,20 @@ Integration TODO:
 - [x] Cut the first client release after v0.5.0 so released binaries gain encrypted
   and named sharing: v0.6.0 (2026-10-01).
 - [x] Design named-recipient sharing separately from account and device recovery.
-- [ ] Build the [DeepSeek Harness (`dsh`)](https://github.com/deepseek-ai/deepseek-harness)
-  integration. Verify its session storage and active-session identity against a
-  pinned version; add discovery and import support that preserve prompts, outputs,
-  tool calls/results, and source provenance through the common handoff contract.
-  Add realistic fixtures and verify a live session from discovery through local
-  viewing, excerpt preparation, and whole-session publishing. Document supported
-  versions and limitations in the harness matrix. The landing-page logo has no
-  status label; this integration remains unbuilt until these checks pass.
+- [x] Build the [DeepSeek Harness (`dsh`)](https://github.com/deepseek-ai/deepseek-harness)
+  integration: built 2026-10-08 against dsh 0.2.0-rc.2, session format v4. Its
+  session storage and the identity of the active session were checked with real
+  sessions, run headless in an isolated home against a mock provider. Those
+  sessions were taken from discovery through import, local viewing and
+  whole-session publishing to a local build of the service, and the excerpt
+  exporter runs over the fixtures made from them. Supported versions and limits
+  are in the [harness matrix](handoff-design.md#harness-contract-and-current-verification).
+  Not checked: its Web UI, a real DeepSeek model, and an excerpt composed in the
+  browser from a dsh session.
+- [x] Build the [Aider](https://github.com/Aider-AI/aider) integration: built
+  2026-10-08 against Aider 0.86.2, from real runs against a mock provider, with
+  the same checks. Aider's history is Markdown without tool calls or times, and
+  the harness matrix says what that leaves out.
 
 **Product promise:** Move work from any CLI agent harness into a polished,
 shareable web experience, with the prompt, context, and evidence a colleague
@@ -152,13 +158,13 @@ document; code changes should render as a proper diff. Full transcript and
 raw inspection remain available for the material included in the share.
 Moving into detail and back should preserve selection and reading position.
 
-The current checkout provides a useful foundation: five importers, local
+The current checkout provides a useful foundation: eight importers, local
 capture, explicit publishing, a shared React viewer, span links, immutable
 published documents, and an extensible format. The main gaps are:
 
 | Gap | Evidence in this repository | Implication |
 | --- | --- | --- |
-| Entry from the harness | A dedicated pi extension exists; the common CLI discovers and imports sessions across five harnesses. | Define one handoff contract and the most direct supported invocation for each harness. |
+| Entry from the harness | A dedicated pi extension exists; the common CLI discovers and imports sessions across eight harnesses. | Define one handoff contract and the most direct supported invocation for each harness. |
 | Active session identity | Generic discovery selects by recency and project directory. | Concurrent sessions, resumed work, and subdirectories need tests and a clear ambiguity flow. |
 | CLI-to-browser continuity | Local viewing and publishing exist, but selected-output transfer and a composed draft are absent. | The handoff must preserve the user's intended material and survive authentication or upload failure. |
 | Preparing a share | Local publishing reads and uploads the capture file as a whole. | Selecting content requires creating a separate export, beyond changing what the viewer displays. |
@@ -278,7 +284,7 @@ shares, validate and scan before encryption, validate after decryption, and
 limit server checks to the envelope and service policy; the server cannot
 scan or render private content.
 
-Extend the handoff to all five currently supported harnesses and report
+Extend the handoff to all eight currently supported harnesses and report
 verified capabilities individually. Run common semantic and interaction
 fixtures across adapters: prompts, outputs, tool results, source links,
 subagents, and changes should carry consistent meaning where present.

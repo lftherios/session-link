@@ -36,9 +36,9 @@ slink view
 ```
 
 `slink view` finds this project's sessions from Claude Code, Codex, opencode, pi,
-omp and Hermes (experimental), with no SDK and no re-run. To share one, choose
-**Share this view**: keep what matters, add a note, then publish a link for
-anyone who has it or for specific people by email.
+omp, DeepSeek Harness, Aider and Hermes (experimental), with no SDK and no
+re-run. To share one, choose **Share this view**: keep what matters, add a note,
+then publish a link for anyone who has it or for specific people by email.
 
 ```bash
 slink record -- python agent.py    # record any Anthropic or OpenAI API client, wire-exact

@@ -1,0 +1,93 @@
+{
+  "created_at": "2026-10-08T11:39:24.000Z",
+  "metadata": {
+    "harness_version": "0.86.2",
+    "session_id": "2026-10-08T11:39:24"
+  },
+  "name": "FOLLOW_UP: thanks, that was all I needed",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "aider",
+    "kind": "import",
+    "label": "session-import@0.1.0"
+  },
+  "spans": [
+    {
+      "id": "root",
+      "name": "FOLLOW_UP: thanks, that was all I needed",
+      "parent_id": null,
+      "started_at": "2026-10-08T11:39:24.000Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Detected dumb terminal, disabling fancy input and pretty output.\n/home/dev/.local/bin/aider --model openai/mock-model --no-show-model-warnings --no-check-update --analytics-disable --no-pretty --no-fancy-input --yes-always --no-gitignore --no-show-release-notes --no-detect-urls --map-tokens 0 --edit-format diff --message FOLLOW_UP: thanks, that was all I needed\nAider v0.86.2\nModel: openai/mock-model with diff edit format\nGit repo: .git with 1 files\nRepo-map: disabled",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          }
+        ]
+      },
+      "name": "aider startup",
+      "parent_id": "root",
+      "type": "custom"
+    },
+    {
+      "id": "s2",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "FOLLOW_UP: thanks, that was all I needed",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "openai/mock-model"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "You're welcome.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T11:39:25.846Z",
+      "status": "ok",
+      "type": "llm_call"
+    },
+    {
+      "id": "s3",
+      "input": {
+        "name": "aider"
+      },
+      "name": "aider",
+      "output": {
+        "result": "Tokens: 2.3k sent, 4 received."
+      },
+      "parent_id": "root",
+      "type": "tool_call"
+    }
+  ]
+}

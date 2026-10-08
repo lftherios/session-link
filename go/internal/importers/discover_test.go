@@ -14,7 +14,7 @@ func isolateStores(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	for _, name := range []string{"CLAUDE_CONFIG_DIR", "PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR", "PI_CONFIG_DIR", "OMP_PROFILE", "PI_PROFILE", "CODEX_HOME", "XDG_DATA_HOME", "OPENCODE_DB", "HERMES_HOME", "HERMES_STATE_DB"} {
+	for _, name := range []string{"CLAUDE_CONFIG_DIR", "PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR", "PI_CONFIG_DIR", "OMP_PROFILE", "PI_PROFILE", "CODEX_HOME", "XDG_DATA_HOME", "OPENCODE_DB", "HERMES_HOME", "HERMES_STATE_DB", "DSH_HOME"} {
 		t.Setenv(name, "")
 	}
 	return home

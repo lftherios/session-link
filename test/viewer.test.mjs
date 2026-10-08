@@ -178,6 +178,7 @@ test("arrival: an imported pi session reads as the branch that was kept", async 
 
 for (const [fixture, images] of [
   ["claude-code/images", 2], ["codex/images", 3], ["pi/images", 2], ["omp/v18.1-images", 2], ["opencode/v1.18-images", 2], ["hermes/stored-content", 1],
+  ["dsh/v4-images", 1],
 ]) {
   test(`viewer: images imported from ${fixture} are shown`, async () => {
     const doc = JSON.parse(await readFile(`testdata/import/${fixture}/golden.run.json`, "utf8"));
@@ -191,6 +192,7 @@ for (const [fixture, images] of [
 for (const [fixture, task] of [
   ["claude-code/sub-agent", /SUBTASK: print one line/], ["codex/sub-agent", /NEW_TASK/], ["omp/v18.1-sub-agent", /SUBTASK: print one line/],
   ["opencode/v1.18-sub-agent", /Reply with the single word done/], ["hermes/delegate", /List certificates in eu-west/],
+  ["dsh/v4-sub-agents", /SUBTASK: print one line/],
 ]) {
   test(`arrival: a sub-agent imported from ${fixture} reads as a delegated task`, async () => {
     const { exchangesFor, messageText } = await sessionModel();
@@ -207,6 +209,44 @@ for (const [fixture, task] of [
     assert.ok(render(doc).includes(`aria-label="Inspect ${agent.name} in the tree"`));
   });
 }
+
+test("arrival: a dsh session reads as the person's turns, with what dsh supplied as context", async () => {
+  const { exchangesFor, messageText } = await sessionModel();
+  const doc = JSON.parse(await readFile("testdata/import/dsh/v4-run/golden.run.json", "utf8"));
+  const exchanges = exchangesFor(doc);
+  // dsh puts its runtime context in the person's turn; it is not a prompt of theirs.
+  assert.deepEqual(exchanges.map(e => e.prompts.map(p => messageText(p.msg))),
+    [["RUN_TOOL BAD_ARGS: print a greeting with the shell and report what it printed"], ["FOLLOW_UP: thanks, that is all"]]);
+  const html = render(doc);
+  assert.match(html, /hello from the tool/);
+  assert.match(html, /missing required property/);
+  // A request the provider failed is shown where it happened, before the retry that answered.
+  const retried = JSON.parse(await readFile("testdata/import/dsh/v4-retry/golden.run.json", "utf8"));
+  assert.match(render(retried), /mock overload \(SERVER\)[\s\S]*Hello\. Nothing to run here\./);
+});
+
+test("arrival: an aider run reads as its prompts and replies, with aider's own notices as evidence", async () => {
+  const { exchangesFor, messageText, defaultExchange } = await sessionModel();
+  const doc = JSON.parse(await readFile("testdata/import/aider/v0.86-edit/golden.run.json", "utf8"));
+  const exchanges = exchangesFor(doc);
+  // A command to aider is something the person typed, though no model answered it.
+  assert.deepEqual(exchanges.map(e => e.prompts.map(p => messageText(p.msg))),
+    [["BREAK_IT: make hello.py greet the world"], ["/run python hello.py"], ["FOLLOW_UP: thanks, that is all"], ["/exit"]]);
+  // Reading opens on the last exchange that was answered, not on the closing /exit.
+  assert.equal(defaultExchange(exchanges), exchanges[2]);
+  const edit = exchanges[0].blocks.map(b => b.msg.role);
+  // What aider said at startup is the setup the first prompt reads with. Then
+  // the reply, what aider did with it, the fix the lint failure led to, and
+  // what aider did with that.
+  assert.deepEqual(edit, ["system", "assistant", "tool", "assistant", "tool"]);
+  assert.match(messageText(exchanges[0].blocks[0].msg), /Aider v0\.86\.2[\s\S]*Added hello\.py to the chat\./);
+  assert.match(exchanges[0].blocks[2].msg.content[0].content[0].text, /Applied edit to hello\.py[\s\S]*SyntaxError: '\(' was never closed/);
+  assert.match(messageText(exchanges[0].blocks[3].msg), /The closing bracket was missing/);
+  assert.match(render(doc), /Commit 06b6ca0 feat: greet the world/);
+  // Aider records one time, the start of the run. Nothing else is given a time.
+  assert.equal(doc.spans.filter(s => s.started_at).length, 1);
+  assert.equal(doc.spans.filter(s => s.ended_at).length, 0);
+});
 
 test("arrival: names that look like injected context never become the title", () => {
   const doc = { ...run([call("s1", [message("user", "<environment_context>cwd: /tmp</environment_context>"), message("user", "Compare onboarding options")], [message("assistant", "The comparison")])], { kind: "import" }), name: "<environment_context> <cwd>/tmp</cwd>" };
@@ -596,6 +636,11 @@ for (const fixture of [
   "testdata/import/claude-code/sub-agent/golden.run.json",
   "testdata/import/codex/sub-agent/golden.run.json",
   "testdata/import/pi/error-and-trailing/golden.run.json",
+  "testdata/import/dsh/v4-run/golden.run.json",
+  "testdata/import/dsh/v4-retry/golden.run.json",
+  "testdata/import/dsh/v4-sub-agents/golden.run.json",
+  "testdata/import/aider/v0.86-edit/golden.run.json",
+  "testdata/import/aider/v0.86-two-runs/golden.run.json",
 ]) {
   test(`viewer: renders ${fixture}`, async () => {
     const doc = JSON.parse(await readFile(fixture, "utf8"));

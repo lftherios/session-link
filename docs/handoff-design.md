@@ -1,7 +1,7 @@
 # CLI to web: first implementation
 
 2026-09-11 · implements the first slice of the [product plan](product-plan.md);
-harness contract updated 2026-10-07.
+harness contract updated 2026-10-08.
 These are development scenarios, not reports of real colleague exchanges.
 
 ## Common interaction
@@ -94,6 +94,8 @@ generated document, including its raw view and download.
 | omp | `slink view --from omp` | Session ID or transcript path | Reconstructed transcript | 18.1.18: session format and directory rules from its source; run live against a mock provider |
 | opencode | `slink view --from opencode` | SQLite session ID | Reconstructed messages and tool parts | 1.18.35: table definitions from its source; run live against a mock provider |
 | Hermes | `slink view --from hermes` | SQLite session ID | Reconstructed messages | 0.15.1: schema and session-list rules from its source; not run live |
+| DeepSeek Harness | `slink view` from its shell tool, or `slink view --from dsh` | The session running the command; a session ID or log path | Reconstructed session log | 0.2.0-rc.2, session format v4: format and storage rules from its source; run live, headless, against a mock provider |
+| Aider | `slink view --from aider` | A run's start time, or the history file's path | Reconstructed chat history | 0.86.2: the rules it writes its history by from its source; run live against a mock provider |
 
 Evidence and limits for each:
 
@@ -117,7 +119,7 @@ Evidence and limits for each:
   calls through the tap, once its WebSocket attempts fall back to HTTP, and
   they are recorded. ChatGPT sign-in is untested. Rollouts compressed to
   `.jsonl.zst`, which 0.160.1 does behind a flag that is off by default, are
-  not read. A sub-agent thread is its own rollout that opens with a copy of
+  not looked for. A sub-agent thread is its own rollout that opens with a copy of
   its parent's history; it is nested under the `spawn_agent` call that
   returned its task path, read from where its own history starts. Messages
   between agents are kept, with a task's payload as Codex records it, which
@@ -163,6 +165,61 @@ Evidence and limits for each:
   is nested under the tool call that was running when it started, because
   Hermes links it to its parent session and not to a call. `HERMES_HOME` and
   the active profile select the store.
+- **DeepSeek Harness.** `dsh` keeps a session as a log of events under
+  `sessions/` in `DSH_HOME` or `~/.dsh`: a directory per project, named by
+  its own rule, a directory per session, and in it the log in each format
+  generation dsh has written, of which the highest is read. The log is
+  Zstandard-compressed unless dsh was set not to; it is decoded, and one cut
+  off mid-write gives the lines it completed. Format v4 is read, checked
+  against real 0.2.0-rc.2 sessions run headless in an isolated home against
+  a mock provider, which are the `dsh` fixtures, one of them kept compressed.
+  dsh marks who wrote each message, so only the person's are theirs; its
+  system prompt, runtime context and compaction checkpoints read as provided
+  context. Reasoning, tool calls with the times they ran, a call dsh rejected,
+  and a provider request that failed before its retry answered all import as
+  recorded, the failed request as an errored call. The title is the one a
+  model wrote for dsh, not the one dsh first cuts from the prompt. A
+  sub-agent is a session of its own in the same store. The parent's log
+  records its ID but not the call that asked for it, so it is nested under
+  the delegation call that was waiting at that point; a forked sub-agent
+  begins with a copy of its parent's history, which is left out. v3, which
+  the 0.1 releases wrote, is read with the one difference dsh's own
+  migration describes, a tool result kept inside a wrapper block; that is
+  from its documentation, not from a run, as are compaction and an
+  interrupted reply. Any other format version is refused, as dsh refuses
+  it. The log does not record dsh's version. A session root a profile sets
+  elsewhere is not followed, sub-agents started by a workflow script are
+  untested, and the Web UI was not run. dsh gives every command of its shell
+  tool the ID of the session that ran it, in `DSH_SESSION_ID`, so `slink
+  view`, `slink import` and `slink share` run by the agent are about that
+  session and not merely the newest; a real session importing itself from
+  its own shell tool confirmed it. Capture through the tap was not tried; dsh reads its endpoint from
+  `DEEPSEEK_BASE_URL`, which `slink on` does not set.
+- **Aider.** Aider has no session store. It appends every run in a project
+  to `.aider.chat.history.md` in the directory it was started in, and a
+  session here is one run of that file, named by the start time aider wrote
+  for it. Lines aider marks as typed are the person's, unmarked lines are the
+  model's reply, and aider's own notices are kept where they appeared as the
+  evidence of what it did: the edits it applied, its commits, its lint and
+  test output. The notices ahead of the first typed line are the run's
+  setup, and the model and version are read from them. Real 0.86.2 runs, in
+  an isolated home and throwaway repositories against a mock provider, are
+  the `aider` fixtures, among them an edit that failed aider's lint check
+  and the fix that followed. The history holds less than other harnesses
+  record, and nothing is made up for it: there are no tool calls, because
+  aider's edits are text in the reply; no token counts, because aider prints
+  them rounded, and they stay in its notices as written; and one time, the
+  start of the run. Where `.aider.input.history` is beside the file, a typed
+  entry found there with the same text takes its time from it. Aider writes
+  local times without a zone, read here in the zone of the importing
+  machine. A reply line that itself begins with `> ` or `#### ` reads as a
+  notice or as typed text, as it does in aider's own reader. A slash command
+  is something the person typed, though no model answers it. The output of
+  `/run` is not in the history, nor is an image. A history kept under
+  another name through `--chat-history-file`, its environment variable or a
+  configuration file is not found, though its path can be given;
+  `.aider.llm.history` is not read; and with no store to search, nothing
+  points to a run in another project. Capture through the tap is untested.
 
 Prompts, outputs and tool evidence use the existing importers and their golden
 fixtures. Fidelity labels remain visible. None of these adapters establishes
@@ -173,8 +230,10 @@ that carry the image itself, so the reader shows them without fetching
 anything: Claude Code's inline images, Codex's attached images, tool results
 and generated images, pi's images, omp's from the blob store beside its
 sessions, opencode's attached files, tool attachments and files in replies,
-and Hermes's image parts. The `images` fixture of each harness covers it; the
-omp and opencode ones come from real runs. An image whose bytes are not at
+Hermes's image parts, and DeepSeek Harness's from the attachment store beside
+its sessions. The `images` fixture of each harness covers it; the omp,
+opencode and DeepSeek Harness ones come from real runs. Aider's history
+records no images. An image whose bytes are not at
 hand, such as an omp reference without its blob store, or whose kind cannot
 be told, is kept as recorded, as data. Two limits remain. An exact capture,
 from the tap or the pi extension, leaves an image's bytes in the raw request
@@ -186,8 +245,9 @@ reads it back and nests it as a child agent under the tool call that started
 it, so the reader shows the delegated task and the work done on it where the
 delegation happened. Sub-agents of sub-agents nest the same way. A preview is
 made again when a sub-agent's transcript changes, not only its parent's. The
-`sub-agent` fixture of each harness covers it; the Claude Code, Codex, omp and
-opencode ones are real runs, reduced, and the Hermes one is written by hand.
+`sub-agent` fixture of each harness covers it; the Claude Code, Codex, omp,
+opencode and DeepSeek Harness ones are real runs, reduced, and the Hermes one
+is written by hand. Aider has no sub-agents.
 An exact capture has no such structure: the tap records every call in one
 flat sequence.
 
@@ -198,8 +258,10 @@ session started in the home directory is found only there. It lists up to 30
 native candidates, most recently active first, while an explicit ID can reach
 an older session. Sessions a harness records for its sub-agents are left out
 of the list and are never chosen as the newest session: Codex sub-agent and
-internal threads, opencode child sessions, and Hermes sessions started while
-their parent was live. An explicit ID still reaches one. Captures follow the
+internal threads, opencode child sessions, DeepSeek Harness sub-agent
+sessions, and Hermes sessions started while their parent was live. An
+explicit ID still reaches one. Every run in a project's aider history is a
+candidate of its own. Captures follow the
 same rule by the directory they record; the always-on tap serves every shell
 and records none, so its captures are listed in every project. The picker is a
 startup list; restart to discover newly created sessions. An unreadable

@@ -286,6 +286,10 @@ func harnessLabel(harness string) string {
 		return "OpenCode"
 	case "hermes":
 		return "Hermes"
+	case "dsh":
+		return "DeepSeek Harness"
+	case "aider":
+		return "Aider"
 	case "":
 		return "Local capture"
 	}

@@ -30,7 +30,7 @@ func runOpen(args []string) {
 	port := fs.Int("port", 0, "listen port (default: a free port)")
 	noBrowser := fs.Bool("no-browser", false, "print the local URL without opening a browser")
 	background := fs.Bool("background", false, "return to the harness while the local viewer stays running")
-	from := fs.String("from", "", "agent: claude-code|codex|pi|omp|opencode|hermes")
+	from := fs.String("from", "", "agent: claude-code|codex|pi|omp|opencode|hermes|dsh|aider")
 	session := fs.String("session", "", "explicit harness session ID or transcript path")
 	span := fs.String("span", "", "start at this span in the viewer")
 	pick := fs.Bool("pick", false, "always show the browser session picker")
@@ -189,6 +189,13 @@ func viewSources(loc importers.Locations, cwd, from, ref string, explicitNative 
 			return nil, fmt.Errorf("session ID %q is ambiguous; add --from or pass a transcript path", ref)
 		}
 		return []handoff.Source{handoff.Native(candidates[0])}, nil
+	}
+	// A view an agent opens from its own shell tool is of the session that
+	// is running it, when that session is one of this project's.
+	if harness, id, ok := importers.ActiveSession(); ok && (from == "" || from == harness) {
+		if active, err := loc.Recent(harness, cwd, id, 30); err == nil && len(active) == 1 {
+			return []handoff.Source{handoff.Native(active[0])}, nil
+		}
 	}
 	candidates, err := loc.Recent(from, cwd, "", 30)
 	if err != nil && from != "" {

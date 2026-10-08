@@ -27,7 +27,7 @@ type Candidate struct {
 // Locations makes discovery testable without reading or changing the user's
 // real harness stores. Defaults follow the same conventions as import.
 type Locations struct {
-	Claude, Pi, Omp, Codex, Opencode, Hermes string
+	Claude, Pi, Omp, Codex, Opencode, Hermes, Dsh string
 }
 
 func DefaultLocations() Locations {
@@ -36,6 +36,7 @@ func DefaultLocations() Locations {
 		Pi:     piSessionsDir(),
 		Omp:    ompSessionsDir(),
 		Codex:  codexSessionsDir(), Opencode: opencodeDBPath(), Hermes: hermesDBPath(),
+		Dsh: dshSessionsDir(),
 	}
 }
 
@@ -94,6 +95,9 @@ func (loc Locations) Recent(harness, cwd, id string, limit int) ([]Candidate, er
 		if h == "pi" || h == "omp" {
 			sid = strOr(piHeader(file)["id"], sid)
 		}
+		if h == "dsh" {
+			sid = strOr(head["id"], filepath.Base(filepath.Dir(file)))
+		}
 		if id != "" && sid != id {
 			return
 		}
@@ -134,6 +138,40 @@ func (loc Locations) Recent(harness, cwd, id string, limit int) ([]Candidate, er
 			}
 			return nil
 		})
+	}
+	if loc.Dsh != "" && (harness == "" || harness == "dsh") {
+		for _, dir := range dirs {
+			// Only an explicit id reaches a sub-agent's own session.
+			for _, file := range dshSessions(loc.Dsh, dir, id != "") {
+				addFile(file, "dsh", dir)
+			}
+		}
+	}
+	if harness == "" || harness == "aider" {
+		for _, dir := range dirs {
+			file := filepath.Join(dir, aiderChatName)
+			info, err := os.Stat(file)
+			if err != nil || !info.Mode().IsRegular() {
+				continue
+			}
+			runs, _ := aiderRuns(file)
+			for i, run := range runs {
+				if id != "" && run.id != id {
+					continue
+				}
+				// A run was last active when the file was last written, or
+				// before the run after it began.
+				active := info.ModTime().UnixNano()
+				if i+1 < len(runs) {
+					active = runs[i+1].started.UnixNano()
+				}
+				sid := run.id
+				candidates = append(candidates, Candidate{
+					Found: Found{Harness: "aider", Recency: active, load: func() (Input, error) { return aiderInput(file, sid) }},
+					ID:    sid, Dir: dir, File: file, Prompt: aiderPrompt(run), Started: run.started,
+				})
+			}
+		}
 	}
 	for _, h := range []string{"opencode", "hermes"} {
 		if harness != "" && harness != h {
@@ -183,7 +221,17 @@ func (loc Locations) Recent(harness, cwd, id string, limit int) ([]Candidate, er
 	var threads map[string][]codexThread
 	for i := range candidates {
 		c := &candidates[i]
-		if c.File != "" {
+		if c.Harness == "aider" {
+			// Aider gives a run no title; what the listing has is its first prompt.
+			c.Title = c.Prompt
+		} else if c.Harness == "dsh" {
+			c.Related = agentFiles(c.Harness, c.File, c.ID, nil)
+			c.Name, c.Prompt, c.Started = dshTitles(c.File)
+			c.Title = c.Name
+			if c.Title == "" {
+				c.Title = c.Prompt
+			}
+		} else if c.File != "" {
 			if c.Harness == "codex" && threads == nil {
 				threads = codexThreads(loc.Codex)
 			}

@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf16"
 
+	"github.com/klauspost/compress/zstd"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver — no cgo
 )
 
@@ -353,8 +354,36 @@ func hermesDBPath() string {
 
 /* -------------------------------------------------------- file loaders */
 
-func readLines(file string) ([]string, error) {
+// zstdMagic opens every Zstandard frame.
+var zstdMagic = []byte{0x28, 0xB5, 0x2F, 0xFD}
+
+// readTranscript reads a transcript file whole. dsh compresses its logs, as
+// one Zstandard frame per write, and those are decoded here. A last frame
+// that was cut off mid-write gives up the lines it completed, as it does in
+// dsh.
+func readTranscript(file string) ([]byte, error) {
 	raw, err := os.ReadFile(file)
+	if err != nil || !bytes.HasPrefix(raw, zstdMagic) {
+		return raw, err
+	}
+	decoder, err := zstd.NewReader(bytes.NewReader(raw), zstd.WithDecoderConcurrency(1))
+	if err != nil {
+		return nil, err
+	}
+	defer decoder.Close()
+	text, err := io.ReadAll(io.LimitReader(decoder, 1<<30))
+	if err != nil {
+		end := bytes.LastIndexByte(text, '\n')
+		if end < 0 {
+			return nil, fmt.Errorf("%s: %w", file, err)
+		}
+		text = text[:end+1]
+	}
+	return text, nil
+}
+
+func readLines(file string) ([]string, error) {
+	raw, err := readTranscript(file)
 	if err != nil {
 		return nil, err
 	}
@@ -369,13 +398,25 @@ func readLines(file string) ([]string, error) {
 
 func fileInput(file, harness string, recency int64) Found {
 	return Found{Harness: harness, Recency: recency, load: func() (Input, error) {
+		if harness == "aider" {
+			return aiderInput(file, "")
+		}
 		lines, err := readLines(file)
 		if err != nil {
 			return Input{}, err
 		}
-		base := filepath.Base(file)
-		return Input{Lines: lines, Fallback: strings.TrimSuffix(base, ".jsonl"), Blobs: blobsBeside(file), Agents: fileAgents(harness, file)}, nil
+		return transcriptInput(file, harness, lines), nil
 	}}
+}
+
+// transcriptInput is a transcript's lines with what its harness keeps beside
+// them: the store its images are in, and the sessions of its sub-agents.
+func transcriptInput(file, harness string, lines []string) Input {
+	in := Input{Lines: lines, Fallback: strings.TrimSuffix(filepath.Base(file), ".jsonl"), Blobs: blobsBeside(file), Agents: fileAgents(harness, file)}
+	if harness == "dsh" {
+		in.Fallback, in.Blobs = filepath.Base(filepath.Dir(file)), dshAttachments(file)
+	}
+	return in
 }
 
 /* ----------------------------------------------------------- sub-agents
@@ -392,6 +433,8 @@ func fileAgents(harness, transcript string) []Agent {
 	case "codex":
 		id := strOr(m(firstJSONLine(transcript)["payload"])["id"], "")
 		return codexAgents(codexThreads(codexRoot(transcript)), id, 0)
+	case "dsh":
+		return dshAgents(transcript, 0)
 	}
 	return nil
 }
@@ -419,6 +462,10 @@ func agentFiles(harness, transcript, thread string, threads map[string][]codexTh
 			}
 		}
 		collect(thread, 0)
+	case "dsh":
+		for _, child := range dshChildren(transcript) {
+			files = append(append(files, child.file), agentFiles(harness, child.file, "", nil)...)
+		}
 	}
 	return files
 }
@@ -610,6 +657,18 @@ func Latest(harness, cwd string) (*Found, bool) {
 		"codex":       latestCodex,
 		"opencode":    latestOpencode,
 		"hermes":      latestHermes,
+		"dsh":         latestDsh,
+		"aider":       latestAider,
+	}
+	// A command an agent runs in its own shell tool is about the session
+	// running it, whichever was written to last.
+	if active, id, ok := ActiveSession(); ok && (harness == "" || harness == active) {
+		if file, ok := dshByID(dshSessionsDir(), id); ok {
+			if info, err := os.Stat(file); err == nil {
+				found := fileInput(file, active, info.ModTime().UnixNano())
+				return &found, true
+			}
+		}
 	}
 	if harness != "" {
 		if fn := try[harness]; fn != nil {
@@ -620,7 +679,7 @@ func Latest(harness, cwd string) (*Found, bool) {
 	// Auto-detect: the newest session ACROSS every harness by recency, like
 	// the JS importer (not first-found in a fixed order).
 	var best *Found
-	for _, h := range []string{"claude-code", "pi", "omp", "codex", "opencode", "hermes"} {
+	for _, h := range []string{"claude-code", "pi", "omp", "codex", "opencode", "hermes", "dsh", "aider"} {
 		if f, ok := try[h](cwd); ok {
 			if best == nil || f.Recency > best.Recency {
 				best = f
@@ -705,7 +764,20 @@ func firstJSONLine(file string) map[string]any {
 		return nil
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
+	var source io.Reader = f
+	if head := make([]byte, len(zstdMagic)); strings.HasSuffix(file, ".zstd") {
+		if _, err := io.ReadFull(f, head); err != nil || !bytes.Equal(head, zstdMagic) {
+			return nil
+		}
+		f.Seek(0, io.SeekStart)
+		decoder, err := zstd.NewReader(f, zstd.WithDecoderConcurrency(1))
+		if err != nil {
+			return nil
+		}
+		defer decoder.Close()
+		source = decoder
+	}
+	sc := bufio.NewScanner(source)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024) // session_meta embeds the whole system prompt
 	if sc.Scan() {
 		var v map[string]any
@@ -976,6 +1048,7 @@ func NewestAnywhere(harness string) (*Elsewhere, bool) {
 		"codex":       anywhereCodex,
 		"opencode":    anywhereOpencode,
 		"hermes":      anywhereHermes,
+		"dsh":         anywhereDsh,
 	}
 	if harness != "" {
 		if fn := finders[harness]; fn != nil {
@@ -984,7 +1057,7 @@ func NewestAnywhere(harness string) (*Elsewhere, bool) {
 		return nil, false
 	}
 	var best *Elsewhere
-	for _, h := range []string{"claude-code", "pi", "omp", "codex", "opencode", "hermes"} {
+	for _, h := range []string{"claude-code", "pi", "omp", "codex", "opencode", "hermes", "dsh"} {
 		if e, ok := finders[h](); ok && (best == nil || e.Recency > best.Recency) {
 			best = e
 		}
@@ -1236,13 +1309,16 @@ func LatestByID(harness, id string) (*Found, bool) {
 // LoadFile builds Input from an explicit transcript path (bare `slink
 // import <file>`), sniffing which file-based harness it is.
 func LoadFile(file string) (Input, string, error) {
+	if aiderChat(file) {
+		in, err := aiderInput(file, "")
+		return in, "aider", err
+	}
 	lines, err := readLines(file)
 	if err != nil {
 		return Input{}, "", err
 	}
 	harness := sniff(lines)
-	in := Input{Lines: lines, Fallback: strings.TrimSuffix(filepath.Base(file), ".jsonl"), Blobs: blobsBeside(file), Agents: fileAgents(harness, file)}
-	return in, harness, nil
+	return transcriptInput(file, harness, lines), harness, nil
 }
 
 // sniff peeks the first entries to pick a file-based harness.
@@ -1265,6 +1341,13 @@ func sniff(lines []string) string {
 			return "codex"
 		}
 	}
+	// dsh's header is a "session" line too; only it says whether the session
+	// was seeded from another.
+	for _, e := range peek[:min(len(peek), 1)] {
+		if _, seeded := e["isSeeded"]; seeded && strOr(e["type"], "") == "session" {
+			return "dsh"
+		}
+	}
 	// omp's transcript is pi's with a title line of its own ahead of the header.
 	for _, e := range peek {
 		if _, slot := e["pad"]; slot && strOr(e["type"], "") == "title" {
@@ -1282,4 +1365,478 @@ func sniff(lines []string) string {
 		}
 	}
 	return ""
+}
+
+/* ------------------------------------------------------------------ dsh
+   DeepSeek Harness keeps a directory per session, grouped by project, under
+   sessions/ in its home. A session's directory holds its log, compressed
+   unless dsh was configured not to, once for each format generation dsh has
+   written it in. */
+
+// dshSessionsDir is the sessions directory of dsh's home: DSH_HOME when it
+// names one, ~/.dsh otherwise. A profile can be set to keep its logs
+// somewhere else; that is not followed.
+func dshSessionsDir() string {
+	root := filepath.Join(home(), ".dsh")
+	if env := os.Getenv("DSH_HOME"); strings.TrimSpace(env) != "" {
+		root = expandHome(env)
+		if abs, err := filepath.Abs(root); err == nil {
+			root = abs
+		}
+	}
+	return filepath.Join(root, "sessions")
+}
+
+// dshSafe is a character dsh writes into a path as it is.
+func dshSafe(unit uint16) bool {
+	return unit >= 'a' && unit <= 'z' || unit >= 'A' && unit <= 'Z' || unit >= '0' && unit <= '9' || unit == '.' || unit == '_' || unit == '-'
+}
+
+// dshSegment is a session id as dsh writes it for a directory name: every
+// character it does not write as it is becomes ~ and its UTF-16 code unit.
+func dshSegment(id string) string {
+	switch id {
+	case ".":
+		return "~002E"
+	case "..":
+		return "~002E~002E"
+	}
+	var out strings.Builder
+	for _, unit := range utf16.Encode([]rune(id)) {
+		if dshSafe(unit) {
+			out.WriteByte(byte(unit))
+		} else {
+			fmt.Fprintf(&out, "~%04X", unit)
+		}
+	}
+	return out.String()
+}
+
+// dshProjectKey is the directory dsh groups a project's sessions under: the
+// path with each run of separators as one dash and other characters escaped
+// as in a session id, cut to 251 characters, between double dashes. Paths
+// that differ only in what was replaced or cut share a directory, so it is
+// each session's header that says which project it belongs to.
+func dshProjectKey(cwd string) string {
+	var readable strings.Builder
+	separators := false
+	for _, unit := range utf16.Encode([]rune(cwd)) {
+		switch {
+		case unit == '/' || unit == '\\' || unit == ':':
+			if !separators {
+				readable.WriteByte('-')
+			}
+			separators = true
+			continue
+		case dshSafe(unit):
+			readable.WriteByte(byte(unit))
+		default:
+			fmt.Fprintf(&readable, "~%04X", unit)
+		}
+		separators = false
+	}
+	slug := strings.TrimLeft(readable.String(), "-")
+	if slug == "" {
+		slug = "root"
+	}
+	if len(slug) > 251 {
+		slug = slug[:251]
+	}
+	return "--" + slug + "--"
+}
+
+var dshLogName = regexp.MustCompile(`^session(?:\.v([1-9][0-9]*))?\.jsonl(?:\.zstd)?$`)
+
+// dshLog is the log to read in a session's directory: the highest format
+// generation there, which is the one dsh reads.
+func dshLog(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	best, bestVersion, bestTime := "", -1, int64(0)
+	for _, entry := range entries {
+		match := dshLogName.FindStringSubmatch(entry.Name())
+		info, err := entry.Info()
+		if match == nil || err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		version, _ := strconv.Atoi(match[1])
+		if at := info.ModTime().UnixNano(); version > bestVersion || version == bestVersion && at > bestTime {
+			best, bestVersion, bestTime = filepath.Join(dir, entry.Name()), version, at
+		}
+	}
+	return best
+}
+
+// dshSessions lists the logs of the sessions dsh ran in cwd. A sub-agent's
+// session is one of them only when asked for. dsh records the directory it
+// was started in with links resolved, so cwd is looked up that way too.
+func dshSessions(root, cwd string, subAgents bool) []string {
+	dirs := []string{filepath.Clean(cwd)}
+	if real, err := filepath.EvalSymlinks(cwd); err == nil && real != dirs[0] {
+		dirs = append(dirs, real)
+	}
+	var files []string
+	for _, dir := range dirs {
+		project := filepath.Join(root, dshProjectKey(dir))
+		entries, _ := os.ReadDir(project)
+		for _, entry := range entries {
+			file := dshLog(filepath.Join(project, entry.Name()))
+			if file == "" {
+				continue
+			}
+			header := firstJSONLine(file)
+			if filepath.Clean(strOr(header["cwd"], "")) != dir || !subAgents && strOr(header["origin"], "") == "subagent" {
+				continue
+			}
+			files = append(files, file)
+		}
+	}
+	return files
+}
+
+type dshChild struct{ id, label, file string }
+
+// dshChildren lists the sub-agents a session started. dsh notes each one's
+// session id and label in the parent's log; the sub-agent's own log is in the
+// same store, in the directory named for that id, under the project it
+// worked in.
+func dshChildren(transcript string) []dshChild {
+	lines, err := readLines(transcript)
+	if err != nil {
+		return nil
+	}
+	project := filepath.Dir(filepath.Dir(transcript))
+	root := filepath.Dir(project)
+	projects := []string{project}
+	if entries, err := os.ReadDir(root); err == nil {
+		for _, entry := range entries {
+			if dir := filepath.Join(root, entry.Name()); dir != project {
+				projects = append(projects, dir)
+			}
+		}
+	}
+	var children []dshChild
+	seen := map[string]bool{}
+	for _, line := range lines {
+		if !strings.Contains(line, `"subagent/catalog"`) && !strings.Contains(line, `"session/end-seed"`) {
+			continue
+		}
+		var event map[string]any
+		if json.Unmarshal([]byte(line), &event) != nil {
+			continue
+		}
+		data := m(event["data"])
+		// A forked session begins with a copy of its parent's history, the
+		// parent's sub-agents included. Its own come after the copy ends.
+		if strOr(event["type"], "") == "session/end-seed" && data["inherited"] == true {
+			children, seen = nil, map[string]bool{}
+		}
+		if strOr(event["type"], "") != "subagent/catalog" {
+			continue
+		}
+		id := strOr(data["childId"], "")
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		for _, dir := range projects {
+			if file := dshLog(filepath.Join(dir, dshSegment(id))); file != "" {
+				children = append(children, dshChild{id: id, label: strOr(data["label"], ""), file: file})
+				break
+			}
+		}
+	}
+	return children
+}
+
+// dshAgents reads the sessions of a session's sub-agents, and of theirs.
+func dshAgents(transcript string, depth int) []Agent {
+	var agents []Agent
+	for _, child := range dshChildren(transcript) {
+		lines, err := readLines(child.file)
+		if err != nil {
+			continue
+		}
+		agent := Agent{ID: child.id, Name: child.label, Input: Input{Lines: lines, Fallback: child.id, Blobs: dshAttachments(child.file)}}
+		if depth < 8 {
+			agent.Input.Agents = dshAgents(child.file, depth+1)
+		}
+		agents = append(agents, agent)
+	}
+	return agents
+}
+
+// dshAttachments is where dsh keeps the images a log refers to: its
+// attachment store, beside the sessions directory.
+func dshAttachments(transcript string) string {
+	home := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(transcript))))
+	return filepath.Join(home, "attachments", "v1", "objects")
+}
+
+func latestDsh(cwd string) (*Found, bool) {
+	return newestOf(dshSessions(dshSessionsDir(), cwd, false), "dsh")
+}
+
+func anywhereDsh() (*Elsewhere, bool) {
+	root := dshSessionsDir()
+	projects, _ := os.ReadDir(root)
+	best, bestTime := "", int64(0)
+	for _, project := range projects {
+		sessions, _ := os.ReadDir(filepath.Join(root, project.Name()))
+		for _, session := range sessions {
+			file := dshLog(filepath.Join(root, project.Name(), session.Name()))
+			if file == "" {
+				continue
+			}
+			if info, err := os.Stat(file); err == nil && info.ModTime().UnixNano() > bestTime && strOr(firstJSONLine(file)["origin"], "") != "subagent" {
+				best, bestTime = file, info.ModTime().UnixNano()
+			}
+		}
+	}
+	if best == "" {
+		return nil, false
+	}
+	name, prompt, _ := dshTitles(best)
+	if name == "" {
+		name = prompt
+	}
+	return &Elsewhere{Harness: "dsh", Dir: strOr(firstJSONLine(best)["cwd"], ""), File: best, Title: name, Recency: bestTime}, true
+}
+
+// dshTitles reads what a listing shows of a session: the title dsh gave it,
+// the first thing the person typed, and when it began. dsh starts every
+// session with a title cut from the prompt; that one is not a title.
+func dshTitles(file string) (name, prompt string, started time.Time) {
+	lines, err := readLines(file)
+	if err != nil || len(lines) == 0 {
+		return "", "", time.Time{}
+	}
+	var header map[string]any
+	if json.Unmarshal([]byte(lines[0]), &header) == nil {
+		if ms, ok := header["createdAt"].(float64); ok && ms > 0 {
+			started = time.UnixMilli(int64(ms))
+		}
+	}
+	for _, line := range lines[1:] {
+		titled, typed := strings.Contains(line, `"session/title"`), prompt == "" && strings.Contains(line, `"user/message"`)
+		if !titled && !typed {
+			continue
+		}
+		var event map[string]any
+		if json.Unmarshal([]byte(line), &event) != nil {
+			continue
+		}
+		data := m(event["data"])
+		switch strOr(event["type"], "") {
+		case "session/title":
+			if t := strings.TrimSpace(strOr(data["title"], "")); t != "" && strOr(m(data["source"])["kind"], "") != "fallback" {
+				name = t
+			}
+		case "user/message":
+			if prompt == "" && strOr(m(data["source"])["kind"], "") == "user" {
+				for _, part := range arr(data["content"]) {
+					if text := strings.TrimSpace(strOr(m(part)["text"], "")); text != "" {
+						prompt = text
+						break
+					}
+				}
+			}
+		}
+	}
+	return name, prompt, started
+}
+
+// ActiveSession is the session whose agent is running this process, when its
+// harness says. dsh gives every command of its shell tool the id of the
+// session that ran it in DSH_SESSION_ID, beside DSH_SHELL and its own home.
+func ActiveSession() (harness, id string, ok bool) {
+	if id := os.Getenv("DSH_SESSION_ID"); id != "" && os.Getenv("DSH_SHELL") != "" {
+		return "dsh", id, true
+	}
+	return "", "", false
+}
+
+// dshByID finds a session's log by its id, whichever project it is filed
+// under.
+func dshByID(root, id string) (string, bool) {
+	projects, _ := os.ReadDir(root)
+	for _, project := range projects {
+		if file := dshLog(filepath.Join(root, project.Name(), dshSegment(id))); file != "" && strOr(firstJSONLine(file)["id"], "") == id {
+			return file, true
+		}
+	}
+	return "", false
+}
+
+// DshTranscript finds the log of the dsh session with this id among the
+// sessions of cwd, a sub-agent's included.
+func DshTranscript(cwd, id string) (string, bool) {
+	for _, file := range dshSessions(dshSessionsDir(), cwd, true) {
+		if strOr(firstJSONLine(file)["id"], "") == id {
+			return file, true
+		}
+	}
+	return "", false
+}
+
+/* ---------------------------------------------------------------- aider
+   Aider has no session store. It appends every run in a project to
+   .aider.chat.history.md in the directory it was started in, the git root
+   when there is one, and what was typed at its prompt to
+   .aider.input.history beside it. */
+
+const aiderChatName = ".aider.chat.history.md"
+
+// aiderChat says whether a file is an aider chat history: it is named like
+// one, or its first line opens a run.
+func aiderChat(file string) bool {
+	if strings.HasSuffix(filepath.Base(file), "chat.history.md") {
+		return true
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	head := make([]byte, 4096)
+	n, _ := io.ReadFull(f, head)
+	for _, line := range strings.Split(string(head[:n]), "\n") {
+		if strings.TrimSpace(line) != "" {
+			return aiderStart.MatchString(strings.TrimSuffix(line, "\r"))
+		}
+	}
+	return false
+}
+
+type aiderRun struct {
+	id      string // the time the run started, as aider wrote it
+	started time.Time
+	lines   []string // from the run's opening line to the next run's
+}
+
+// aiderRuns splits a chat history into its runs, oldest first. Lines ahead
+// of the first opening line are the end of a run whose start is gone, and
+// are left out.
+func aiderRuns(file string) ([]aiderRun, error) {
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	var runs []aiderRun
+	for _, line := range strings.Split(string(raw), "\n") {
+		if match := aiderStart.FindStringSubmatch(strings.TrimSuffix(line, "\r")); match != nil {
+			if started, ok := aiderTime(aiderStamp, match[1]); ok {
+				runs = append(runs, aiderRun{id: aiderID(match[1]), started: started})
+			}
+		}
+		if len(runs) > 0 {
+			runs[len(runs)-1].lines = append(runs[len(runs)-1].lines, line)
+		}
+	}
+	return runs, nil
+}
+
+// aiderPrompt is the first thing typed in a run that was not a command to
+// aider itself.
+func aiderPrompt(run aiderRun) string {
+	for _, block := range aiderBlocks(run.lines[1:]) {
+		if text := aiderText(block.lines); block.kind == 'u' && text != "" && !strings.HasPrefix(text, "/") {
+			return text
+		}
+	}
+	return ""
+}
+
+// aiderInputs reads the input history aider keeps beside a chat history:
+// each entry typed at its prompt, under a line with the time.
+func aiderInputs(chat string) []map[string]any {
+	name := strings.TrimSuffix(filepath.Base(chat), "chat.history.md") + "input.history"
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(chat), name))
+	if err != nil {
+		return nil
+	}
+	var entries []map[string]any
+	var text []string
+	end := func() {
+		if len(entries) > 0 {
+			entries[len(entries)-1]["text"] = strings.Join(text, "\n")
+		}
+		text = nil
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if at, timed := strings.CutPrefix(line, "# "); timed {
+			end()
+			entries = append(entries, map[string]any{"at": strings.TrimSpace(at)})
+		} else if typed, ok := strings.CutPrefix(line, "+"); ok {
+			text = append(text, typed)
+		}
+	}
+	end()
+	return entries
+}
+
+// aiderInput is the importer's input for one run of a chat history: the one
+// that started at the time id names, or the last. It carries the input
+// history's entries from that run, and the project directory when the file
+// is where aider itself keeps it.
+func aiderInput(file, id string) (Input, error) {
+	runs, err := aiderRuns(file)
+	if err != nil {
+		return Input{}, err
+	}
+	pick := len(runs) - 1
+	if id != "" {
+		pick = -1
+		for i := range runs {
+			if runs[i].id == id {
+				pick = i
+			}
+		}
+	}
+	if pick < 0 {
+		if id != "" {
+			return Input{}, fmt.Errorf("no aider run started at %s in %s", id, file)
+		}
+		return Input{}, fmt.Errorf("%s holds no aider run", file)
+	}
+	run := runs[pick]
+	inputs := []any{}
+	for _, entry := range aiderInputs(file) {
+		at, ok := aiderTime(aiderInputStamp, strOr(entry["at"], ""))
+		if !ok || at.Before(run.started) || pick+1 < len(runs) && !at.Before(runs[pick+1].started) {
+			continue
+		}
+		inputs = append(inputs, entry)
+	}
+	session := map[string]any{"id": run.id, "inputs": inputs}
+	if abs, err := filepath.Abs(file); err == nil && filepath.Base(abs) == aiderChatName {
+		session["cwd"] = filepath.Dir(abs)
+	}
+	return Input{Lines: run.lines, Fallback: run.id, Session: session}, nil
+}
+
+func latestAider(cwd string) (*Found, bool) {
+	file := filepath.Join(cwd, aiderChatName)
+	info, err := os.Stat(file)
+	if runs, _ := aiderRuns(file); err != nil || len(runs) == 0 {
+		return nil, false
+	}
+	found := fileInput(file, "aider", info.ModTime().UnixNano())
+	return &found, true
+}
+
+// AiderRun finds the run of cwd's chat history that started at the time id
+// names.
+func AiderRun(cwd, id string) (*Found, bool) {
+	file := filepath.Join(cwd, aiderChatName)
+	runs, _ := aiderRuns(file)
+	for _, run := range runs {
+		if run.id == id {
+			return &Found{Harness: "aider", Recency: run.started.UnixNano(), load: func() (Input, error) { return aiderInput(file, id) }}, true
+		}
+	}
+	return nil, false
 }

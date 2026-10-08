@@ -316,7 +316,7 @@ export function sessionTitle(run: Run, exchanges: Exchange[]): string {
   return name && meaningfulTitle(name) && !nameIsFirstPrompt(name, exchanges) ? name : "";
 }
 
-const HARNESS_NAMES: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", pi: "pi", opencode: "OpenCode", hermes: "Hermes" };
+const HARNESS_NAMES: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", pi: "pi", opencode: "OpenCode", hermes: "Hermes", dsh: "DeepSeek Harness", aider: "Aider" };
 export function harnessName(run: Run): string {
   const harness = (run.source as { harness?: string } | undefined)?.harness;
   if (harness) return HARNESS_NAMES[harness] ?? harness;

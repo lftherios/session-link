@@ -1,0 +1,529 @@
+{
+  "created_at": "2026-10-08T09:41:23.322Z",
+  "metadata": {
+    "cwd": "/work/checks",
+    "session_format": 4,
+    "session_id": "session-431fac29-44de-4024-a816-7be59e5482b0",
+    "sub_agents": 2
+  },
+  "name": "Shell check",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "dsh",
+    "kind": "import",
+    "label": "session-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-08T09:41:24.433Z",
+      "id": "root",
+      "name": "Shell check",
+      "parent_id": null,
+      "started_at": "2026-10-08T09:41:23.322Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-08T09:41:23.413Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "You are an AI agent powered by DeepSeek Harness.\n\nYou are a coding agent powered by the deepseek-flash model.\n\nCheck the [exit code: N] marker on every bash result; investigate failures before moving …",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          },
+          {
+            "content": [
+              {
+                "text": "DELEGATE: have a sub-agent run the shell check",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          },
+          {
+            "content": [
+              {
+                "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify file…",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          }
+        ]
+      },
+      "model": {
+        "id": "deepseek-flash",
+        "provider": "deepseek-official"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "I'll hand this to a sub-agent.",
+                "type": "text"
+              },
+              {
+                "arguments": {
+                  "description": "Run the shell check",
+                  "prompt": "SUBTASK: print one line with the shell and report it.",
+                  "run_in_background": false
+                },
+                "id": "toolu_mock_e38ce8_1_1",
+                "name": "subagent",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T09:41:23.367Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "total_tokens": 138
+      }
+    },
+    {
+      "ended_at": "2026-10-08T09:41:23.544Z",
+      "id": "s2",
+      "input": {
+        "arguments": {
+          "description": "Run the shell check",
+          "prompt": "SUBTASK: print one line with the shell and report it.",
+          "run_in_background": false
+        },
+        "name": "subagent",
+        "tool_call_id": "toolu_mock_e38ce8_1_1"
+      },
+      "name": "subagent",
+      "output": {
+        "result": "The shell printed: sub-agent at work"
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-08T09:41:23.414Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T09:41:23.534Z",
+      "id": "a1",
+      "name": "Run the shell check",
+      "parent_id": "s2",
+      "started_at": "2026-10-08T09:41:23.429Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-08T09:41:23.488Z",
+      "id": "a1.s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "You are an AI agent powered by DeepSeek Harness.\n\nYou are a coding agent powered by the deepseek-flash model.\n\nCheck the [exit code: N] marker on every bash result; investigate failures before moving …",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          },
+          {
+            "content": [
+              {
+                "text": "SUBTASK: print one line with the shell and report it.",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          },
+          {
+            "content": [
+              {
+                "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify file…",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          }
+        ]
+      },
+      "model": {
+        "id": "deepseek-flash",
+        "provider": "deepseek-official"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The task is to print one line.",
+                "type": "thinking"
+              },
+              {
+                "text": "Checking with the shell.",
+                "type": "text"
+              },
+              {
+                "arguments": {
+                  "command": "echo sub-agent at work",
+                  "description": "Print one line"
+                },
+                "id": "toolu_mock_e38ce8_3_2",
+                "name": "bash",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a1",
+      "started_at": "2026-10-08T09:41:23.464Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "total_tokens": 138
+      }
+    },
+    {
+      "ended_at": "2026-10-08T09:41:23.514Z",
+      "id": "a1.s2",
+      "input": {
+        "arguments": {
+          "command": "echo sub-agent at work",
+          "description": "Print one line"
+        },
+        "name": "bash",
+        "tool_call_id": "toolu_mock_e38ce8_3_2"
+      },
+      "name": "bash",
+      "output": {
+        "result": "sub-agent at work\n"
+      },
+      "parent_id": "a1.s1",
+      "started_at": "2026-10-08T09:41:23.488Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T09:41:23.534Z",
+      "id": "a1.s3",
+      "input": {
+        "messages": []
+      },
+      "model": {
+        "id": "deepseek-flash",
+        "provider": "deepseek-official"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The shell printed: sub-agent at work",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a1",
+      "started_at": "2026-10-08T09:41:23.524Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "total_tokens": 138
+      }
+    },
+    {
+      "ended_at": "2026-10-08T09:41:23.562Z",
+      "id": "s3",
+      "input": {
+        "messages": []
+      },
+      "model": {
+        "id": "deepseek-flash",
+        "provider": "deepseek-official"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The sub-agent finished the shell check.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T09:41:23.552Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "total_tokens": 138
+      }
+    },
+    {
+      "ended_at": "2026-10-08T09:41:24.281Z",
+      "id": "s4",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "FORK: have a forked sub-agent run the shell check again",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "deepseek-flash",
+        "provider": "deepseek-official"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "I'll fork a sub-agent for this.",
+                "type": "text"
+              },
+              {
+                "arguments": {
+                  "description": "Run the shell check",
+                  "prompt": "SUBTASK: print one line with the shell and report it."
+                },
+                "id": "toolu_mock_e39055_1_1",
+                "name": "subagent_fork",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T09:41:24.251Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "total_tokens": 138
+      }
+    },
+    {
+      "ended_at": "2026-10-08T09:41:24.414Z",
+      "id": "s5",
+      "input": {
+        "arguments": {
+          "description": "Run the shell check",
+          "prompt": "SUBTASK: print one line with the shell and report it."
+        },
+        "name": "subagent_fork",
+        "tool_call_id": "toolu_mock_e39055_1_1"
+      },
+      "name": "subagent_fork",
+      "output": {
+        "result": "The shell printed: sub-agent at work"
+      },
+      "parent_id": "s4",
+      "started_at": "2026-10-08T09:41:24.282Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T09:41:24.404Z",
+      "id": "a2",
+      "name": "Run the shell check",
+      "parent_id": "s5",
+      "started_at": "2026-10-08T09:41:24.291Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-08T09:41:24.354Z",
+      "id": "a2.s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "SUBTASK: print one line with the shell and report it.",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          },
+          {
+            "content": [
+              {
+                "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify file…",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          }
+        ]
+      },
+      "model": {
+        "id": "deepseek-flash",
+        "provider": "deepseek-official"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The task is to print one line.",
+                "type": "thinking"
+              },
+              {
+                "text": "Checking with the shell.",
+                "type": "text"
+              },
+              {
+                "arguments": {
+                  "command": "echo sub-agent at work",
+                  "description": "Print one line"
+                },
+                "id": "toolu_mock_e39055_2_2",
+                "name": "bash",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a2",
+      "started_at": "2026-10-08T09:41:24.340Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "total_tokens": 138
+      }
+    },
+    {
+      "ended_at": "2026-10-08T09:41:24.379Z",
+      "id": "a2.s2",
+      "input": {
+        "arguments": {
+          "command": "echo sub-agent at work",
+          "description": "Print one line"
+        },
+        "name": "bash",
+        "tool_call_id": "toolu_mock_e39055_2_2"
+      },
+      "name": "bash",
+      "output": {
+        "result": "sub-agent at work\n"
+      },
+      "parent_id": "a2.s1",
+      "started_at": "2026-10-08T09:41:24.354Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T09:41:24.404Z",
+      "id": "a2.s3",
+      "input": {
+        "messages": []
+      },
+      "model": {
+        "id": "deepseek-flash",
+        "provider": "deepseek-official"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The shell printed: sub-agent at work",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a2",
+      "started_at": "2026-10-08T09:41:24.392Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "total_tokens": 138
+      }
+    },
+    {
+      "ended_at": "2026-10-08T09:41:24.433Z",
+      "id": "s6",
+      "input": {
+        "messages": []
+      },
+      "model": {
+        "id": "deepseek-flash",
+        "provider": "deepseek-official"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The forked sub-agent finished the shell check.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T09:41:24.422Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "total_tokens": 138
+      }
+    }
+  ]
+}

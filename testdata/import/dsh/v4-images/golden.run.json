@@ -1,0 +1,160 @@
+{
+  "created_at": "2026-10-08T09:41:25.060Z",
+  "metadata": {
+    "cwd": "/work/pixel",
+    "session_format": 4,
+    "session_id": "session-c2035bfe-c1ac-44b7-9541-81bc5402e2f8"
+  },
+  "name": "Pixel check",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "dsh",
+    "kind": "import",
+    "label": "session-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-08T09:41:25.233Z",
+      "id": "root",
+      "name": "Pixel check",
+      "parent_id": null,
+      "started_at": "2026-10-08T09:41:25.060Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-08T09:41:25.145Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "You are an AI agent powered by DeepSeek Harness.\n\nYou are a coding agent powered by the deepseek-flash model.\n\nCheck the [exit code: N] marker on every bash result; investigate failures before moving …",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          },
+          {
+            "content": [
+              {
+                "text": "IMAGE: look at pixel.png and say what it shows",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          },
+          {
+            "content": [
+              {
+                "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify file…",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          }
+        ]
+      },
+      "model": {
+        "id": "deepseek-flash",
+        "provider": "deepseek-official"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Looking at the image.",
+                "type": "text"
+              },
+              {
+                "arguments": {
+                  "file_path": "pixel.png"
+                },
+                "id": "toolu_mock_e393b1_1_1",
+                "name": "read_image",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T09:41:25.104Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "total_tokens": 138
+      }
+    },
+    {
+      "ended_at": "2026-10-08T09:41:25.207Z",
+      "id": "s2",
+      "input": {
+        "arguments": {
+          "file_path": "pixel.png"
+        },
+        "name": "read_image",
+        "tool_call_id": "toolu_mock_e393b1_1_1"
+      },
+      "name": "read_image",
+      "output": {
+        "result": [
+          {
+            "text": "<path>/work/pixel/pixel.png</path>\n<type>image</type>\n<content>\nimage/png image, 4x4 px, 73 bytes\n</content>",
+            "type": "text"
+          },
+          {
+            "mime": "image/png",
+            "type": "image",
+            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR4nGP4z8AARwzEcQCukw/x0F8jngAAAABJRU5ErkJggg=="
+          }
+        ]
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-08T09:41:25.146Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T09:41:25.232Z",
+      "id": "s3",
+      "input": {
+        "messages": []
+      },
+      "model": {
+        "id": "deepseek-flash",
+        "provider": "deepseek-official"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The image is a single red pixel.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T09:41:25.217Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "total_tokens": 138
+      }
+    }
+  ]
+}

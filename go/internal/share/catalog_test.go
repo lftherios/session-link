@@ -97,9 +97,9 @@ func TestReferenceDefinitionCanBeSelectedSeparatelyFromPrivateText(t *testing.T)
 }
 
 func TestAllHarnessFixturesHaveSelectableEvidence(t *testing.T) {
-	for _, harness := range []string{"claude-code", "codex", "pi", "opencode", "hermes"} {
-		t.Run(harness, func(t *testing.T) {
-			raw, err := os.ReadFile(filepath.Join("../../../testdata/import", harness, "basic/golden.run.json"))
+	for _, fixture := range []string{"claude-code/basic", "codex/basic", "pi/basic", "opencode/basic", "hermes/basic", "dsh/v4-run", "dsh/v4-sub-agents", "aider/v0.86-edit"} {
+		t.Run(fixture, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("../../../testdata/import", fixture, "golden.run.json"))
 			if err != nil {
 				t.Fatal(err)
 			}

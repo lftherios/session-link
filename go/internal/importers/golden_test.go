@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lftherios/session-link/internal/format"
 )
@@ -24,6 +25,10 @@ var update = flag.Bool("update", false, "rewrite the import goldens from the imp
 // TestGoldenImports drives every registered importer over the fixtures in
 // testdata/import. A fixture passes on parsed equality with its golden run.
 func TestGoldenImports(t *testing.T) {
+	// Aider writes local clock times; the fixtures are read as UTC wherever
+	// the tests run.
+	defer func(zone *time.Location) { aiderZone = zone }(aiderZone)
+	aiderZone = time.UTC
 	wd, _ := os.Getwd()
 	base := filepath.Join(wd, "..", "..", "..", "testdata", "import")
 	harnesses, err := os.ReadDir(base)
@@ -50,7 +55,26 @@ func TestGoldenImports(t *testing.T) {
 				dir := filepath.Join(base, harness, c.Name())
 				// A fixture can carry the blob store its transcript refers to.
 				in := Input{Fallback: "golden", Blobs: filepath.Join(dir, "blobs")}
-				if raw, err := os.ReadFile(filepath.Join(dir, "input.session.jsonl")); err == nil {
+				if store := filepath.Join(dir, "sessions"); harness == "dsh" {
+					// A dsh fixture is a store laid out as dsh lays it out, and is
+					// read by the code that reads a real one: the session that is
+					// not a sub-agent's, its log as stored, its sub-agents' logs
+					// and the attachment store beside them.
+					file := dshFixtureSession(t, store)
+					lines, err := readLines(file)
+					if err != nil {
+						t.Fatal(err)
+					}
+					in = transcriptInput(file, harness, lines)
+				} else if chat := filepath.Join(dir, "input.chat.history.md"); harness == "aider" {
+					// An aider fixture is the chat history file, with the input
+					// history beside it when the run left one. Its last run is
+					// the one imported, as it is for a file given by path.
+					in, err = aiderInput(chat, "")
+					if err != nil {
+						t.Fatal(err)
+					}
+				} else if raw, err := os.ReadFile(filepath.Join(dir, "input.session.jsonl")); err == nil {
 					for _, l := range strings.Split(string(raw), "\n") {
 						if strings.TrimSpace(l) != "" {
 							in.Lines = append(in.Lines, l)
@@ -108,6 +132,23 @@ func TestGoldenImports(t *testing.T) {
 	if ran == 0 {
 		t.Fatal("zero import fixtures ran")
 	}
+}
+
+// dshFixtureSession finds the session a dsh fixture is about: the one in its
+// store that no other session started.
+func dshFixtureSession(t *testing.T, store string) string {
+	t.Helper()
+	var top []string
+	logs, _ := filepath.Glob(filepath.Join(store, "*", "*", "session.v*.jsonl*"))
+	for _, file := range logs {
+		if strOr(firstJSONLine(file)["origin"], "") != "subagent" {
+			top = append(top, file)
+		}
+	}
+	if len(top) != 1 {
+		t.Fatalf("want one top-level session under %s, found %d", store, len(top))
+	}
+	return top[0]
 }
 
 // fixtureAgent is a sub-agent's session in a fixture for a harness that keeps
