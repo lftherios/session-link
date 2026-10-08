@@ -3,6 +3,11 @@
   "version": "0.1.1",
   "description": "The open session/v0 format for LLM sessions: types, JSON Schema, and validator.",
   "homepage": "https://session.link",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lftherios/session-link.git",
+    "directory": "packages/format"
+  },
   "license": "MIT",
   "type": "module",
   "main": "./index.mjs",

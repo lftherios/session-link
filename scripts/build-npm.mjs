@@ -27,6 +27,10 @@ if (!version || version.startsWith("-")) {
   process.exit(1);
 }
 
+// npm's provenance check refuses a package that does not name the
+// repository its publishing workflow runs in.
+const REPOSITORY = { type: "git", url: "git+https://github.com/lftherios/session-link.git" };
+
 // node os/cpu values, keyed by go os/arch.
 const NODE_OS = { darwin: "darwin", linux: "linux", windows: "win32" };
 const NODE_CPU = { amd64: "x64", arm64: "arm64" };
@@ -61,6 +65,7 @@ for (const [goos, goarch] of TARGETS) {
         version,
         description: `slink CLI binary for ${goos}/${goarch}`,
         homepage: "https://session.link",
+        repository: REPOSITORY,
         license: "MIT",
         os: [NODE_OS[goos]],
         cpu: [NODE_CPU[goarch]],
@@ -87,6 +92,7 @@ writeFileSync(
       version,
       description: "Capture LLM sessions locally, publish the ones worth sharing",
       homepage: "https://session.link",
+      repository: REPOSITORY,
       license: "MIT",
       bin: { slink: "bin/slink.js" },
       // Non-matching platforms fail to install silently — the point of the

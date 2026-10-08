@@ -3,6 +3,11 @@
   "version": "0.6.1",
   "description": "The session.link viewer — renders a session/v0 document as an interactive trace tree. React component; consume with a bundler that transpiles the package (e.g. Next transpilePackages).",
   "homepage": "https://session.link",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lftherios/session-link.git",
+    "directory": "packages/viewer"
+  },
   "license": "MIT",
   "type": "module",
   "main": "./index.ts",
