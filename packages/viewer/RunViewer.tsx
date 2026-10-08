@@ -53,8 +53,8 @@ const HUES: Record<string, string> = {
 const spanHue = (s: Span) =>
   s.status === "error" ? T.error : (HUES[s.type] ?? HUES.custom);
 
-const LIGHT_VARS = `--rv-paper:#f5f6f3;--rv-panel:#fdfdfb;--rv-soft:#eef1ec;--rv-ink:#17201c;--rv-faint:#5b6660;--rv-line:#d8ddd7;--rv-signal:#0e6f5c;--rv-error:#b3402e;--rv-hue-llm:#0e6f5c;--rv-hue-tool:#a16418;--rv-hue-ret:#28629c;--rv-hue-agent:#5b4b8a;--rv-selbg:rgba(14,111,92,.08);--rv-selection:rgba(14,111,92,.18);--rv-hover:rgba(23,32,28,.045);--rv-errbg:rgba(179,64,46,.06)`;
-const DARK_VARS = `--rv-paper:#101512;--rv-panel:#171d19;--rv-soft:#1e2620;--rv-ink:#e3e9e4;--rv-faint:#8f9a93;--rv-line:#2b342d;--rv-signal:#3fae94;--rv-error:#e08070;--rv-hue-llm:#3fae94;--rv-hue-tool:#c9924a;--rv-hue-ret:#6aa3d8;--rv-hue-agent:#a08fd0;--rv-selbg:rgba(63,174,148,.12);--rv-selection:rgba(63,174,148,.25);--rv-hover:rgba(227,233,228,.05);--rv-errbg:rgba(224,128,112,.1)`;
+const LIGHT_VARS = `--rv-paper:#f6f8ff;--rv-panel:#fff;--rv-soft:#e9eeff;--rv-ink:#0a1033;--rv-faint:#4c557a;--rv-line:#d5dcf5;--rv-signal:#1f44ff;--rv-error:#c2362b;--rv-hue-llm:#1f44ff;--rv-hue-tool:#9f5c00;--rv-hue-ret:#07749b;--rv-hue-agent:#8a3ad1;--rv-selbg:rgba(31,68,255,.07);--rv-selection:rgba(31,68,255,.18);--rv-hover:rgba(10,16,51,.045);--rv-errbg:rgba(194,54,43,.06)`;
+const DARK_VARS = `--rv-paper:#0b1030;--rv-panel:#121a45;--rv-soft:#18204f;--rv-ink:#e6eaff;--rv-faint:#8f99c9;--rv-line:#283266;--rv-signal:#7d9bff;--rv-error:#e87c68;--rv-hue-llm:#7d9bff;--rv-hue-tool:#e0a658;--rv-hue-ret:#5cc8ff;--rv-hue-agent:#c9a0ff;--rv-selbg:rgba(125,155,255,.12);--rv-selection:rgba(125,155,255,.28);--rv-hover:rgba(230,234,255,.05);--rv-errbg:rgba(232,124,104,.1)`;
 
 export const RV_CSS = `
 .rv{${LIGHT_VARS}}
@@ -2276,7 +2276,7 @@ function LoadedViewer({ run, initialMode, compact = false }: { run: Run; initial
                 <div
                   style={{
                     border: `1px solid ${T.error}`,
-                    background: "rgba(179,64,46,0.06)",
+                    background: "var(--rv-errbg)",
                     color: T.error,
                     borderRadius: 6,
                     padding: "8px 12px",

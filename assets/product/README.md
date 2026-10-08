@@ -1,8 +1,8 @@
 # Product screenshots
 
 These are browser captures of the current local product, built from the working
-tree at `2e3d79b` with the Elision mark, the adopted identity. The interface is
-captured as rendered by the product, at a device scale factor of 2, so each
+tree at `4a3c9e1` with the Elision mark and the white and cobalt palette. The
+interface is captured as rendered by the product, at a device scale factor of 2, so each
 file has twice the pixel dimensions listed below and stays sharp on HiDPI
 screens. Sizes are CSS pixels; the landing page declares the same sizes. The sessions are fictional examples
 from [`testdata/landing/sessions.mjs`](../../testdata/landing/sessions.mjs), not

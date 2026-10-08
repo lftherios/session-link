@@ -31,10 +31,10 @@ const page = `<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>session.link · viewer preview</title>
 <style>
-  :root{color-scheme:light dark;background:#f5f6f3;color:#17201c;font-family:system-ui,sans-serif}
-  @media(prefers-color-scheme:dark){:root{background:#101512;color:#e3e9e4}}
-  :root[data-theme=light]{color-scheme:light;background:#f5f6f3;color:#17201c}
-  :root[data-theme=dark]{color-scheme:dark;background:#101512;color:#e3e9e4}
+  :root{color-scheme:light dark;background:#f6f8ff;color:#0a1033;font-family:system-ui,sans-serif}
+  @media(prefers-color-scheme:dark){:root{background:#0b1030;color:#e6eaff}}
+  :root[data-theme=light]{color-scheme:light;background:#f6f8ff;color:#0a1033}
+  :root[data-theme=dark]{color-scheme:dark;background:#0b1030;color:#e6eaff}
   body{max-width:1160px;margin:0 auto;padding:24px;box-sizing:border-box}
   nav{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:28px;font-size:12px}
   nav span{margin-right:auto}select{font:inherit;padding:5px;border-radius:5px}

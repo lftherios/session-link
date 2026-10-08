@@ -5,8 +5,8 @@
 **Turn coding-agent sessions into links your colleagues can actually read.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/lftherios/session-link/ci.yml?branch=main&label=ci)](https://github.com/lftherios/session-link/actions)
-[![npm](https://img.shields.io/npm/v/session.link?color=0e6f5c&label=session.link)](https://www.npmjs.com/package/session.link)
-[![license](https://img.shields.io/badge/license-MIT-0e6f5c)](LICENSE)
+[![npm](https://img.shields.io/npm/v/session.link?color=1f44ff&label=session.link)](https://www.npmjs.com/package/session.link)
+[![license](https://img.shields.io/badge/license-MIT-1f44ff)](LICENSE)
 
 [![The session.link reader: a human input, the agent's response and its collapsed activity](https://raw.githubusercontent.com/lftherios/session-link/main/assets/product/focused.webp)](https://session.link/demo)
 

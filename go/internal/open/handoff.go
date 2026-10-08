@@ -165,8 +165,8 @@ const (
 // listCSS gives the session lists the viewer's quiet header, search field
 // and grouped rows, on the shared tokens.
 const listCSS = `<style>
-  :root{--soft:#eef1ec}
-  @media(prefers-color-scheme:dark){:root{--soft:#1e2620}}
+  :root{--soft:#e9eeff}
+  @media(prefers-color-scheme:dark){:root{--soft:#18204f}}
   .wrap{max-width:860px}
   .list-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:10px 0 28px}
   .list-head h1{margin:0;min-width:0;font:500 32px/1.2 var(--serif);letter-spacing:-.02em;overflow-wrap:anywhere}
