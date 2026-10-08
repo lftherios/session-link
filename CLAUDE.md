@@ -63,8 +63,7 @@ and `npm run validate`. Run the parts your change touches before finishing.
   invoked from there via `SLINK_BROWSER_BASE` and `SLINK_BROWSER_MAIL`.
 - Fixtures under `testdata/` are fictional. Never add a real transcript, and
   keep the leakage markers the fixture READMEs describe intact.
-- Screenshots and the demo GIF are generated, not edited:
-  `node scripts/capture-product.mjs` and `vhs assets/demo.tape`.
+- Screenshots are generated, not edited: `node scripts/capture-product.mjs`.
 
 ## Process hygiene
 
