@@ -1,22 +1,29 @@
 # @session-link/pi-extension
 
-Publish the [pi](https://github.com/badlogic/pi-mono) session you're in to a
+Publish the [pi](https://github.com/earendil-works/pi) session you're in to a
 permanent [session.link](https://session.link) URL — without leaving the TUI.
 
 You're deep in a pi session, something interesting happened, and you want to
 share it. Type `/slink`. The extension captures the current session, publishes
-it unlisted, and hands you back a link.
+it as an end-to-end encrypted link, and hands you back the URL.
 
 ## Install
 
+Install the `slink` CLI first; it does the capture and the publishing. The
+[main README](../../README.md#install) lists the channels. `/slink view` needs
+slink 0.6.0 or later (`slink --version`).
+
+The extension is not on npm yet. Install it from a checkout of this
+repository:
+
 ```bash
-npm i -g session.link        # the slink CLI does the capture + publish
-pi install @session-link/pi-extension
+pi install ./packages/pi-extension
 ```
 
-`pi install` adds the extension to your pi settings and loads it. If you'd
-rather not install `slink` globally, the extension falls back to
-`npx --yes session.link` automatically.
+`pi install` adds the extension to your pi settings and loads it. If `slink`
+is not on your `PATH`, the extension falls back to `npx --yes session.link`,
+which runs whatever version npm serves; that version must also be 0.6.0 or
+later for `/slink view`.
 
 ## Use
 
@@ -31,7 +38,6 @@ It uses the persisted transcript to include earlier turns in resumed sessions
 (`reconstructed` fidelity), falling back to the live capture for in-memory
 sessions. Nothing is uploaded. Review the saved snapshot and use Publish in
 the browser when ready. Stop the background viewer from its sessions page.
-The current checkout of the CLI is required for this new command.
 
 To publish directly:
 
@@ -39,17 +45,23 @@ To publish directly:
 /slink
 ```
 
-→ `session.link: published → https://session.link/r/9f3kx2mvq7wtd4` (also copied
-to your clipboard).
+→ `session.link: published → https://session.link/s/9f3kx2mvq7wtd4#key=…` (also
+copied to your clipboard).
+
+`/slink` publishes the whole session. A session started in this pi run is
+published from the live capture. One you resumed had turns before this run,
+so it is published from pi's own transcript instead.
 
 ## Notes
 
 - **Private by design.** Nothing leaves your machine until you run `/slink`.
   Publishing goes through the CLI's own gate — the session is validated and
   **secret-scanned** (`sk-…`, `ghp_…`, `AKIA…`, PEM blocks); a hit blocks the
-  publish. Links are unlisted by default.
-- **Attribution.** Run `slink login` (GitHub) once so published sessions are
-  attributed to you; otherwise they're anonymous.
+  publish. The session is encrypted on your machine, and anyone with the
+  complete link can view it.
+- **Sign-in.** Publishing to session.link needs an account. Run `slink login`
+  once; until then `/slink` reports that you are not signed in. Capturing and
+  `/slink view` never need one.
 - **Auto-publish (opt-in).** Set `SLINK_AUTOPUBLISH=1` and each session
   publishes itself when it ends — the trace link appears without your typing
   `/slink`. Off by default; capture is always local until then.
@@ -58,7 +70,8 @@ to your clipboard).
 - **Fidelity.** Sessions captured live run at **`exact`** fidelity: the
   extension records each turn from pi's in-process SDK hooks, including the
   assembled system prompt and the verbatim provider request (kept in
-  `raw.request`). Resumed sessions with no live turns fall back to
-  `slink import` (`reconstructed`) so `/slink` always works.
+  `raw.request`). Resumed, forked and reloaded sessions are published from
+  pi's transcript at **`reconstructed`** fidelity, because the live capture
+  starts where this run did.
 
 MIT © [session.link](https://session.link)

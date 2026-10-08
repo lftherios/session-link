@@ -22,9 +22,10 @@ import { SessionCapture } from "./capture.mjs";
  * (the assembled system prompt, the verbatim provider request, and the parsed
  * response) into a local session/v0 capture — nothing leaves your machine.
  * `/slink` runs the CLI's publish gate (validate + secret-scan) on that
- * capture and hands you back the URL. If there's no live capture yet (e.g. a
- * resumed session), it falls back to `slink import` (reconstructed) so the
- * command always works.
+ * capture and hands you back the URL. When the capture does not hold the
+ * whole session (a resumed one had turns before this run), it publishes pi's
+ * own transcript through `slink share` instead (reconstructed), so the link
+ * always carries the session from its first turn.
  */
 
 // --- CLI bridge: prefer an installed `slink`, else npx. Override with SLINK_BIN.
@@ -73,13 +74,20 @@ async function slink(args: string[]): Promise<RunResult> {
 const lastLine = (s: string) =>
   s.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? "";
 
+// The line that says why slink failed. It marks that line with ✗ and follows
+// it with details and next steps; when nothing is marked, the last line is it.
+const failureLine = (stderr: string) => {
+  const marked = stderr.split("\n").map((l) => l.trim()).find((l) => l.startsWith("✗"));
+  return (marked ?? lastLine(stderr)).replace(/^✗\s*/, "").replace(/:$/, "");
+};
+
 function report(ctx: ExtensionContext, pushed: RunResult): void {
   if (pushed.missing) {
     ctx.ui.notify("session.link: `slink` not found — install it with `npm i -g session.link`", "error");
     return;
   }
   if (pushed.code !== 0) {
-    ctx.ui.notify(`session.link: publish failed — ${lastLine(pushed.stderr)}`, "error");
+    ctx.ui.notify(`session.link: publish failed — ${failureLine(pushed.stderr)}`, "error");
     return;
   }
   const url = lastLine(pushed.stdout);
@@ -109,6 +117,9 @@ export default function (pi: ExtensionAPI): void {
   let captureFile: string | null = null;
   let startedIso: string | null = null;
   let named = false;
+  // Whether the live capture holds the whole session. A session that already
+  // had turns when it started here (resumed, forked, reloaded) does not.
+  let complete = true;
 
   // A capture bug must never take down the user's pi session.
   const guard = (fn: () => void) => {
@@ -128,6 +139,17 @@ export default function (pi: ExtensionAPI): void {
       }
     });
 
+  // What to hand slink to publish the whole session, or null when there is
+  // nothing yet. The live capture is exact, so it is used whenever it holds
+  // every turn. A session that was resumed had turns this run never saw, so
+  // that one is imported from the transcript pi keeps (reconstructed).
+  const publishArgs = (ctx: ExtensionContext): string[] | null => {
+    const sessionFile = ctx.sessionManager.getSessionFile();
+    const live = capture && capture.llmCalls > 0 ? captureFile : null;
+    if (live && (complete || !sessionFile)) return ["push", "--yes", live];
+    return sessionFile ? ["share", "--from", "pi", "--session", sessionFile, "--yes"] : null;
+  };
+
   pi.on("session_start", (_e: SessionStartEvent, ctx: ExtensionContext) =>
     guard(() => {
       capture = new SessionCapture({
@@ -138,6 +160,7 @@ export default function (pi: ExtensionAPI): void {
       });
       captureFile = newCaptureFile();
       named = Boolean(ctx.sessionManager.getSessionName());
+      complete = !(ctx.sessionManager.getBranch?.() ?? []).some((entry) => entry.type === "message");
     }),
   );
 
@@ -182,7 +205,7 @@ export default function (pi: ExtensionAPI): void {
       // a link — the semi-auto "the agent published its own trace" flow. Only
       // on a real quit, and only if something was captured.
       if (process.env.SLINK_AUTOPUBLISH && e.reason === "quit" && capture && capture.llmCalls > 0 && captureFile) {
-        report(ctx, await slink(["push", "--yes", captureFile]));
+        report(ctx, await slink(publishArgs(ctx)!));
       }
     } catch {
       /* capture + auto-publish are both best-effort */
@@ -217,23 +240,18 @@ export default function (pi: ExtensionAPI): void {
         ctx.ui.notify("session.link: use /slink to publish, or /slink view to preview locally", "error");
         return;
       }
-      // Preferred path: publish the live, exact capture we've been building.
-      if (capture && capture.llmCalls > 0 && captureFile) {
-        flush(); // snapshot; the run keeps accumulating after this
-        ctx.ui.notify("session.link: publishing this session…", "info");
-        report(ctx, await slink(["push", "--yes", captureFile]));
-        return;
-      }
-
-      // Fallback: no live turns yet (e.g. a resumed session) — import from
-      // disk and publish in one step via `slink share`.
-      const sessionFile = ctx.sessionManager.getSessionFile();
-      if (!sessionFile) {
+      const publish = publishArgs(ctx);
+      if (!publish) {
         ctx.ui.notify("session.link: no session to publish yet", "error");
         return;
       }
-      ctx.ui.notify("session.link: capturing this session…", "info");
-      report(ctx, await slink(["share", "--from", "pi", "--session", sessionFile, "--yes"]));
+      if (publish[0] === "push") {
+        flush(); // snapshot; the run keeps accumulating after this
+        ctx.ui.notify("session.link: publishing this session…", "info");
+      } else {
+        ctx.ui.notify("session.link: capturing this session…", "info");
+      }
+      report(ctx, await slink(publish));
     },
   });
 }
