@@ -124,3 +124,20 @@ func roundTrip(t *testing.T, v any) any {
 	}
 	return out
 }
+
+// A recorder keeps an inline image's bytes in the raw request; an importer
+// has no raw request, so it asks for them in the part.
+func TestAnthropicInlineImages(t *testing.T) {
+	content := []any{map[string]any{"type": "tool_result", "tool_use_id": "t1", "content": []any{
+		map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="}},
+	}}}
+	nested := func(parts []any) map[string]any {
+		return parts[0].(map[string]any)["content"].([]any)[0].(map[string]any)
+	}
+	if part := nested(AnthropicContent(content)); part["type"] != "data" {
+		t.Fatalf("a recorder's view must leave the bytes to the raw request: %v", part)
+	}
+	if part := nested(AnthropicContentWithImages(content)); part["type"] != "image" || part["url"] != "data:image/png;base64,iVBORw0KGgo=" || part["mime"] != "image/png" {
+		t.Fatalf("an importer's view must carry the image: %v", part)
+	}
+}

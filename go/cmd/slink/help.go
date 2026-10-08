@@ -32,7 +32,7 @@ Quickstart:
 Record (local — nothing leaves your machine)
   record -- <cmd>    run a command with its LLM calls recorded  (alias: dev)
   import             convert your coding agent's newest session — no re-run
-                     (claude-code, codex, opencode, pi, hermes)
+                     (claude-code, codex, opencode, pi, omp, hermes)
   setup              guided always-on capture (tap as a login service)
   on / off           route this shell through the tap:  eval "$(slink on)"
 

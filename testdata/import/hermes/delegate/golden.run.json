@@ -1,0 +1,260 @@
+{
+  "created_at": "2026-10-08T09:00:00.000Z",
+  "metadata": {
+    "cwd": "/work/certs",
+    "end_reason": "cli_close",
+    "origin": "cli",
+    "session_id": "20261008_090000_d1e2f3",
+    "sub_agents": 1
+  },
+  "name": "Stale certificates",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "hermes",
+    "kind": "import",
+    "label": "session-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-08T09:00:30.000Z",
+      "id": "root",
+      "name": "Stale certificates",
+      "parent_id": null,
+      "started_at": "2026-10-08T09:00:00.000Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-08T09:00:02.000Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Check eu-west for stale certificates",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "hermes-4-405b",
+        "provider": "nous"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "",
+                "type": "text"
+              },
+              {
+                "arguments": {
+                  "goal": "List certificates in eu-west that expire within 30 days"
+                },
+                "id": "call_delegate_1",
+                "name": "delegate_task",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T09:00:01.000Z",
+      "status": "ok",
+      "type": "llm_call"
+    },
+    {
+      "ended_at": "2026-10-08T09:00:20.000Z",
+      "id": "s2",
+      "input": {
+        "arguments": {
+          "goal": "List certificates in eu-west that expire within 30 days"
+        },
+        "name": "delegate_task",
+        "tool_call_id": "call_delegate_1"
+      },
+      "name": "delegate_task",
+      "output": {
+        "result": "{\"results\": [{\"status\": \"completed\", \"summary\": \"eu-west: 2 certificates expire within 30 days\"}]}"
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-08T09:00:02.000Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T09:00:19.000Z",
+      "id": "a1",
+      "name": "delegate_task",
+      "parent_id": "s2",
+      "started_at": "2026-10-08T09:00:03.000Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-08T09:00:05.000Z",
+      "id": "a1.s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "List certificates in eu-west that expire within 30 days",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "hermes-4-405b",
+        "provider": "nous"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "",
+                "type": "text"
+              },
+              {
+                "arguments": {
+                  "command": "certs list --region eu-west --expiring 30d"
+                },
+                "id": "call_list_1",
+                "name": "terminal",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a1",
+      "started_at": "2026-10-08T09:00:03.000Z",
+      "status": "ok",
+      "type": "llm_call"
+    },
+    {
+      "ended_at": "2026-10-08T09:00:09.000Z",
+      "id": "a1.s2",
+      "input": {
+        "arguments": {
+          "command": "certs list --region eu-west --expiring 30d"
+        },
+        "name": "terminal",
+        "tool_call_id": "call_list_1"
+      },
+      "name": "terminal",
+      "output": {
+        "result": "api.example.test  12d\nmail.example.test  27d"
+      },
+      "parent_id": "a1.s1",
+      "started_at": "2026-10-08T09:00:05.000Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T09:00:18.000Z",
+      "id": "a1.s3",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "api.example.test  12d\nmail.example.test  27d",
+                    "type": "text"
+                  }
+                ],
+                "tool_call_id": "call_list_1",
+                "type": "tool_result"
+              }
+            ],
+            "role": "tool"
+          }
+        ]
+      },
+      "model": {
+        "id": "hermes-4-405b",
+        "provider": "nous"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "eu-west: 2 certificates expire within 30 days",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a1",
+      "started_at": "2026-10-08T09:00:09.000Z",
+      "status": "ok",
+      "type": "llm_call"
+    },
+    {
+      "ended_at": "2026-10-08T09:00:22.000Z",
+      "id": "s3",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "{\"results\": [{\"status\": \"completed\", \"summary\": \"eu-west: 2 certificates expire within 30 days\"}]}",
+                    "type": "text"
+                  }
+                ],
+                "tool_call_id": "call_delegate_1",
+                "type": "tool_result"
+              }
+            ],
+            "role": "tool"
+          }
+        ]
+      },
+      "model": {
+        "id": "hermes-4-405b",
+        "provider": "nous"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "eu-west has two certificates that expire within 30 days.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T09:00:20.000Z",
+      "status": "ok",
+      "type": "llm_call"
+    }
+  ]
+}

@@ -62,7 +62,9 @@ func dataPart(data any) map[string]any {
 
 /* ------------------------------------------------ anthropic /v1/messages */
 
-func anthropicPart(block any) any {
+// anthropicPart maps one content block. inline keeps an image's bytes in the
+// part; a recorder that also stores the raw request leaves them there instead.
+func anthropicPart(block any, inline bool) any {
 	b := m(block)
 	t, hasType := str(b["type"])
 	if b == nil || !hasType {
@@ -88,7 +90,7 @@ func anthropicPart(block any) any {
 		out := map[string]any{
 			"type":         "tool_result",
 			"tool_call_id": tuID,
-			"content":      AnthropicContent(b["content"]),
+			"content":      anthropicContent(b["content"], inline),
 		}
 		if v, present := b["is_error"]; present {
 			out["is_error"] = v
@@ -98,6 +100,9 @@ func anthropicPart(block any) any {
 		src := m(b["source"])
 		if strOr(src["type"], "") == "url" {
 			return map[string]any{"type": "image", "url": src["url"], "mime": src["media_type"]}
+		}
+		if mime, data := strOr(src["media_type"], ""), strOr(src["data"], ""); inline && strOr(src["type"], "") == "base64" && mime != "" && data != "" {
+			return map[string]any{"type": "image", "url": "data:" + mime + ";base64," + data, "mime": mime}
 		}
 		return dataPart(map[string]any{
 			"kind": "image", "media_type": src["media_type"],
@@ -110,6 +115,17 @@ func anthropicPart(block any) any {
 
 // AnthropicContent mirrors anthropicContent.
 func AnthropicContent(content any) []any {
+	return anthropicContent(content, false)
+}
+
+// AnthropicContentWithImages is AnthropicContent for a source that has no raw
+// request to fall back on: an image recorded inline stays in its part, as a
+// data URL, instead of being noted as omitted.
+func AnthropicContentWithImages(content any) []any {
+	return anthropicContent(content, true)
+}
+
+func anthropicContent(content any, inline bool) []any {
 	if content == nil {
 		return []any{}
 	}
@@ -119,7 +135,7 @@ func AnthropicContent(content any) []any {
 	items := arr(content)
 	out := make([]any, 0, len(items))
 	for _, b := range items {
-		out = append(out, anthropicPart(b))
+		out = append(out, anthropicPart(b, inline))
 	}
 	return out
 }

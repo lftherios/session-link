@@ -20,7 +20,11 @@ func importHermes(in Input) (map[string]any, error) {
 	if session == nil {
 		session = map[string]any{}
 	}
-	return buildHermesRun(session, in.Messages), nil
+	run := buildHermesRun(session, in.Messages)
+	// Hermes links a delegate's session to its parent's, not to the call that
+	// delegated, so each goes under the call that was running when it started.
+	adoptAgents(run, "hermes", in.Agents, nil)
+	return run, nil
 }
 
 /* ------------------------------------------------------------- helpers */
@@ -95,7 +99,18 @@ func hermesPart(p any) any {
 			}
 			return map[string]any{"type": "text", "text": txt}
 		}
-		return p // open-world pass-through (image_url, etc.)
+		// An image is an OpenAI-style part: image_url.url, or image_url itself.
+		if t == "image_url" || t == "input_image" {
+			url := strOr(m(pm["image_url"])["url"], strOr(pm["image_url"], ""))
+			if image, ok := imageURLPart(url); ok {
+				return image
+			}
+		}
+		// An image part has to say where its image is; one that does not is data.
+		if _, located := str(pm["url"]); t == "image" && !located && pm["attachment"] == nil {
+			return hermesDataPart(p)
+		}
+		return p // open-world pass-through
 	}
 	if txt, ok := str(pm["text"]); ok {
 		return map[string]any{"type": "text", "text": txt}
@@ -103,24 +118,25 @@ func hermesPart(p any) any {
 	return hermesDataPart(p)
 }
 
-// hermesContent mirrors hermesContent: content is usually a plain string,
-// but can be a JSON list/dict.
+// hermesStructured marks content Hermes stored as JSON. Its store holds text,
+// so a list or dict of parts is written as this prefix followed by JSON.
+const hermesStructured = "\x00json:"
+
+// hermesContent maps one stored content value. Text stays text even when it
+// reads as JSON: a pasted object or a tool's JSON output is what was said.
+// Only Hermes's own marker makes content structured.
 func hermesContent(raw any) []any {
 	if raw == nil {
 		return []any{}
 	}
 	v := raw
 	if s, ok := str(raw); ok {
-		t := strings.TrimSpace(s)
-		if strings.HasPrefix(t, "[") || strings.HasPrefix(t, "{") {
-			var parsed any
-			if err := json.Unmarshal([]byte(s), &parsed); err != nil {
-				return []any{map[string]any{"type": "text", "text": s}}
-			}
-			v = parsed
-		} else {
+		encoded, marked := strings.CutPrefix(s, hermesStructured)
+		var parsed any
+		if !marked || json.Unmarshal([]byte(encoded), &parsed) != nil {
 			return []any{map[string]any{"type": "text", "text": s}}
 		}
+		v = parsed
 	}
 	if s, ok := str(v); ok {
 		return []any{map[string]any{"type": "text", "text": s}}
@@ -141,8 +157,10 @@ func hermesContent(raw any) []any {
 	return []any{map[string]any{"type": "text", "text": hermesString(v)}}
 }
 
+// hermesResultValue is a tool span's result: stored text as it is, or the
+// parts of a structured result.
 func hermesResultValue(raw any) any {
-	if s, ok := str(raw); ok {
+	if s, ok := str(raw); ok && !strings.HasPrefix(s, hermesStructured) {
 		return s
 	}
 	return hermesContent(raw)
@@ -392,6 +410,15 @@ func buildHermesRun(session map[string]any, messages []any) map[string]any {
 	}
 	if hermesTruthy(session["source"]) {
 		metadata["origin"] = session["source"]
+	}
+	// Hermes ends a session when it compresses its context and carries on in a
+	// new one that names it as parent. Each is imported on its own, because
+	// the new one repeats part of the old; these two fields link them.
+	if hermesTruthy(session["parent_session_id"]) {
+		metadata["parent_session_id"] = session["parent_session_id"]
+	}
+	if hermesTruthy(session["end_reason"]) {
+		metadata["end_reason"] = session["end_reason"]
 	}
 
 	return map[string]any{

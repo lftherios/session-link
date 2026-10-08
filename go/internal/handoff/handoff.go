@@ -33,13 +33,14 @@ type Source struct {
 	Files []string
 }
 
-// transcriptFiles tracks a transcript's one file. Sessions stored in a
-// database have none, so they are imported on every open.
+// transcriptFiles tracks a transcript's file and those of its sub-agents,
+// which the import reads with it. Sessions stored in a database have none, so
+// they are imported on every open.
 func transcriptFiles(candidate importers.Candidate) []string {
 	if candidate.File == "" {
 		return nil
 	}
-	return []string{candidate.File}
+	return append([]string{candidate.File}, candidate.Related...)
 }
 
 func Native(candidate importers.Candidate) Source {

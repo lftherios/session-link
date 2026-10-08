@@ -1,0 +1,193 @@
+{
+  "created_at": "2026-10-07T15:38:50.936Z",
+  "metadata": {
+    "cwd": "/work/checks",
+    "harness_version": "1.18.35",
+    "session_id": "ses_ee8fb8947ffeh10GqkfI9WoPIl",
+    "sub_agents": 1
+  },
+  "name": "Greeting check",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "opencode",
+    "kind": "import",
+    "label": "session-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-07T15:38:52.015Z",
+      "id": "root",
+      "name": "Greeting check",
+      "parent_id": null,
+      "started_at": "2026-10-07T15:38:50.936Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-07T15:38:51.988Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "\"DELEGATE: ask a sub-agent to answer\"",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "arguments": {
+                  "description": "Answer with done",
+                  "prompt": "Reply with the single word done.",
+                  "subagent_type": "general"
+                },
+                "id": "call_mock_5",
+                "name": "task",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-07T15:38:51.281Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "reasoning_tokens": 0
+      }
+    },
+    {
+      "ended_at": "2026-10-07T15:38:51.985Z",
+      "id": "s2",
+      "input": {
+        "arguments": {
+          "description": "Answer with done",
+          "prompt": "Reply with the single word done.",
+          "subagent_type": "general"
+        },
+        "name": "task",
+        "tool_call_id": "call_mock_5"
+      },
+      "name": "task",
+      "output": {
+        "result": "<task id=\"ses_ee8fb8558ffelwFvb0k68y15nt\" state=\"completed\">\n<task_result>\ndone\n</task_result>\n</task>"
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-07T15:38:51.945Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-07T15:38:51.980Z",
+      "id": "a1",
+      "name": "Answer with done (@general subagent)",
+      "parent_id": "s2",
+      "started_at": "2026-10-07T15:38:51.943Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-07T15:38:51.980Z",
+      "id": "a1.s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Reply with the single word done.",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "done",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a1",
+      "started_at": "2026-10-07T15:38:51.956Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "reasoning_tokens": 0
+      }
+    },
+    {
+      "ended_at": "2026-10-07T15:38:52.015Z",
+      "id": "s3",
+      "input": {
+        "messages": []
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The tool finished; report what it returned.",
+                "type": "thinking"
+              },
+              {
+                "text": "It returned: <task id=\"ses_ee8fb8558ffelwFvb0k68y15nt\" state=\"completed\">\n<task_result>\ndone\n",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-07T15:38:51.989Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "reasoning_tokens": 0
+      }
+    }
+  ]
+}

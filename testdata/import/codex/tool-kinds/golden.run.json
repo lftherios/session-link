@@ -1,0 +1,275 @@
+{
+  "created_at": "2026-10-03T14:00:00.000Z",
+  "metadata": {
+    "cwd": "/work/rename",
+    "harness_version": "0.160.1",
+    "session_id": "thread-tools-1"
+  },
+  "name": "Rename fetchUser to loadUser and check nothing else calls it",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "codex",
+    "kind": "import",
+    "label": "session-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-03T14:00:18.000Z",
+      "id": "root",
+      "name": "Rename fetchUser to loadUser and check nothing else calls it",
+      "parent_id": null,
+      "started_at": "2026-10-03T14:00:00.000Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-03T14:00:11.000Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Rename fetchUser to loadUser and check nothing else calls it",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "gpt-5.5-codex",
+        "provider": "openai"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Find the call sites, then patch.",
+                "type": "thinking"
+              },
+              {
+                "arguments": {
+                  "command": [
+                    "rg",
+                    "-n",
+                    "fetchUser"
+                  ],
+                  "type": "exec"
+                },
+                "id": "call_sh",
+                "name": "local_shell",
+                "type": "tool_call"
+              },
+              {
+                "arguments": {
+                  "query": "rename symbol"
+                },
+                "id": "call_ts",
+                "name": "tool_search",
+                "type": "tool_call"
+              },
+              {
+                "arguments": {
+                  "query": "typescript rename exported function",
+                  "type": "search"
+                },
+                "id": "web_search_call_3",
+                "name": "web_search",
+                "type": "tool_call"
+              },
+              {
+                "arguments": "*** Begin Patch\n*** Update File: src/user.ts\n@@\n-export function fetchUser()\n+export function loadUser()\n*** End Patch",
+                "id": "call_patch",
+                "name": "apply_patch",
+                "type": "tool_call"
+              },
+              {
+                "arguments": {
+                  "cmd": "npm test"
+                },
+                "id": "call_test",
+                "name": "exec_command",
+                "type": "tool_call"
+              },
+              {
+                "text": "Renamed it. Tests are running.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-03T14:00:01.000Z",
+      "status": "ok",
+      "type": "llm_call"
+    },
+    {
+      "ended_at": "2026-10-03T14:00:04.000Z",
+      "id": "s2",
+      "input": {
+        "arguments": {
+          "command": [
+            "rg",
+            "-n",
+            "fetchUser"
+          ],
+          "type": "exec"
+        },
+        "name": "local_shell",
+        "tool_call_id": "call_sh"
+      },
+      "name": "local_shell",
+      "output": {
+        "result": "src/user.ts:4:export function fetchUser()"
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-03T14:00:03.000Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-03T14:00:06.000Z",
+      "id": "s3",
+      "input": {
+        "arguments": {
+          "query": "rename symbol"
+        },
+        "name": "tool_search",
+        "tool_call_id": "call_ts"
+      },
+      "name": "tool_search",
+      "output": {
+        "result": [
+          {
+            "name": "refactor.rename"
+          }
+        ]
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-03T14:00:05.000Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-03T14:00:11.000Z",
+      "id": "s4",
+      "input": {
+        "arguments": {
+          "query": "typescript rename exported function",
+          "type": "search"
+        },
+        "name": "web_search",
+        "tool_call_id": "web_search_call_3"
+      },
+      "name": "web_search",
+      "output": {
+        "result": null
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-03T14:00:07.000Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-03T14:00:09.000Z",
+      "id": "s5",
+      "input": {
+        "arguments": "*** Begin Patch\n*** Update File: src/user.ts\n@@\n-export function fetchUser()\n+export function loadUser()\n*** End Patch",
+        "name": "apply_patch",
+        "tool_call_id": "call_patch"
+      },
+      "name": "apply_patch",
+      "output": {
+        "result": "Success. Updated the following files:\nM src/user.ts"
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-03T14:00:08.000Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-03T14:00:15.000Z",
+      "id": "s6",
+      "input": {
+        "arguments": {
+          "cmd": "npm test"
+        },
+        "name": "exec_command",
+        "tool_call_id": "call_test"
+      },
+      "name": "exec_command",
+      "output": {
+        "result": "12 passing"
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-03T14:00:10.000Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-03T14:00:16.000Z",
+      "id": "s7",
+      "name": "codex compaction",
+      "parent_id": "root",
+      "raw": {
+        "item": {
+          "encrypted_content": "gAAAAABsynthetic",
+          "type": "compaction"
+        }
+      },
+      "started_at": "2026-10-03T14:00:16.000Z",
+      "type": "custom"
+    },
+    {
+      "ended_at": "2026-10-03T14:00:17.000Z",
+      "id": "s8",
+      "name": "codex function_call_output",
+      "parent_id": "root",
+      "raw": {
+        "item": {
+          "call_id": "call_gone",
+          "output": "no such call",
+          "type": "function_call_output"
+        }
+      },
+      "started_at": "2026-10-03T14:00:17.000Z",
+      "type": "custom"
+    },
+    {
+      "ended_at": "2026-10-03T14:00:18.000Z",
+      "id": "s9",
+      "input": {
+        "messages": []
+      },
+      "model": {
+        "id": "gpt-5.5-codex",
+        "provider": "openai"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "All 12 tests pass after the rename.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-03T14:00:11.000Z",
+      "status": "ok",
+      "type": "llm_call"
+    }
+  ]
+}

@@ -68,10 +68,6 @@
                 "text": "I should look at the server file first."
               },
               {
-                "type": "text",
-                "text": "Added GET /health returning 200."
-              },
-              {
                 "type": "tool_call",
                 "id": "call_1",
                 "name": "shell",
@@ -81,6 +77,10 @@
                     "server.js"
                   ]
                 }
+              },
+              {
+                "type": "text",
+                "text": "Added GET /health returning 200."
               }
             ]
           }

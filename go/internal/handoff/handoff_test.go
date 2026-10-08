@@ -275,3 +275,67 @@ func TestSaveWritesAReadingCopyWithoutRecordedOutput(t *testing.T) {
 		t.Fatal("wrote a reading copy that saves nothing")
 	}
 }
+
+// A session's preview is made from its sub-agents' transcripts too, so one of
+// them changing means the preview is made again.
+func TestSaveFollowsASubAgentsTranscript(t *testing.T) {
+	fixture := "../../../testdata/import/claude-code/sub-agent"
+	root := t.TempDir()
+	session := filepath.Join(root, "claude", "-work-checks", "session.jsonl")
+	agents := filepath.Join(root, "claude", "-work-checks", "session", "subagents")
+	if err := os.MkdirAll(agents, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	copyFile := func(from, to string) {
+		t.Helper()
+		data, err := os.ReadFile(from)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(to, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	copyFile(filepath.Join(fixture, "input.session.jsonl"), session)
+	recorded, _ := filepath.Glob(filepath.Join(fixture, "input.session", "subagents", "*"))
+	for _, file := range recorded {
+		copyFile(file, filepath.Join(agents, filepath.Base(file)))
+	}
+	transcripts, _ := filepath.Glob(filepath.Join(agents, "*.jsonl"))
+
+	candidates, err := importers.Locations{Claude: filepath.Join(root, "claude")}.Recent("claude-code", "/work/checks", "", 5)
+	if err != nil || len(candidates) != 1 {
+		t.Fatalf("%v %v", candidates, err)
+	}
+	source := Native(candidates[0])
+	if !slices.Equal(source.Files, append([]string{session}, transcripts...)) {
+		t.Fatalf("the sub-agent's transcript is not tracked: %v", source.Files)
+	}
+	dir := t.TempDir()
+	first, err := Save(dir, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := Save(dir, source); again != first {
+		t.Fatal("an unchanged session was imported again")
+	}
+	// The sub-agent is still working: its transcript grows, its parent's does not.
+	extra := `{"type":"assistant","isSidechain":true,"timestamp":"2026-10-08T07:00:59.000Z","message":{"id":"msg_later","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"One more finding."}]}}` + "\n"
+	f, err := os.OpenFile(transcripts[0], os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString(extra)
+	f.Close()
+	later, err := Save(dir, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if later == first {
+		t.Fatal("the preview kept the sub-agent's earlier work after its transcript changed")
+	}
+	saved, _ := os.ReadFile(filepath.Join(dir, later+".json"))
+	if !strings.Contains(string(saved), "One more finding.") {
+		t.Fatal("the new preview lacks the sub-agent's later work")
+	}
+}

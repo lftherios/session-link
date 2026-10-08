@@ -52,7 +52,7 @@ func TestCodexKeepsAnUnavailableReasoningEventWithoutAnAnswer(t *testing.T) {
 		}
 		encoded = append(encoded, string(raw))
 	}
-	run := codexRolloutToRun(encoded, "Reasoning availability")
+	run, _ := codexRolloutToRun(encoded, "Reasoning availability")
 	if issues := format.ValidateRun(run); len(issues) != 0 {
 		t.Fatal(issues)
 	}

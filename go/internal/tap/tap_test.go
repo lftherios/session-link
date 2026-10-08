@@ -17,7 +17,7 @@ import (
 
 func testSession(t *testing.T, name string) *Session {
 	t.Helper()
-	return NewSession(t.TempDir(), name, time.Now())
+	return NewSession(t.TempDir(), name, "", time.Now())
 }
 
 func TestRouterIdleAndBusySemantics(t *testing.T) {
@@ -155,5 +155,26 @@ func TestTapEndToEnd(t *testing.T) {
 	cancel()
 	if err := NewServer(t.TempDir(), time.Minute).Serve(ctx, "127.0.0.1:0"); err != nil {
 		t.Fatalf("clean shutdown: %v", err)
+	}
+}
+
+// Only a recorder that wraps one command knows where the work ran.
+func TestOnlyAWrappedCommandRecordsItsDirectory(t *testing.T) {
+	cwd := func(s *Session) (any, bool) {
+		var skeleton map[string]any
+		if err := json.Unmarshal(s.skeleton, &skeleton); err != nil {
+			t.Fatal(err)
+		}
+		dir, ok := skeleton["metadata"].(map[string]any)["cwd"]
+		return dir, ok
+	}
+	here, _ := os.Getwd()
+	_, wrapped := NewDevServer(t.TempDir(), "wrapped")
+	if dir, _ := cwd(wrapped); dir != here {
+		t.Fatalf("a wrapped command's capture records %v, want %q", dir, here)
+	}
+	always := NewServer(t.TempDir(), time.Minute)
+	if dir, ok := cwd(always.router.newSession("ambient")); ok {
+		t.Fatalf("the always-on tap stamped its own directory %v on a capture", dir)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -29,7 +30,7 @@ func runOpen(args []string) {
 	port := fs.Int("port", 0, "listen port (default: a free port)")
 	noBrowser := fs.Bool("no-browser", false, "print the local URL without opening a browser")
 	background := fs.Bool("background", false, "return to the harness while the local viewer stays running")
-	from := fs.String("from", "", "agent: claude-code|codex|pi|opencode|hermes")
+	from := fs.String("from", "", "agent: claude-code|codex|pi|omp|opencode|hermes")
 	session := fs.String("session", "", "explicit harness session ID or transcript path")
 	span := fs.String("span", "", "start at this span in the viewer")
 	pick := fs.Bool("pick", false, "always show the browser session picker")
@@ -200,6 +201,7 @@ func viewSources(loc importers.Locations, cwd, from, ref string, explicitNative 
 	if from != "" {
 		return sources, nil
 	}
+	projectDirs := importers.ProjectDirs(cwd)
 	for _, capture := range cli.ListCaptures(capturesDir) {
 		data, err := os.ReadFile(capture.File)
 		if err != nil {
@@ -211,8 +213,12 @@ func viewSources(loc importers.Locations, cwd, from, ref string, explicitNative 
 			} `json:"metadata"`
 		}
 		json.Unmarshal(data, &doc)
+		// A capture belongs here when it was recorded in one of this project's
+		// directories. The always-on tap serves every shell and records none,
+		// so its captures are offered everywhere, as are those an installed
+		// tap once stamped with the root directory it runs in.
 		dir := doc.Metadata.Cwd
-		if dir != "" && filepath.Clean(cwd) != filepath.Clean(dir) && !strings.HasPrefix(filepath.Clean(cwd), filepath.Clean(dir)+string(os.PathSeparator)) {
+		if dir != "" && dir != string(os.PathSeparator) && !slices.Contains(projectDirs, filepath.Clean(dir)) {
 			continue
 		}
 		source, err := handoff.File(capture.File, "")

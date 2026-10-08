@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -166,7 +167,7 @@ func runDev(args []string) {
 		fmt.Fprintln(os.Stderr, "  nothing was recorded")
 	case n == 0:
 		fmt.Fprintln(os.Stderr, "captured 0 LLM calls — nothing was saved")
-		fmt.Fprintln(os.Stderr, "  if your tool called a model, it may not honor ANTHROPIC_BASE_URL / OPENAI_BASE_URL")
+		fmt.Fprintln(os.Stderr, uncapturedHint(cmdArgs))
 	case ferr != nil:
 		fmt.Fprintf(os.Stderr, "✗ recorded %s but couldn't finalize: %v\n", plural(n, "call"), ferr)
 		fmt.Fprintf(os.Stderr, "  the partial spool is kept at %s.spool\n", session.File)
@@ -177,6 +178,17 @@ func runDev(args []string) {
 		fmt.Fprintf(os.Stderr, "\n  review:  slink view %s\n  publish: slink share %s\n", id, id)
 	}
 	os.Exit(exitCode)
+}
+
+// uncapturedHint explains an empty recording. The recorder only sees a tool
+// that takes its endpoint from the two base-URL variables, and Codex is the
+// known one that does not: it reads openai_base_url from its own config.
+func uncapturedHint(command []string) string {
+	if len(command) > 0 && strings.TrimSuffix(filepath.Base(command[0]), ".exe") == "codex" {
+		return "  Codex takes its endpoint from openai_base_url in its own config, not from OPENAI_BASE_URL,\n" +
+			"  so the recorder never saw its calls. The session Codex saved is readable:  slink view --from codex"
+	}
+	return "  if your tool called a model, it may not honor ANTHROPIC_BASE_URL / OPENAI_BASE_URL"
 }
 
 // exitStatus maps a child's death to the shell convention: its own exit

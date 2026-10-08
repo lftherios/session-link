@@ -1,0 +1,147 @@
+{
+  "created_at": "2026-10-07T15:50:57.854Z",
+  "metadata": {
+    "cwd": "/work/greeting",
+    "session_id": "01a1170f-8e3e-713c-aa26-e365fbd73282"
+  },
+  "name": "RUN_TOOL: print a greeting with the shell and report what it printed",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "omp",
+    "kind": "import",
+    "label": "omp-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-07T15:50:58.133Z",
+      "id": "root",
+      "name": "RUN_TOOL: print a greeting with the shell and report what it printed",
+      "parent_id": null,
+      "started_at": "2026-10-07T15:50:57.854Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-07T15:50:57.959Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "RUN_TOOL: print a greeting with the shell and report what it printed",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "arguments": {
+                  "command": "echo hello from the tool"
+                },
+                "id": "call_mock_1",
+                "name": "bash",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-07T15:50:57.949Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-07T15:50:58.011Z",
+      "id": "s2",
+      "input": {
+        "arguments": {
+          "command": "echo hello from the tool"
+        },
+        "name": "bash",
+        "tool_call_id": "call_mock_1"
+      },
+      "name": "bash",
+      "output": {
+        "result": "hello from the tool\n\n\nWall time: 0.05 seconds"
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-07T15:50:57.960Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-07T15:50:58.133Z",
+      "id": "s3",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "hello from the tool\n\n\nWall time: 0.05 seconds",
+                    "type": "text"
+                  }
+                ],
+                "tool_call_id": "call_mock_1",
+                "type": "tool_result"
+              }
+            ],
+            "role": "tool"
+          }
+        ]
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The tool finished; report what it returned.",
+                "type": "thinking"
+              },
+              {
+                "text": "It returned: hello from the tool\n\n\nWall time: 0.05 seconds",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-07T15:50:58.011Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    }
+  ]
+}

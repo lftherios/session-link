@@ -65,10 +65,11 @@ type Server struct {
 }
 
 // NewDevServer is the wrapper-mode recorder: one fixed session for the
-// whole invocation.
+// whole invocation, which records the directory the wrapped command runs in.
 func NewDevServer(captureDir, name string) (*Server, *Session) {
 	s := NewServer(captureDir, DefaultIdle)
-	s.single = NewSession(captureDir, name, time.Now())
+	cwd, _ := os.Getwd()
+	s.single = NewSession(captureDir, name, cwd, time.Now())
 	return s, s.single
 }
 
@@ -92,7 +93,9 @@ func NewServer(captureDir string, idle time.Duration) *Server {
 			if name == "" {
 				name = "ambient session"
 			}
-			return NewSession(captureDir, name, time.Now())
+			// The always-on tap serves every shell routed through it. Its own
+			// working directory says nothing about where the work happened.
+			return NewSession(captureDir, name, "", time.Now())
 		},
 		func(sess *Session) {
 			if n, err := sess.Finalize(); err == nil && n > 0 {

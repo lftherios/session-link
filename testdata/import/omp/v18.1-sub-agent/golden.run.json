@@ -1,0 +1,509 @@
+{
+  "created_at": "2026-10-08T07:09:57.452Z",
+  "metadata": {
+    "cwd": "/work/checks",
+    "session_id": "01a11a58-eb4c-701b-b78c-722960ffa9ff",
+    "sub_agents": 1
+  },
+  "name": "DELEGATE: have a sub-agent run the shell check",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "omp",
+    "kind": "import",
+    "label": "omp-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-08T07:09:57.860Z",
+      "id": "root",
+      "name": "DELEGATE: have a sub-agent run the shell check",
+      "parent_id": null,
+      "started_at": "2026-10-08T07:09:57.452Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-08T07:09:57.560Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "DELEGATE: have a sub-agent run the shell check",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "arguments": {
+                  "context": "A small check of the shell.",
+                  "i": "delegate the shell check",
+                  "tasks": [
+                    {
+                      "name": "shell-check",
+                      "task": "SUBTASK: print one line with the shell and report it."
+                    }
+                  ]
+                },
+                "id": "call_mock_1",
+                "name": "task",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T07:09:57.549Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-08T07:09:57.577Z",
+      "id": "s2",
+      "input": {
+        "arguments": {
+          "context": "A small check of the shell.",
+          "i": "delegate the shell check",
+          "tasks": [
+            {
+              "name": "shell-check",
+              "task": "SUBTASK: print one line with the shell and report it."
+            }
+          ]
+        },
+        "name": "task",
+        "tool_call_id": "call_mock_1"
+      },
+      "name": "task",
+      "output": {
+        "result": "Spawned agent `shell-check` (job `shell-check`). Its result auto-delivers on yield unless a settled `hub jobs`/`wait` snapshot consumes it first. DM `shell-check` via `hub` send to coordinate while it…"
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-08T07:09:57.561Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T07:09:57.852Z",
+      "id": "a1",
+      "name": "shell-check",
+      "parent_id": "s2",
+      "started_at": "2026-10-08T07:09:57.592Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-08T07:09:57.738Z",
+      "id": "a1.s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Complete assignment thoroughly:\n\nSUBTASK: print one line with the shell and report it.",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "arguments": {
+                  "command": "echo sub-agent at work"
+                },
+                "id": "call_mock_3",
+                "name": "bash",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a1",
+      "started_at": "2026-10-08T07:09:57.734Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-08T07:09:57.808Z",
+      "id": "a1.s2",
+      "input": {
+        "arguments": {
+          "command": "echo sub-agent at work"
+        },
+        "name": "bash",
+        "tool_call_id": "call_mock_3"
+      },
+      "name": "bash",
+      "output": {
+        "result": "sub-agent at work\n\n\nWall time: 0.07 seconds"
+      },
+      "parent_id": "a1.s1",
+      "started_at": "2026-10-08T07:09:57.738Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T07:09:57.834Z",
+      "id": "a1.s3",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "sub-agent at work\n\n\nWall time: 0.07 seconds",
+                    "type": "text"
+                  }
+                ],
+                "tool_call_id": "call_mock_3",
+                "type": "tool_result"
+              }
+            ],
+            "role": "tool"
+          }
+        ]
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The shell printed the line.",
+                "type": "thinking"
+              },
+              {
+                "text": "The shell works: it printed the line.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a1",
+      "started_at": "2026-10-08T07:09:57.808Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-08T07:09:57.843Z",
+      "id": "a1.s4",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "<system-reminder>\nLast turn had no tool call → session idle. Reminder 1 of 3.\n\nEvery turn MUST end with a tool call. First applicable:\n1. **Resume work** — assignment incomplete and not recording an i…",
+                "type": "text"
+              }
+            ],
+            "role": "developer"
+          }
+        ]
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The shell printed the line.",
+                "type": "thinking"
+              },
+              {
+                "text": "The shell works: it printed the line.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a1",
+      "started_at": "2026-10-08T07:09:57.842Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-08T07:09:57.848Z",
+      "id": "a1.s5",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "<system-reminder>\nLast turn had no tool call → session idle. Reminder 2 of 3.\n\nEvery turn MUST end with a tool call. First applicable:\n1. **Resume work** — assignment incomplete and not recording an i…",
+                "type": "text"
+              }
+            ],
+            "role": "developer"
+          }
+        ]
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The shell printed the line.",
+                "type": "thinking"
+              },
+              {
+                "text": "The shell works: it printed the line.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a1",
+      "started_at": "2026-10-08T07:09:57.847Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-08T07:09:57.852Z",
+      "id": "a1.s6",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "<system-reminder>\nLast turn had no tool call → session idle. Reminder 3 of 3.\n\nEvery turn MUST end with a tool call. First applicable:\n1. **Resume work** — assignment incomplete and not recording an i…",
+                "type": "text"
+              }
+            ],
+            "role": "developer"
+          }
+        ]
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The shell printed the line.",
+                "type": "thinking"
+              },
+              {
+                "text": "The shell works: it printed the line.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a1",
+      "started_at": "2026-10-08T07:09:57.851Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-08T07:09:57.585Z",
+      "id": "s3",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "Spawned agent `shell-check` (job `shell-check`). Its result auto-delivers on yield unless a settled `hub jobs`/`wait` snapshot consumes it first. DM `shell-check` via `hub` send to coordinate while it…",
+                    "type": "text"
+                  }
+                ],
+                "tool_call_id": "call_mock_1",
+                "type": "tool_result"
+              }
+            ],
+            "role": "tool"
+          }
+        ]
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "arguments": {
+                  "i": "wait for the sub-agent",
+                  "op": "wait",
+                  "timeoutMs": 30000
+                },
+                "id": "call_mock_2",
+                "name": "hub",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T07:09:57.577Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-08T07:09:57.857Z",
+      "id": "s4",
+      "input": {
+        "arguments": {
+          "i": "wait for the sub-agent",
+          "op": "wait",
+          "timeoutMs": 30000
+        },
+        "name": "hub",
+        "tool_call_id": "call_mock_2"
+      },
+      "name": "hub",
+      "output": {
+        "result": "## Completed (1)\n\n### shell-check [task] — completed\nLabel: shell-check\nDelivery: not auto-delivered; recovered by this snapshot.\n```\n<task-result id=\"shell-check\" agent=\"task\" status=\"completed\" dura…"
+      },
+      "parent_id": "s3",
+      "started_at": "2026-10-08T07:09:57.585Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T07:09:57.860Z",
+      "id": "s5",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "## Completed (1)\n\n### shell-check [task] — completed\nLabel: shell-check\nDelivery: not auto-delivered; recovered by this snapshot.\n```\n<task-result id=\"shell-check\" agent=\"task\" status=\"completed\" dura…",
+                    "type": "text"
+                  }
+                ],
+                "tool_call_id": "call_mock_2",
+                "type": "tool_result"
+              }
+            ],
+            "role": "tool"
+          }
+        ]
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The sub-agent reported back; the work is finished.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T07:09:57.857Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    }
+  ]
+}

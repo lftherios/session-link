@@ -3,7 +3,6 @@ package tap
 import (
 	"fmt"
 	"log"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,15 +32,20 @@ type Session struct {
 	pending     atomic.Int32
 }
 
-// NewSession builds the session skeleton exactly like proxy.mjs newSession.
-func NewSession(dir, name string, now time.Time) *Session {
+// NewSession builds the session skeleton. cwd is the directory the recorded
+// work ran in, or "" when the recorder cannot know it.
+func NewSession(dir, name, cwd string, now time.Time) *Session {
 	created := now.UTC().Format("2006-01-02T15:04:05.000Z")
+	metadata := map[string]any{"in_progress": true}
+	if cwd != "" {
+		metadata["cwd"] = cwd
+	}
 	skeleton := map[string]any{
 		"schema":     "session/v0",
 		"name":       name,
 		"created_at": created,
 		"source":     map[string]any{"kind": "proxy", "label": cliLabel, "fidelity": "exact"},
-		"metadata":   map[string]any{"cwd": cwd(), "in_progress": true},
+		"metadata":   metadata,
 		"spans": []any{map[string]any{
 			"id": "root", "parent_id": nil, "type": "agent",
 			"name": name, "started_at": created,
@@ -53,14 +57,6 @@ func NewSession(dir, name string, now time.Time) *Session {
 		skeleton: sk,
 		writeSem: make(chan struct{}, 1),
 	}
-}
-
-func cwd() string {
-	d, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	return d
 }
 
 // Busy reports in-flight calls — the router must not finalize under them.

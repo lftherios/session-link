@@ -156,6 +156,58 @@ test("arrival: imported Claude Code harness messages read as context and errors"
   assert.doesNotMatch(html, />Agent response</);
 });
 
+test("arrival: a Claude Code compaction summary and task notification read as context", async () => {
+  const { exchangesFor, messageText, readingRole } = await sessionModel();
+  const doc = JSON.parse(await readFile("testdata/import/claude-code/compaction/golden.run.json", "utf8"));
+  const exchanges = exchangesFor(doc);
+  assert.deepEqual(exchanges.map(e => e.prompts.map(p => messageText(p.msg))), [["Port the settings page to the new form components"], ["Continue with the notifications section"]]);
+  const context = exchanges[1].blocks.filter(b => readingRole(b.msg) === "context").map(b => messageText(b.msg));
+  assert.equal(context.length, 2);
+  assert.match(context[0], /continued from a previous conversation/);
+  assert.match(context[1], /task-notification/);
+});
+
+test("arrival: an imported pi session reads as the branch that was kept", async () => {
+  const { exchangesFor, messageText } = await sessionModel();
+  const doc = JSON.parse(await readFile("testdata/import/pi/branches/golden.run.json", "utf8"));
+  assert.deepEqual(exchangesFor(doc).map(e => e.prompts.map(p => messageText(p.msg))), [["The upload test fails one run in five. Find out why."], ["Fix the race instead"], ["retry"]]);
+  const html = render(doc, "conversation", { source: "fixture" });
+  assert.match(html, /overloaded_error/);
+  assert.doesNotMatch(html, /Deleted upload\.test\.ts/);
+});
+
+for (const [fixture, images] of [
+  ["claude-code/images", 2], ["codex/images", 3], ["pi/images", 2], ["omp/v18.1-images", 2], ["opencode/v1.18-images", 2], ["hermes/stored-content", 1],
+]) {
+  test(`viewer: images imported from ${fixture} are shown`, async () => {
+    const doc = JSON.parse(await readFile(`testdata/import/${fixture}/golden.run.json`, "utf8"));
+    const html = render(doc);
+    const shown = new Set(html.match(/<img[^>]+src="data:image\/(?:png|jpeg|webp);base64,[^"]+"/g) ?? []);
+    assert.equal(shown.size, images, `distinct images rendered from ${fixture}`);
+    assert.doesNotMatch(html, /no source|inline bytes omitted/);
+  });
+}
+
+for (const [fixture, task] of [
+  ["claude-code/sub-agent", /SUBTASK: print one line/], ["codex/sub-agent", /NEW_TASK/], ["omp/v18.1-sub-agent", /SUBTASK: print one line/],
+  ["opencode/v1.18-sub-agent", /Reply with the single word done/], ["hermes/delegate", /List certificates in eu-west/],
+]) {
+  test(`arrival: a sub-agent imported from ${fixture} reads as a delegated task`, async () => {
+    const { exchangesFor, messageText } = await sessionModel();
+    const doc = JSON.parse(await readFile(`testdata/import/${fixture}/golden.run.json`, "utf8"));
+    const exchanges = exchangesFor(doc);
+    const delegated = exchanges.filter(e => e.child);
+    assert.ok(delegated.length >= 1, "the sub-agent's work is an exchange of its own");
+    assert.match(messageText(delegated[0].prompts[0].msg), task);
+    assert.ok(exchanges.some(e => !e.child && e.prompts.length), "the session's own exchanges remain");
+    // The sub-agent's work follows the exchange that delegated it.
+    assert.ok(exchanges.indexOf(delegated[0]) > exchanges.findIndex(e => !e.child));
+    // The transcript marks where the sub-agent's work begins, by its name.
+    const agent = doc.spans.find(s => s.type === "agent" && s.parent_id);
+    assert.ok(render(doc).includes(`aria-label="Inspect ${agent.name} in the tree"`));
+  });
+}
+
 test("arrival: names that look like injected context never become the title", () => {
   const doc = { ...run([call("s1", [message("user", "<environment_context>cwd: /tmp</environment_context>"), message("user", "Compare onboarding options")], [message("assistant", "The comparison")])], { kind: "import" }), name: "<environment_context> <cwd>/tmp</cwd>" };
   const html = render(doc, "exchange");
@@ -533,7 +585,16 @@ for (const fixture of [
   "packages/format/examples/agent-eval.json",
   "packages/format/examples/chat.json",
   "testdata/import/codex/basic/golden.run.json",
+  "testdata/import/codex/tool-kinds/golden.run.json",
   "testdata/import/claude-code/basic/golden.run.json",
+  "testdata/import/claude-code/split-response/golden.run.json",
+  "testdata/import/claude-code/compaction/golden.run.json",
+  "testdata/import/hermes/stored-content/golden.run.json",
+  "testdata/import/opencode/v1.18-run/golden.run.json",
+  "testdata/import/omp/v18.1-run/golden.run.json",
+  "testdata/import/opencode/v1.18-images/golden.run.json",
+  "testdata/import/claude-code/sub-agent/golden.run.json",
+  "testdata/import/codex/sub-agent/golden.run.json",
   "testdata/import/pi/error-and-trailing/golden.run.json",
 ]) {
   test(`viewer: renders ${fixture}`, async () => {

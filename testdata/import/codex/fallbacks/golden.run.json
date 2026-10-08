@@ -25,6 +25,21 @@
     {
       "id": "s1",
       "parent_id": "root",
+      "type": "custom",
+      "name": "codex function_call_output",
+      "started_at": "2026-07-19T11:00:04.000Z",
+      "ended_at": "2026-07-19T11:00:04.000Z",
+      "raw": {
+        "item": {
+          "type": "function_call_output",
+          "output": "orphan output",
+          "call_id": "call_unmatched"
+        }
+      }
+    },
+    {
+      "id": "s2",
+      "parent_id": "root",
       "type": "llm_call",
       "name": "turn",
       "started_at": "2026-07-19T11:00:01.000Z",
@@ -68,14 +83,14 @@
                 "reason": "encrypted"
               },
               {
-                "type": "text",
-                "text": "Done."
-              },
-              {
                 "type": "tool_call",
                 "id": "fc_1",
                 "name": "apply_patch",
                 "arguments": "*** Begin Patch (not json)"
+              },
+              {
+                "type": "text",
+                "text": "Done."
               }
             ]
           }
@@ -87,8 +102,8 @@
       }
     },
     {
-      "id": "s2",
-      "parent_id": "s1",
+      "id": "s3",
+      "parent_id": "s2",
       "type": "tool_call",
       "name": "apply_patch",
       "started_at": "2026-07-19T11:00:03.000Z",
@@ -104,7 +119,7 @@
       }
     },
     {
-      "id": "s3",
+      "id": "s4",
       "parent_id": "root",
       "type": "custom",
       "name": "trailing message(s) — no assistant reply",

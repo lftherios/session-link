@@ -1,0 +1,204 @@
+{
+  "created_at": "2026-10-02T09:00:00.000Z",
+  "metadata": {
+    "cwd": "/work/exports",
+    "harness_version": "2.1.292",
+    "session_id": "5f0c1c2e-7a41-4d0b-9c55-2f6f0e9a1b10"
+  },
+  "name": "Why does the nightly export skip weekends?",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "claude-code",
+    "kind": "import",
+    "label": "session-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-02T09:00:09.000Z",
+      "id": "root",
+      "name": "Why does the nightly export skip weekends?",
+      "parent_id": null,
+      "started_at": "2026-10-02T09:00:00.000Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-02T09:00:06.000Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Why does the nightly export skip weekends?",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The schedule is probably a cron expression.",
+                "type": "thinking"
+              },
+              {
+                "text": "I'll check the schedule and the job log.",
+                "type": "text"
+              },
+              {
+                "arguments": {
+                  "file_path": "export/schedule.yaml"
+                },
+                "id": "toolu_split_1",
+                "name": "Read",
+                "type": "tool_call"
+              },
+              {
+                "arguments": {
+                  "command": "tail -n 2 logs/export.log"
+                },
+                "id": "toolu_split_2",
+                "name": "Bash",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-02T09:00:00.000Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 800,
+        "input_tokens": 1200,
+        "output_tokens": 74
+      }
+    },
+    {
+      "ended_at": "2026-10-02T09:00:05.000Z",
+      "id": "s2",
+      "input": {
+        "arguments": {
+          "file_path": "export/schedule.yaml"
+        },
+        "name": "Read",
+        "tool_call_id": "toolu_split_1"
+      },
+      "name": "Read",
+      "output": {
+        "result": [
+          {
+            "text": "cron: \"0 2 * * 1-5\"",
+            "type": "text"
+          }
+        ]
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-02T09:00:04.000Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-02T09:00:07.000Z",
+      "id": "s3",
+      "input": {
+        "arguments": {
+          "command": "tail -n 2 logs/export.log"
+        },
+        "name": "Bash",
+        "tool_call_id": "toolu_split_2"
+      },
+      "name": "Bash",
+      "output": {
+        "result": [
+          {
+            "text": "Fri 02:00 export ok\nMon 02:00 export ok",
+            "type": "text"
+          }
+        ]
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-02T09:00:06.000Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-02T09:00:09.000Z",
+      "id": "s4",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "cron: \"0 2 * * 1-5\"",
+                    "type": "text"
+                  }
+                ],
+                "tool_call_id": "toolu_split_1",
+                "type": "tool_result"
+              }
+            ],
+            "role": "tool"
+          },
+          {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "Fri 02:00 export ok\nMon 02:00 export ok",
+                    "type": "text"
+                  }
+                ],
+                "tool_call_id": "toolu_split_2",
+                "type": "tool_result"
+              }
+            ],
+            "role": "tool"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The cron expression ends in 1-5, so the job only runs Monday to Friday.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-02T09:00:07.000Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 2000,
+        "input_tokens": 1500,
+        "output_tokens": 40
+      }
+    }
+  ]
+}

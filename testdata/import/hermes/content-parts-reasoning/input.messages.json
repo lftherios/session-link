@@ -13,7 +13,7 @@
   },
   {
     "role": "user",
-    "content": "[{\"type\":\"text\",\"text\":\"look at this screenshot\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,AAAA\"}},\"a bare string part\",{\"text\":\"typeless dict with text\"}]",
+    "content": "\u0000json:[{\"type\":\"text\",\"text\":\"look at this screenshot\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,AAAA\"}},\"a bare string part\",{\"text\":\"typeless dict with text\"}]",
     "tool_call_id": null,
     "tool_calls": null,
     "tool_name": null,

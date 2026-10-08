@@ -1,0 +1,14 @@
+{
+  "id": "20261008_090000_d1e2f3",
+  "title": "Stale certificates",
+  "display_name": null,
+  "model": "hermes-4-405b",
+  "billing_provider": "nous",
+  "system_prompt": null,
+  "cwd": "/work/certs",
+  "source": "cli",
+  "started_at": 1791450000,
+  "ended_at": 1791450030,
+  "parent_session_id": null,
+  "end_reason": "cli_close"
+}

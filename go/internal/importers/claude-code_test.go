@@ -33,6 +33,14 @@ func TestCCFirstUserText(t *testing.T) {
 		}
 	})
 
+	t.Run("skips the summary Claude Code writes when it compacts", func(t *testing.T) {
+		summary := ccUser("This session is being continued from a previous conversation that ran out of context.", false)
+		summary["isCompactSummary"] = true
+		if got := ccFirstUserText([]map[string]any{summary, ccUser("the actual ask", false)}); got != "the actual ask" {
+			t.Fatalf("got %q", got)
+		}
+	})
+
 	t.Run("skips isMeta, caveats, and tool-shaped rows", func(t *testing.T) {
 		entries := []map[string]any{
 			ccUser("injected context", true),

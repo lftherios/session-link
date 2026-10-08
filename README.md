@@ -35,8 +35,8 @@ Windows, `.deb`, `.rpm` and `.apk` packages are on the
 slink view
 ```
 
-`slink view` finds this project's sessions from Claude Code, Codex, opencode, pi
-and Hermes (experimental), with no SDK and no re-run. To share one, choose
+`slink view` finds this project's sessions from Claude Code, Codex, opencode, pi,
+omp and Hermes (experimental), with no SDK and no re-run. To share one, choose
 **Share this view**: keep what matters, add a note, then publish a link for
 anyone who has it or for specific people by email.
 

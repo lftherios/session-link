@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -28,23 +27,17 @@ type importFlags struct {
 	arg     string
 }
 
-// latestWithWalkUp looks for a harness session for cwd, walking up parent
-// directories to the home/root boundary — running from a subdirectory of
+// latestWithWalkUp looks for a harness session for cwd, then for each parent
+// short of the home directory and the root — running from a subdirectory of
 // the project is the common case, and the agent histories key on the
 // project root. Returns the Found and the directory that matched.
 func latestWithWalkUp(harness, cwd string) (*importers.Found, string, bool) {
-	home, _ := os.UserHomeDir()
-	dir := cwd
-	for {
+	for _, dir := range importers.ProjectDirs(cwd) {
 		if f, ok := importers.Latest(harness, dir); ok {
 			return f, dir, true
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir || dir == home {
-			return nil, "", false
-		}
-		dir = parent
 	}
+	return nil, "", false
 }
 
 // resolveImport finds the session to import, returning the harness + Input
@@ -169,19 +162,12 @@ func transcriptByID(id string) (string, bool) {
 		return "", false
 	}
 	cwd, _ := os.Getwd()
-	home, _ := os.UserHomeDir()
-	dir := cwd
-	for {
-		p := filepath.Join(importers.ClaudeProjectDir(dir), id+".jsonl")
-		if fileExists(p) {
+	for _, dir := range importers.ProjectDirs(cwd) {
+		if p, ok := importers.ClaudeTranscript(dir, id); ok {
 			return p, true
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir || dir == home {
-			return "", false
-		}
-		dir = parent
 	}
+	return "", false
 }
 
 type imported struct {
@@ -299,7 +285,7 @@ func firstNonEmptyStr(vals ...string) string {
 
 func runImport(args []string) {
 	fs := flag.NewFlagSet("import", flag.ExitOnError)
-	from := fs.String("from", "", "agent: claude-code|codex|pi|opencode|hermes")
+	from := fs.String("from", "", "agent: claude-code|codex|pi|omp|opencode|hermes")
 	session := fs.String("session", "", "session id, or a transcript path")
 	setUsage(fs, "slink import [flags] [transcript]",
 		"Convert your coding agent's newest session for this project into a\n  local session — no re-run needed. Marked fidelity: reconstructed.",
@@ -318,7 +304,7 @@ func runImport(args []string) {
 // publish, and print the way back.
 func runShare(args []string) {
 	fs := flag.NewFlagSet("share", flag.ExitOnError)
-	from := fs.String("from", "", "agent: claude-code|codex|pi|opencode|hermes")
+	from := fs.String("from", "", "agent: claude-code|codex|pi|omp|opencode|hermes")
 	session := fs.String("session", "", "session id, or a transcript path")
 	pick := fs.Bool("pick", false, "choose from recent sessions")
 	yes := fs.Bool("yes", false, "publish without confirmation")

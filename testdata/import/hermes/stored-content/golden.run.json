@@ -1,0 +1,275 @@
+{
+  "created_at": "2026-09-30T10:15:00.000Z",
+  "metadata": {
+    "end_reason": "compression",
+    "origin": "cli",
+    "parent_session_id": "20260930_093000_a1b2c3",
+    "session_id": "20260930_101500_c0ffee"
+  },
+  "name": "Invoice export #2",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "hermes",
+    "kind": "import",
+    "label": "session-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-09-30T10:16:40.000Z",
+      "id": "root",
+      "name": "Invoice export #2",
+      "parent_id": null,
+      "started_at": "2026-09-30T10:15:00.000Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-09-30T10:15:02.000Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Does this invoice layout match the template?",
+                "type": "text"
+              },
+              {
+                "type": "image",
+                "mime": "image/png",
+                "url": "data:image/png;base64,AAAA"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "hermes-4-405b",
+        "provider": "nous"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Yes, apart from the footer.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-09-30T10:15:01.000Z",
+      "status": "ok",
+      "type": "llm_call"
+    },
+    {
+      "ended_at": "2026-09-30T10:15:04.000Z",
+      "id": "s2",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "{\"text\": \"use this as the footer\", \"align\": \"right\", \"size\": 9}",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "hermes-4-405b",
+        "provider": "nous"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "",
+                "type": "text"
+              },
+              {
+                "arguments": {
+                  "align": "right"
+                },
+                "id": "call_fmt_1",
+                "name": "format_footer",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-09-30T10:15:03.000Z",
+      "status": "ok",
+      "type": "llm_call"
+    },
+    {
+      "ended_at": "2026-09-30T10:15:05.000Z",
+      "id": "s3",
+      "input": {
+        "arguments": {
+          "align": "right"
+        },
+        "name": "format_footer",
+        "tool_call_id": "call_fmt_1"
+      },
+      "name": "format_footer",
+      "output": {
+        "result": "{\"ok\": true, \"text\": \"footer formatted\"}"
+      },
+      "parent_id": "s2",
+      "started_at": "2026-09-30T10:15:04.000Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-09-30T10:15:06.000Z",
+      "id": "s4",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "{\"ok\": true, \"text\": \"footer formatted\"}",
+                    "type": "text"
+                  }
+                ],
+                "tool_call_id": "call_fmt_1",
+                "type": "tool_result"
+              }
+            ],
+            "role": "tool"
+          }
+        ]
+      },
+      "model": {
+        "id": "hermes-4-405b",
+        "provider": "nous"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "",
+                "type": "text"
+              },
+              {
+                "arguments": {},
+                "id": "call_shot_1",
+                "name": "screenshot",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-09-30T10:15:05.000Z",
+      "status": "ok",
+      "type": "llm_call"
+    },
+    {
+      "ended_at": "2026-09-30T10:15:07.000Z",
+      "id": "s5",
+      "input": {
+        "arguments": {},
+        "name": "screenshot",
+        "tool_call_id": "call_shot_1"
+      },
+      "name": "screenshot",
+      "output": {
+        "result": [
+          {
+            "text": "captured 1 page",
+            "type": "text"
+          },
+          {
+            "type": "image",
+            "mime": "image/png",
+            "url": "data:image/png;base64,AAAA"
+          }
+        ]
+      },
+      "parent_id": "s4",
+      "started_at": "2026-09-30T10:15:06.000Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-09-30T10:15:09.000Z",
+      "id": "s6",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "captured 1 page",
+                    "type": "text"
+                  },
+                  {
+                    "type": "image",
+                    "mime": "image/png",
+                    "url": "data:image/png;base64,AAAA"
+                  }
+                ],
+                "tool_call_id": "call_shot_1",
+                "type": "tool_result"
+              }
+            ],
+            "role": "tool"
+          },
+          {
+            "content": [
+              {
+                "text": "[1, 2, 3]",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "hermes-4-405b",
+        "provider": "nous"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Those are the page numbers to export.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-09-30T10:15:08.000Z",
+      "status": "ok",
+      "type": "llm_call"
+    }
+  ]
+}

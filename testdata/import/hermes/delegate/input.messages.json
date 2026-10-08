@@ -1,0 +1,50 @@
+[
+  {
+    "role": "user",
+    "content": "Check eu-west for stale certificates",
+    "tool_call_id": null,
+    "tool_calls": null,
+    "tool_name": null,
+    "timestamp": 1791450001,
+    "token_count": null,
+    "finish_reason": null,
+    "reasoning": null,
+    "reasoning_content": null
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_call_id": null,
+    "tool_calls": "[{\"id\":\"call_delegate_1\",\"type\":\"function\",\"function\":{\"name\":\"delegate_task\",\"arguments\":\"{\\\"goal\\\": \\\"List certificates in eu-west that expire within 30 days\\\"}\"}}]",
+    "tool_name": null,
+    "timestamp": 1791450002,
+    "token_count": null,
+    "finish_reason": "tool_calls",
+    "reasoning": null,
+    "reasoning_content": null
+  },
+  {
+    "role": "tool",
+    "content": "{\"results\": [{\"status\": \"completed\", \"summary\": \"eu-west: 2 certificates expire within 30 days\"}]}",
+    "tool_call_id": "call_delegate_1",
+    "tool_calls": null,
+    "tool_name": "delegate_task",
+    "timestamp": 1791450020,
+    "token_count": null,
+    "finish_reason": null,
+    "reasoning": null,
+    "reasoning_content": null
+  },
+  {
+    "role": "assistant",
+    "content": "eu-west has two certificates that expire within 30 days.",
+    "tool_call_id": null,
+    "tool_calls": null,
+    "tool_name": null,
+    "timestamp": 1791450022,
+    "token_count": null,
+    "finish_reason": "stop",
+    "reasoning": null,
+    "reasoning_content": null
+  }
+]

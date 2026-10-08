@@ -174,7 +174,7 @@ func TestCatalogHumanInputIgnoresToolResultsAndHarnessWrappers(t *testing.T) {
 	result := map[string]any{"role": "user", "content": []any{map[string]any{"type": "tool_result", "tool_call_id": "c1", "content": []any{map[string]any{"type": "text", "text": "file contents"}}}}}
 	run := map[string]any{"source": map[string]any{"kind": "import", "harness": "claude-code"}, "spans": []any{
 		call("one", "", []any{msg("user", "Fix the header")}, []any{map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "tool_call", "id": "c1", "name": "Read", "arguments": map[string]any{"file_path": "header.tsx"}}}}}),
-		call("two", "", []any{result, msg("user", "<system-reminder>Keep going</system-reminder>")}, []any{msg("assistant", "Header fixed")}),
+		call("two", "", []any{result, msg("user", "<system-reminder>Keep going</system-reminder>"), msg("user", "<task-notification><summary>Tests finished</summary></task-notification>")}, []any{msg("assistant", "Header fixed")}),
 	}}
 	cat := BuildCatalog(run)
 	prompt, answer := containsUnit(cat, "Fix the header")[0], containsUnit(cat, "Header fixed")[0]
@@ -186,5 +186,8 @@ func TestCatalogHumanInputIgnoresToolResultsAndHarnessWrappers(t *testing.T) {
 	}
 	if u := containsUnit(cat, "Keep going")[0]; u.Role != "system" {
 		t.Fatalf("harness reminder role = %q, want system", u.Role)
+	}
+	if u := containsUnit(cat, "Tests finished")[0]; u.Role != "system" {
+		t.Fatalf("background-task notification role = %q, want system", u.Role)
 	}
 }

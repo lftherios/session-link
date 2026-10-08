@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +47,54 @@ func TestViewSourcesNeverSubstitutesExplicitIdentity(t *testing.T) {
 	}
 	if _, err := viewSources(loc, "/work/project", "typo", "", false, captures); err == nil {
 		t.Fatal("unknown harness accepted")
+	}
+}
+
+// A capture is listed where it was recorded. One that records no directory,
+// as the always-on tap's do, is listed everywhere.
+func TestViewSourcesListCapturesByWhereTheyWereRecorded(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	project := filepath.Join(home, "code", "proj")
+	captures := filepath.Join(home, ".slink", "runs")
+	if err := os.MkdirAll(captures, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const capture = `{"schema":"session/v0","name":"NAME","created_at":"2026-10-01T10:00:00.000Z","source":{"kind":"proxy","label":"slink-go@0.0.0-dev","fidelity":"exact"},"metadata":{METADATA},"spans":[{"id":"root","parent_id":null,"type":"agent","name":"NAME","started_at":"2026-10-01T10:00:00.000Z"},{"id":"s1","parent_id":"root","type":"llm_call","name":"turn","started_at":"2026-10-01T10:00:00.000Z","ended_at":"2026-10-01T10:00:01.000Z","status":"ok","model":{"id":"m","provider":"anthropic"},"input":{"messages":[]},"output":{"messages":[]}}]}`
+	for i, c := range []struct{ name, cwd string }{
+		{"always-on tap", ""},
+		{"installed tap, older release", "/"},
+		{"recorded here", project},
+		{"recorded in the parent", filepath.Dir(project)},
+		{"recorded at home", home},
+		{"recorded elsewhere", filepath.Join(home, "code", "other")},
+	} {
+		metadata := ""
+		if c.cwd != "" {
+			metadata = `"cwd":"` + c.cwd + `"`
+		}
+		body := strings.ReplaceAll(strings.ReplaceAll(capture, "NAME", c.name), "METADATA", metadata)
+		if err := os.WriteFile(filepath.Join(captures, "20261001-10000"+string(rune('0'+i))+"-abc123.json"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listed := func(cwd string) string {
+		sources, err := viewSources(importers.Locations{}, cwd, "", "", false, captures)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, source := range sources {
+			names = append(names, source.Title)
+		}
+		sort.Strings(names)
+		return strings.Join(names, "; ")
+	}
+	if got, want := listed(filepath.Join(project, "src")), "always-on tap; installed tap, older release; recorded here; recorded in the parent"; got != want {
+		t.Fatalf("in the project:\n got %s\nwant %s", got, want)
+	}
+	if got, want := listed(home), "always-on tap; installed tap, older release; recorded at home"; got != want {
+		t.Fatalf("at home:\n got %s\nwant %s", got, want)
 	}
 }
 

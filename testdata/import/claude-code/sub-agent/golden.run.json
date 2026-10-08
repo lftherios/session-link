@@ -1,0 +1,345 @@
+{
+  "created_at": "2026-10-08T07:04:43.689Z",
+  "metadata": {
+    "cwd": "/work/checks",
+    "harness_version": "2.1.293",
+    "session_id": "7e0d1c13-892e-4dde-8a1c-29401e151c67",
+    "sub_agents": 1
+  },
+  "name": "DELEGATE: have a sub-agent run the shell check",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "claude-code",
+    "kind": "import",
+    "label": "session-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-08T07:04:43.865Z",
+      "id": "root",
+      "name": "DELEGATE: have a sub-agent run the shell check",
+      "parent_id": null,
+      "started_at": "2026-10-08T07:04:43.689Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-08T07:04:43.717Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "DELEGATE: have a sub-agent run the shell check",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "I'll hand this to a sub-agent.",
+                "type": "text"
+              },
+              {
+                "arguments": {
+                  "description": "Run the shell check",
+                  "prompt": "SUBTASK: print one line with the shell and report it.",
+                  "subagent_type": "general-purpose"
+                },
+                "id": "toolu_mock_1_1",
+                "name": "Agent",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T07:04:43.689Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-08T07:04:43.724Z",
+      "id": "s2",
+      "input": {
+        "arguments": {
+          "description": "Run the shell check",
+          "prompt": "SUBTASK: print one line with the shell and report it.",
+          "subagent_type": "general-purpose"
+        },
+        "name": "Agent",
+        "tool_call_id": "toolu_mock_1_1"
+      },
+      "name": "Agent",
+      "output": {
+        "result": {
+          "agentId": "aebd5e29b1d4088d0",
+          "canContinueAgent": true,
+          "canReadOutputFile": true,
+          "description": "Run the shell check",
+          "isAsync": true,
+          "outputFile": "/tmp/claude-1000/-work-checks/7e0d1c13-892e-4dde-8a1c-29401e151c67/tasks/aebd5e29b1d4088d0.output",
+          "prompt": "SUBTASK: print one line with the shell and report it.",
+          "resolvedModel": "claude-opus-5-5",
+          "status": "async_launched"
+        }
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-08T07:04:43.717Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T07:04:43.780Z",
+      "id": "a1",
+      "name": "Run the shell check",
+      "parent_id": "s2",
+      "started_at": "2026-10-08T07:04:43.720Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-08T07:04:43.735Z",
+      "id": "a1.s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "SUBTASK: print one line with the shell and report it.",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Checking with the shell.",
+                "type": "text"
+              },
+              {
+                "arguments": {
+                  "command": "echo sub-agent at work",
+                  "description": "Print a line"
+                },
+                "id": "toolu_mock_2_1",
+                "name": "Bash",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a1",
+      "started_at": "2026-10-08T07:04:43.720Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-08T07:04:43.774Z",
+      "id": "a1.s2",
+      "input": {
+        "arguments": {
+          "command": "echo sub-agent at work",
+          "description": "Print a line"
+        },
+        "name": "Bash",
+        "tool_call_id": "toolu_mock_2_1"
+      },
+      "name": "Bash",
+      "output": {
+        "result": [
+          {
+            "text": "sub-agent at work",
+            "type": "text"
+          }
+        ]
+      },
+      "parent_id": "a1.s1",
+      "started_at": "2026-10-08T07:04:43.735Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T07:04:43.780Z",
+      "id": "a1.s3",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "sub-agent at work",
+                    "type": "text"
+                  }
+                ],
+                "is_error": false,
+                "tool_call_id": "toolu_mock_2_1",
+                "type": "tool_result"
+              }
+            ],
+            "role": "tool"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The work is finished.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "a1",
+      "started_at": "2026-10-08T07:04:43.774Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-08T07:04:43.752Z",
+      "id": "s3",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "Async agent launched successfully. (This tool result is internal metadata — never quote or paste any part of it, including the agentId below, into a user-facing reply.)\nagentId: aebd5e29b1d4088d0 (internal ID - do not mention to user. Use SendMessage with to: 'aebd5e29b1d4088d0', summary: '<5-10 word recap>' to continue this agent.)\nThe agent is working in the background. You will be notified auto…",
+                    "type": "text"
+                  }
+                ],
+                "tool_call_id": "toolu_mock_1_1",
+                "type": "tool_result"
+              }
+            ],
+            "role": "tool"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The work is finished.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T07:04:43.724Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-08T07:04:43.865Z",
+      "id": "s4",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "<task-notification>\n<task-id>aebd5e29b1d4088d0</task-id>\n<tool-use-id>toolu_mock_1_1</tool-use-id>\n<output-file>/tmp/claude-1000/-work-checks/7e0d1c13-892e-4dde-8a1c-29401e151c67/tasks/aebd5e29b1d4088d0.output</output-file>\n<status>completed</status>\n<summary>Agent \"Run the shell check\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children o…",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The work is finished.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T07:04:43.858Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18
+      }
+    }
+  ]
+}

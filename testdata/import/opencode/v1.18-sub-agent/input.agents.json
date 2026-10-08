@@ -1,0 +1,123 @@
+[
+  {
+    "id": "ses_ee8fb8558ffelwFvb0k68y15nt",
+    "name": "Answer with done (@general subagent)",
+    "session": {
+      "agent": "general",
+      "cost": 0,
+      "directory": "/work/checks",
+      "id": "ses_ee8fb8558ffelwFvb0k68y15nt",
+      "metadata": null,
+      "model": "{\"id\":\"mock-model\",\"providerID\":\"mock\",\"variant\":\"default\"}",
+      "parent_id": "ses_ee8fb8947ffeh10GqkfI9WoPIl",
+      "path": "work/checks",
+      "permission": "[{\"permission\":\"question\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_enter\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_exit\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"task\",\"pattern\":\"*\",\"action\":\"deny\"}]",
+      "project_id": "global",
+      "revert": null,
+      "share_url": null,
+      "slug": "brave-rocket",
+      "summary_additions": 0,
+      "summary_deletions": 0,
+      "summary_diffs": null,
+      "summary_files": 0,
+      "time_archived": null,
+      "time_compacting": null,
+      "time_created": 1791387531943,
+      "time_updated": 1791387531991,
+      "title": "Answer with done (@general subagent)",
+      "tokens_cache_read": 0,
+      "tokens_cache_write": 0,
+      "tokens_input": 120,
+      "tokens_output": 18,
+      "tokens_reasoning": 0,
+      "version": "1.18.35",
+      "workspace_id": null
+    },
+    "messages": [
+      {
+        "data": {
+          "agent": "general",
+          "model": {
+            "modelID": "mock-model",
+            "providerID": "mock"
+          },
+          "role": "user",
+          "summary": {
+            "diffs": []
+          },
+          "time": {
+            "created": 1791387531947
+          }
+        },
+        "id": "msg_117047aab001ZJmtPAL5mw2UBT",
+        "parts": [
+          {
+            "text": "Reply with the single word done.",
+            "type": "text"
+          }
+        ],
+        "time_created": 1791387531947
+      },
+      {
+        "data": {
+          "agent": "general",
+          "cost": 0,
+          "finish": "stop",
+          "mode": "general",
+          "modelID": "mock-model",
+          "parentID": "msg_117047aab001ZJmtPAL5mw2UBT",
+          "path": {
+            "cwd": "/work/checks",
+            "root": "/"
+          },
+          "providerID": "mock",
+          "role": "assistant",
+          "time": {
+            "completed": 1791387531980,
+            "created": 1791387531956
+          },
+          "tokens": {
+            "cache": {
+              "read": 0,
+              "write": 0
+            },
+            "input": 120,
+            "output": 18,
+            "reasoning": 0,
+            "total": 138
+          }
+        },
+        "id": "msg_117047ab4001YROJSDBIkz17y9",
+        "parts": [
+          {
+            "type": "step-start"
+          },
+          {
+            "text": "done",
+            "time": {
+              "end": 1791387531976,
+              "start": 1791387531975
+            },
+            "type": "text"
+          },
+          {
+            "cost": 0,
+            "reason": "stop",
+            "tokens": {
+              "cache": {
+                "read": 0,
+                "write": 0
+              },
+              "input": 120,
+              "output": 18,
+              "reasoning": 0,
+              "total": 138
+            },
+            "type": "step-finish"
+          }
+        ],
+        "time_created": 1791387531956
+      }
+    ]
+  }
+]

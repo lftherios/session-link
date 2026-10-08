@@ -1,0 +1,174 @@
+[
+  {
+    "data": {
+      "agent": "build",
+      "model": {
+        "modelID": "mock-model",
+        "providerID": "mock"
+      },
+      "role": "user",
+      "summary": {
+        "diffs": []
+      },
+      "time": {
+        "created": 1791387530965
+      }
+    },
+    "id": "msg_1170476d5001xXrMc0uj9vNH1D",
+    "parts": [
+      {
+        "text": "\"DELEGATE: ask a sub-agent to answer\"",
+        "type": "text"
+      }
+    ],
+    "time_created": 1791387530965
+  },
+  {
+    "data": {
+      "agent": "build",
+      "cost": 0,
+      "finish": "tool-calls",
+      "mode": "build",
+      "modelID": "mock-model",
+      "parentID": "msg_1170476d5001xXrMc0uj9vNH1D",
+      "path": {
+        "cwd": "/work/checks",
+        "root": "/"
+      },
+      "providerID": "mock",
+      "role": "assistant",
+      "time": {
+        "completed": 1791387531988,
+        "created": 1791387531281
+      },
+      "tokens": {
+        "cache": {
+          "read": 0,
+          "write": 0
+        },
+        "input": 120,
+        "output": 18,
+        "reasoning": 0,
+        "total": 138
+      }
+    },
+    "id": "msg_117047811001BvdWNbnSPyFwSn",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "callID": "call_mock_5",
+        "state": {
+          "input": {
+            "description": "Answer with done",
+            "prompt": "Reply with the single word done.",
+            "subagent_type": "general"
+          },
+          "metadata": {
+            "model": {
+              "modelID": "mock-model",
+              "providerID": "mock"
+            },
+            "parentSessionId": "ses_ee8fb8947ffeh10GqkfI9WoPIl",
+            "sessionId": "ses_ee8fb8558ffelwFvb0k68y15nt",
+            "truncated": false
+          },
+          "output": "\u003ctask id=\"ses_ee8fb8558ffelwFvb0k68y15nt\" state=\"completed\"\u003e\n\u003ctask_result\u003e\ndone\n\u003c/task_result\u003e\n\u003c/task\u003e",
+          "status": "completed",
+          "time": {
+            "end": 1791387531985,
+            "start": 1791387531945
+          },
+          "title": "Answer with done"
+        },
+        "tool": "task",
+        "type": "tool"
+      },
+      {
+        "cost": 0,
+        "reason": "tool-calls",
+        "tokens": {
+          "cache": {
+            "read": 0,
+            "write": 0
+          },
+          "input": 120,
+          "output": 18,
+          "reasoning": 0,
+          "total": 138
+        },
+        "type": "step-finish"
+      }
+    ],
+    "time_created": 1791387531281
+  },
+  {
+    "data": {
+      "agent": "build",
+      "cost": 0,
+      "finish": "stop",
+      "mode": "build",
+      "modelID": "mock-model",
+      "parentID": "msg_1170476d5001xXrMc0uj9vNH1D",
+      "path": {
+        "cwd": "/work/checks",
+        "root": "/"
+      },
+      "providerID": "mock",
+      "role": "assistant",
+      "time": {
+        "completed": 1791387532015,
+        "created": 1791387531989
+      },
+      "tokens": {
+        "cache": {
+          "read": 0,
+          "write": 0
+        },
+        "input": 120,
+        "output": 18,
+        "reasoning": 0,
+        "total": 138
+      }
+    },
+    "id": "msg_117047ad50017n345iUk9DLvrU",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "text": "The tool finished; report what it returned.",
+        "time": {
+          "end": 1791387532011,
+          "start": 1791387532010
+        },
+        "type": "reasoning"
+      },
+      {
+        "text": "It returned: \u003ctask id=\"ses_ee8fb8558ffelwFvb0k68y15nt\" state=\"completed\"\u003e\n\u003ctask_result\u003e\ndone\n",
+        "time": {
+          "end": 1791387532013,
+          "start": 1791387532012
+        },
+        "type": "text"
+      },
+      {
+        "cost": 0,
+        "reason": "stop",
+        "tokens": {
+          "cache": {
+            "read": 0,
+            "write": 0
+          },
+          "input": 120,
+          "output": 18,
+          "reasoning": 0,
+          "total": 138
+        },
+        "type": "step-finish"
+      }
+    ],
+    "time_created": 1791387531989
+  }
+]

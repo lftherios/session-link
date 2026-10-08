@@ -50,9 +50,10 @@ func role(v any) string {
 }
 
 // harnessWrapper matches harness-injected text carried in user messages:
-// environment and instruction blocks, reminders and local slash-command
-// records. Keep in sync with HARNESS_WRAPPER in packages/viewer/session-model.ts.
-var harnessWrapper = regexp.MustCompile(`(?i)^\s*<(?:environment_context|system|instructions|user_instructions|AGENTS|local-command-|command-name|command-message|command-args)`)
+// environment and instruction blocks, reminders, background-task
+// notifications and local slash-command records. Keep in sync with
+// HARNESS_WRAPPER in packages/viewer/session-model.ts.
+var harnessWrapper = regexp.MustCompile(`(?i)^\s*<(?:environment_context|system|instructions|user_instructions|AGENTS|task-notification|local-command-|command-name|command-message|command-args)`)
 
 // readingRole mirrors the viewer's content model. User messages made only of
 // tool results are agent activity, and harness wrappers are provided context,

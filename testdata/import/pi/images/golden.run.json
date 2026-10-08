@@ -1,0 +1,179 @@
+{
+  "created_at": "2026-10-08T13:00:00.000Z",
+  "metadata": {
+    "cwd": "/work/dashboard",
+    "session_id": "01900000-0000-7000-8000-000000000004"
+  },
+  "name": "Compare this screenshot with charts/expected.png",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "pi",
+    "kind": "import",
+    "label": "pi-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-08T13:00:08.000Z",
+      "id": "root",
+      "name": "Compare this screenshot with charts/expected.png",
+      "parent_id": null,
+      "started_at": "2026-10-08T13:00:00.000Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-08T13:00:03.000Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Compare this screenshot with charts/expected.png",
+                "type": "text"
+              },
+              {
+                "mime": "image/png",
+                "type": "image",
+                "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAYAAAAGCAIAAABvrngfAAAAfUlEQVR42gFyAI3/AEQggjz95vHCazD5DsfdAeSIdQA0og8LDQTDbtgOceD9d7B2cOsAlAvVM1+XParYYZuR/8kR9XzOANRYu78s4DdTyb36D/AWnclXVgB0BmZ2z7C064kCxEJp2hz2umYA0/i21LEAqeoOdVpcLoIQJCoIlx43hnD9UNQAAAAASUVORK5CYII="
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "arguments": {
+                  "path": "charts/expected.png"
+                },
+                "id": "call_read",
+                "name": "read",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T13:00:01.000Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 380,
+        "output_tokens": 14
+      }
+    },
+    {
+      "ended_at": "2026-10-08T13:00:04.000Z",
+      "id": "s2",
+      "input": {
+        "arguments": {
+          "path": "charts/expected.png"
+        },
+        "name": "read",
+        "tool_call_id": "call_read"
+      },
+      "name": "read",
+      "output": {
+        "result": [
+          {
+            "text": "Read image file [image/png]",
+            "type": "text"
+          },
+          {
+            "mime": "image/png",
+            "type": "image",
+            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAYAAAAGCAIAAABvrngfAAAAfUlEQVR42gFyAI3/ABwuK7hWnYBsElHcyb7jiRIOugDuo8LYVFp4dgxaplhFuF3k1LoAtbnkUszsf/qO/7Xo7LPp+XGmAFWJ9Z6b0J9q+rsmrgRhNh4ZiwB0NkWIfWse2BAdubhYfwwqOiIADBQKv4JBUF4AxRZ+TRICsDmSvBo0XYC9rhgAAAAASUVORK5CYII="
+          }
+        ]
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-08T13:00:03.000Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T13:00:08.000Z",
+      "id": "s3",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "Read image file [image/png]",
+                    "type": "text"
+                  },
+                  {
+                    "mime": "image/png",
+                    "type": "image",
+                    "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAYAAAAGCAIAAABvrngfAAAAfUlEQVR42gFyAI3/ABwuK7hWnYBsElHcyb7jiRIOugDuo8LYVFp4dgxaplhFuF3k1LoAtbnkUszsf/qO/7Xo7LPp+XGmAFWJ9Z6b0J9q+rsmrgRhNh4ZiwB0NkWIfWse2BAdubhYfwwqOiIADBQKv4JBUF4AxRZ+TRICsDmSvBo0XYC9rhgAAAAASUVORK5CYII="
+                  }
+                ],
+                "tool_call_id": "call_read",
+                "type": "tool_result"
+              }
+            ],
+            "role": "tool"
+          },
+          {
+            "content": [
+              {
+                "text": "And this one?",
+                "type": "text"
+              },
+              {
+                "data": {
+                  "data": "AAAAAAAAAAAAAAAA",
+                  "type": "image"
+                },
+                "type": "data"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The first two differ on the y-axis. I cannot read the third.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T13:00:05.000Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 380,
+        "output_tokens": 14
+      }
+    }
+  ]
+}

@@ -1,0 +1,169 @@
+[
+  {
+    "data": {
+      "agent": "build",
+      "model": {
+        "modelID": "mock-model",
+        "providerID": "mock"
+      },
+      "role": "user",
+      "summary": {
+        "diffs": []
+      },
+      "time": {
+        "created": 1791387529124
+      }
+    },
+    "id": "msg_117046fa40013jVG8GC8Vik1IA",
+    "parts": [
+      {
+        "text": "\"RUN_TOOL: print a greeting with the shell and report what it printed\"",
+        "type": "text"
+      }
+    ],
+    "time_created": 1791387529124
+  },
+  {
+    "data": {
+      "agent": "build",
+      "cost": 0,
+      "finish": "tool-calls",
+      "mode": "build",
+      "modelID": "mock-model",
+      "parentID": "msg_117046fa40013jVG8GC8Vik1IA",
+      "path": {
+        "cwd": "/work/greeting",
+        "root": "/"
+      },
+      "providerID": "mock",
+      "role": "assistant",
+      "time": {
+        "completed": 1791387530257,
+        "created": 1791387529439
+      },
+      "tokens": {
+        "cache": {
+          "read": 0,
+          "write": 0
+        },
+        "input": 120,
+        "output": 18,
+        "reasoning": 0,
+        "total": 138
+      }
+    },
+    "id": "msg_1170470df001CmuLRJxa7LBC8z",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "callID": "call_mock_2",
+        "state": {
+          "input": {
+            "command": "echo hello from the tool",
+            "description": "Print a greeting"
+          },
+          "metadata": {
+            "exit": 0,
+            "output": "hello from the tool\n",
+            "truncated": false
+          },
+          "output": "hello from the tool\n",
+          "status": "completed",
+          "time": {
+            "end": 1791387530252,
+            "start": 1791387530210
+          },
+          "title": "echo hello from the tool"
+        },
+        "tool": "bash",
+        "type": "tool"
+      },
+      {
+        "cost": 0,
+        "reason": "tool-calls",
+        "tokens": {
+          "cache": {
+            "read": 0,
+            "write": 0
+          },
+          "input": 120,
+          "output": 18,
+          "reasoning": 0,
+          "total": 138
+        },
+        "type": "step-finish"
+      }
+    ],
+    "time_created": 1791387529439
+  },
+  {
+    "data": {
+      "agent": "build",
+      "cost": 0,
+      "finish": "stop",
+      "mode": "build",
+      "modelID": "mock-model",
+      "parentID": "msg_117046fa40013jVG8GC8Vik1IA",
+      "path": {
+        "cwd": "/work/greeting",
+        "root": "/"
+      },
+      "providerID": "mock",
+      "role": "assistant",
+      "time": {
+        "completed": 1791387530284,
+        "created": 1791387530259
+      },
+      "tokens": {
+        "cache": {
+          "read": 0,
+          "write": 0
+        },
+        "input": 120,
+        "output": 18,
+        "reasoning": 0,
+        "total": 138
+      }
+    },
+    "id": "msg_117047413001ehWfr9sSYxcEJK",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "text": "The tool finished; report what it returned.",
+        "time": {
+          "end": 1791387530280,
+          "start": 1791387530279
+        },
+        "type": "reasoning"
+      },
+      {
+        "text": "It returned: hello from the tool",
+        "time": {
+          "end": 1791387530281,
+          "start": 1791387530280
+        },
+        "type": "text"
+      },
+      {
+        "cost": 0,
+        "reason": "stop",
+        "tokens": {
+          "cache": {
+            "read": 0,
+            "write": 0
+          },
+          "input": 120,
+          "output": 18,
+          "reasoning": 0,
+          "total": 138
+        },
+        "type": "step-finish"
+      }
+    ],
+    "time_created": 1791387530259
+  }
+]

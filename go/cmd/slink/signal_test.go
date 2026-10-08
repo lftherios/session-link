@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -126,5 +127,27 @@ func TestDevWrapperForwardsDirectSIGINT(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "captured 0 LLM calls") {
 		t.Errorf("missing summary after direct SIGINT\nstderr:\n%s", stderr.String())
+	}
+}
+
+// A recording that saw no calls says why. Codex is the known tool that does
+// not take its endpoint from the variables the recorder exports.
+func TestRecordExplainsAnEmptyCapture(t *testing.T) {
+	bin := buildSlink(t)
+	codex := filepath.Join(t.TempDir(), "codex")
+	if err := os.WriteFile(codex, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for command, want := range map[string]string{codex: "slink view --from codex", "true": "may not honor ANTHROPIC_BASE_URL / OPENAI_BASE_URL"} {
+		cmd := exec.Command(bin, "record", "--", command)
+		cmd.Env = append(os.Environ(), "SLINK_HOME="+t.TempDir())
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("%s: %v\n%s", command, err, stderr.String())
+		}
+		if out := stderr.String(); !strings.Contains(out, "captured 0 LLM calls") || !strings.Contains(out, want) {
+			t.Fatalf("record -- %s did not explain the empty capture:\n%s", filepath.Base(command), out)
+		}
 	}
 }

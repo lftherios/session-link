@@ -28,7 +28,7 @@
       "type": "llm_call",
       "name": "turn",
       "started_at": "2026-07-20T09:00:00.000Z",
-      "ended_at": "2026-07-20T09:00:02.000Z",
+      "ended_at": "2026-07-20T09:00:03.000Z",
       "status": "ok",
       "model": {
         "id": "claude-sonnet-5",
@@ -36,7 +36,7 @@
       },
       "usage": {
         "input_tokens": 100,
-        "output_tokens": 8
+        "output_tokens": 20
       },
       "input": {
         "messages": [
@@ -59,39 +59,10 @@
               {
                 "type": "text",
                 "text": "Reading the header first."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": "s2",
-      "parent_id": "root",
-      "type": "llm_call",
-      "name": "turn",
-      "started_at": "2026-07-20T09:00:02.000Z",
-      "ended_at": "2026-07-20T09:00:03.000Z",
-      "status": "ok",
-      "model": {
-        "id": "claude-sonnet-5",
-        "provider": "anthropic"
-      },
-      "usage": {
-        "input_tokens": 100,
-        "output_tokens": 20
-      },
-      "input": {
-        "messages": []
-      },
-      "output": {
-        "messages": [
-          {
-            "role": "assistant",
-            "content": [
+              },
               {
-                "type": "tool_call",
                 "id": "toolu_h1",
+                "type": "tool_call",
                 "name": "Read",
                 "arguments": {
                   "file_path": "header.tsx"
@@ -103,8 +74,8 @@
       }
     },
     {
-      "id": "s3",
-      "parent_id": "s2",
+      "id": "s2",
+      "parent_id": "s1",
       "type": "tool_call",
       "name": "Read",
       "started_at": "2026-07-20T09:00:03.000Z",
@@ -127,7 +98,7 @@
       }
     },
     {
-      "id": "s4",
+      "id": "s3",
       "parent_id": "root",
       "type": "llm_call",
       "name": "turn",
@@ -185,7 +156,7 @@
       }
     },
     {
-      "id": "s5",
+      "id": "s4",
       "parent_id": "root",
       "type": "custom",
       "name": "harness error",

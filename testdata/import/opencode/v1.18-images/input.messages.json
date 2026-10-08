@@ -1,0 +1,187 @@
+[
+  {
+    "data": {
+      "agent": "build",
+      "model": {
+        "modelID": "mock-model",
+        "providerID": "mock"
+      },
+      "role": "user",
+      "summary": {
+        "diffs": []
+      },
+      "time": {
+        "created": 1791442159375
+      }
+    },
+    "id": "msg_11a46070f001F01d8ZjfrnbGMs",
+    "parts": [
+      {
+        "synthetic": true,
+        "text": "Called the Read tool with the following input: {\"filePath\":\"/work/shots/shot.png\"}",
+        "type": "text"
+      },
+      {
+        "synthetic": true,
+        "text": "Image read successfully",
+        "type": "text"
+      },
+      {
+        "filename": "shot.png",
+        "mime": "image/png",
+        "synthetic": true,
+        "type": "file",
+        "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAIAAAACUFjqAAABQUlEQVR4AQE2Acn+AKVNyhglMLsdbRMs3tYjey7ZHj9yH8sZcRdElNZJPACdXDRgvjEgHmn+2qDu6LmZf1x8KZn9r+WTJTzWVK8ATfrXFCegrrP+6SMvivIhH57kkcWxC+y1Vjv8Hm+TAEJ+y8j+KVXlzY5G3I7Ut8J2TSpaTXZ3BvhdhpACSgDWvaNAG+nIy8zJNfbNH2EiauFTOK4aNABNM7oNJGoAwEyBsbryPjv57vX3nytJNK+H9VILablLDZguhbtVALZyqHJjes10Zvy2Dg6P8YRjsOSyuilwNHTwZKxo9wAA9bArPcZm9FveqizK7c0rUVdBDk3uSvKzT0MKBzQAR95jbA6AbJV7poTWQx+16tdCTQnhXQJMWEjyPR+mAPc2HX9hjRUy5w4g4qZmjef0foRn5UbVPsjioSV726pslOgvqCjrAAAAAElFTkSuQmCC"
+      },
+      {
+        "text": "\"Compare this image with READ_IMAGE/work/shots/chart.png and describe both\"",
+        "type": "text"
+      }
+    ],
+    "time_created": 1791442159375
+  },
+  {
+    "data": {
+      "agent": "build",
+      "cost": 0,
+      "finish": "tool-calls",
+      "mode": "build",
+      "modelID": "mock-model",
+      "parentID": "msg_11a46070f001F01d8ZjfrnbGMs",
+      "path": {
+        "cwd": "/work/shots",
+        "root": "/"
+      },
+      "providerID": "mock",
+      "role": "assistant",
+      "time": {
+        "completed": 1791442160485,
+        "created": 1791442159737
+      },
+      "tokens": {
+        "cache": {
+          "read": 0,
+          "write": 0
+        },
+        "input": 120,
+        "output": 18,
+        "reasoning": 0,
+        "total": 138
+      }
+    },
+    "id": "msg_11a4608790014GP1WbwPz9IMon",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "callID": "call_mock_2",
+        "state": {
+          "attachments": [
+            {
+              "id": "prt_11a460b5e001CVpFxx826XSbzY",
+              "messageID": "msg_11a4608790014GP1WbwPz9IMon",
+              "mime": "image/png",
+              "sessionID": "ses_ee5b9f914ffeqtxXMa4Y1ulXaP",
+              "type": "file",
+              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAIAAAACUFjqAAABQUlEQVR4AQE2Acn+AOfu52Fe818w5JtILhXK51AHIB4SYXsP7afhZHeW/wACK+qO0CqCoXWTDyM3zTeUxSIIAG1rGvDAy9YlZYoArCyfqgfRPER+MwUe7vlaYOVhQ9bEO8rXbACKmwprAF/JMxVKbeKEBKiXxSUmLmp8B7y+6EH3RcVdTp90fwBhUWTG9yjXGDU3E4J6yIPX+5ZZI0B09SWPbGgII4kA0uR/HhdakLxDL7lG5qlHEQnzt58RCib2Ip+jRSUmAOe8FkKutCvyJ9UP/wfDwgYkKS47g9Wpxurh7CoPngAs9gt1Of74ggW8mklnVq/i/3unz4Bl3GZtxHCia0UARP6zFCCNVjnm8Yxt08P8oeekJhCOFY+1nglFz+hhAAyIeUgYO+Q3vCdlZvODWwXxEltzi7FRyXIs0sZC5otmj54ocMymAAAAAElFTkSuQmCC"
+            }
+          ],
+          "input": {
+            "filePath": "/work/shots/chart.png"
+          },
+          "metadata": {
+            "loaded": [],
+            "preview": "Image read successfully",
+            "truncated": false
+          },
+          "output": "Image read successfully",
+          "status": "completed",
+          "time": {
+            "end": 1791442160480,
+            "start": 1791442160467
+          },
+          "title": "work/shots/chart.png"
+        },
+        "tool": "read",
+        "type": "tool"
+      },
+      {
+        "cost": 0,
+        "reason": "tool-calls",
+        "tokens": {
+          "cache": {
+            "read": 0,
+            "write": 0
+          },
+          "input": 120,
+          "output": 18,
+          "reasoning": 0,
+          "total": 138
+        },
+        "type": "step-finish"
+      }
+    ],
+    "time_created": 1791442159737
+  },
+  {
+    "data": {
+      "agent": "build",
+      "cost": 0,
+      "finish": "stop",
+      "mode": "build",
+      "modelID": "mock-model",
+      "parentID": "msg_11a46070f001F01d8ZjfrnbGMs",
+      "path": {
+        "cwd": "/work/shots",
+        "root": "/"
+      },
+      "providerID": "mock",
+      "role": "assistant",
+      "time": {
+        "completed": 1791442160519,
+        "created": 1791442160487
+      },
+      "tokens": {
+        "cache": {
+          "read": 0,
+          "write": 0
+        },
+        "input": 120,
+        "output": 18,
+        "reasoning": 0,
+        "total": 138
+      }
+    },
+    "id": "msg_11a460b67001EBFw2275yl5kqd",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "text": "A square of coloured noise.",
+        "time": {
+          "end": 1791442160516,
+          "start": 1791442160515
+        },
+        "type": "text"
+      },
+      {
+        "cost": 0,
+        "reason": "stop",
+        "tokens": {
+          "cache": {
+            "read": 0,
+            "write": 0
+          },
+          "input": 120,
+          "output": 18,
+          "reasoning": 0,
+          "total": 138
+        },
+        "type": "step-finish"
+      }
+    ],
+    "time_created": 1791442160487
+  }
+]

@@ -164,9 +164,10 @@ export function sourceRange(source: string, selected: string, hint = 0): { start
 }
 
 // Harness wrappers carried in user messages: environment and instruction
-// blocks, reminders and local slash-command records. They are provided
-// context, not human input. Keep in sync with go/internal/share/catalog.go.
-const HARNESS_WRAPPER = /^\s*<(?:environment_context|system|instructions|user_instructions|AGENTS|local-command-|command-name|command-message|command-args)/i;
+// blocks, reminders, background-task notifications and local slash-command
+// records. They are provided context, not human input. Keep in sync with
+// go/internal/share/catalog.go.
+const HARNESS_WRAPPER = /^\s*<(?:environment_context|system|instructions|user_instructions|AGENTS|task-notification|local-command-|command-name|command-message|command-args)/i;
 export type ReadingRole = "human" | "context" | "tool" | "agent";
 // How the reader treats a message, following the content model. Some
 // harnesses record tool results and injected context with the user role.

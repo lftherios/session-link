@@ -1,0 +1,171 @@
+{
+  "created_at": "2026-10-05T08:30:00.000Z",
+  "metadata": {
+    "branch_entries_skipped": 2,
+    "cwd": "/work/flaky",
+    "session_id": "01900000-0000-7000-8000-000000000003"
+  },
+  "name": "Upload test race",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "pi",
+    "kind": "import",
+    "label": "pi-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-05T08:30:35.000Z",
+      "id": "root",
+      "name": "Upload test race",
+      "parent_id": null,
+      "started_at": "2026-10-05T08:30:00.000Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-05T08:30:04.000Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The upload test fails one run in five. Find out why.",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "It races the temp directory cleanup.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-05T08:30:01.000Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 420,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-05T08:30:24.000Z",
+      "error": {
+        "message": "overloaded_error: the provider is overloaded"
+      },
+      "id": "s2",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The user tried deleting the upload test and went back on it.",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          },
+          {
+            "content": [
+              {
+                "text": "Fix the race instead",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-05T08:30:21.000Z",
+      "status": "error",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 420,
+        "output_tokens": 18
+      }
+    },
+    {
+      "ended_at": "2026-10-05T08:30:35.000Z",
+      "id": "s3",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "retry",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "The test now waits for the cleanup to finish.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-05T08:30:30.000Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 420,
+        "output_tokens": 18
+      }
+    }
+  ]
+}

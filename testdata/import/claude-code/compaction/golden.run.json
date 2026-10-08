@@ -1,0 +1,131 @@
+{
+  "created_at": "2026-10-04T16:20:00.000Z",
+  "metadata": {
+    "cwd": "/work/settings",
+    "harness_version": "2.1.292",
+    "session_id": "8d2a6b1f-3c5e-4f70-a9b4-6e1c0d7f2a35"
+  },
+  "name": "Port the settings page to the new form components",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "claude-code",
+    "kind": "import",
+    "label": "session-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-04T16:20:36.000Z",
+      "id": "root",
+      "name": "Port the settings page to the new form components",
+      "parent_id": null,
+      "started_at": "2026-10-04T16:20:00.000Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-04T16:20:04.000Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Port the settings page to the new form components",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Ported the profile and security sections.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-04T16:20:00.000Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "input_tokens": 900,
+        "output_tokens": 12
+      }
+    },
+    {
+      "ended_at": "2026-10-04T16:20:36.000Z",
+      "id": "s2",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "This session is being continued from a previous conversation that ran out of context. The conversation is summarized below:\n1. The profile and security sections of the settings page are ported.\n2. The notifications section is next.",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          },
+          {
+            "content": [
+              {
+                "text": "<task-notification>\n<task-id>bg_1</task-id>\n<status>completed</status>\n<summary>Background test run finished: 14 passed</summary>\n</task-notification>",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          },
+          {
+            "content": [
+              {
+                "text": "Continue with the notifications section",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "claude-opus-5-5",
+        "provider": "anthropic"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Ported the notifications section; the 14 tests still pass.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-04T16:20:30.000Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "input_tokens": 900,
+        "output_tokens": 12
+      }
+    }
+  ]
+}

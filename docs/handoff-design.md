@@ -1,6 +1,7 @@
 # CLI to web: first implementation
 
-2026-09-11 · implements the first slice of the [product plan](product-plan.md).
+2026-09-11 · implements the first slice of the [product plan](product-plan.md);
+harness contract updated 2026-10-07.
 These are development scenarios, not reports of real colleague exchanges.
 
 ## Common interaction
@@ -85,20 +86,124 @@ generated document, including its raw view and download.
 
 ## Harness contract and current verification
 
-| Harness | Invocation into local web | Explicit identity | Capture available | Evidence and limits |
+| Harness | Invocation into local web | Explicit identity | Capture available | Checked against |
 | --- | --- | --- | --- | --- |
-| Claude Code | `slink view --from claude-code` | Session ID or transcript path | Reconstructed transcript; proxy capture when recorded | File discovery, subdirectories and import fixtures tested. Native command integration remains open. |
-| Codex | `slink view --from codex` | Header `id` / `session_id`, or rollout path | Reconstructed transcript; proxy capture when recorded | Both header spellings and independent sessions tested. A dedicated in-harness entry remains open. |
-| pi | `/slink view` or common CLI | Current persisted transcript path | Reconstructed history; live SDK capture fallback | Bridge tested with resumed history and a new live turn; real pi runtime pilot remains open. |
-| opencode | `slink view --from opencode` | SQLite session ID | Reconstructed messages and tool parts | Database discovery and pinned loading tested against fixture schemas. Structural patch events are not a saved final diff. |
-| Hermes | `slink view --from hermes` | SQLite session ID | Reconstructed messages | Experimental; fixture schema verified. Live installation compatibility remains open. |
+| Claude Code | `slink view --from claude-code` | Session ID or transcript path | Reconstructed transcript; proxy capture when recorded | 2.1.292: field names and directory naming read from its program; not run live |
+| Codex | `slink view --from codex` | Header `id` / `session_id`, or rollout path | Reconstructed transcript; proxy capture only through Codex's own configuration | 0.160.1: rollout item kinds from its source; routing run live against a mock provider |
+| pi | `/slink view` or common CLI | Current persisted transcript path | Reconstructed history; live SDK capture | 0.67.68 and 1.0.4: session format and extension events from the packages; not run live |
+| omp | `slink view --from omp` | Session ID or transcript path | Reconstructed transcript | 18.1.18: session format and directory rules from its source; run live against a mock provider |
+| opencode | `slink view --from opencode` | SQLite session ID | Reconstructed messages and tool parts | 1.18.35: table definitions from its source; run live against a mock provider |
+| Hermes | `slink view --from hermes` | SQLite session ID | Reconstructed messages | 0.15.1: schema and session-list rules from its source; not run live |
+
+Evidence and limits for each:
+
+- **Claude Code.** File discovery, subdirectories and import fixtures are
+  tested. Project directories follow Claude Code's own naming, so paths with
+  punctuation and paths past its 200-character cut are found, and
+  `CLAUDE_CONFIG_DIR` is honoured. A response written as several entries
+  imports as one call with its usage counted once. The summary written when a
+  conversation is compacted, and background-task notifications, read as
+  provided context. A sub-agent's transcript, kept in `subagents/` beside the
+  session, is nested under the `Agent` call its meta file names; inline
+  sidechain entries from older versions are still only counted. Native
+  command integration remains open.
+- **Codex.** Both header spellings and independent sessions are tested.
+  Function, custom-tool (`apply_patch`), local shell, tool search and web
+  search calls import as tool calls in recorded order; any other rollout item
+  is kept verbatim in a custom span. `slink on` and `slink record` export
+  `OPENAI_BASE_URL`, which Codex does not read, so they capture nothing from
+  it and `slink record` says so. With an API key, setting `openai_base_url`
+  in Codex's configuration to the tap's `/openai/v1` address does route its
+  calls through the tap, once its WebSocket attempts fall back to HTTP, and
+  they are recorded. ChatGPT sign-in is untested. Rollouts compressed to
+  `.jsonl.zst`, which 0.160.1 does behind a flag that is off by default, are
+  not read. A sub-agent thread is its own rollout that opens with a copy of
+  its parent's history; it is nested under the `spawn_agent` call that
+  returned its task path, read from where its own history starts. Messages
+  between agents are kept, with a task's payload as Codex records it, which
+  is encrypted content. A dedicated in-harness entry remains open.
+- **pi.** The import is the branch that ends at the transcript's last entry,
+  which is the one pi resumes; messages on branches the person went back from
+  are counted in the metadata. Compaction and branch summaries read as
+  provided context, an errored turn is marked as one, and a name given to
+  the session is its title. `PI_CODING_AGENT_DIR`, and a session directory
+  set through `PI_CODING_AGENT_SESSION_DIR` or `sessionDir`, are followed.
+  `/slink` publishes the live capture when it holds the whole session, and
+  pi's transcript when the session was resumed. The bridge is tested with a
+  stub CLI; a real pi runtime pilot remains open.
+- **omp.** oh-my-pi keeps pi's transcript, so the pi importer reads it; the
+  session's title comes from the title line omp rewrites in place, and a
+  tool's span starts when omp records that it started. Discovery follows
+  omp's own rules: its store under `~/.omp` or `PI_CONFIG_DIR`, a profile
+  from `OMP_PROFILE` or `PI_PROFILE`, `PI_CODING_AGENT_DIR`, data it has
+  moved under `XDG_DATA_HOME`, and its directory names, which are relative
+  to the home or temp directory where the project is inside one. A
+  directory still carrying the older whole-path name is read too. A real
+  18.1.18 run, in an isolated home against a mock provider, is the
+  `omp/v18.1-run` fixture. A sub-agent's transcript, in a directory named
+  after its session's file, is nested under the `task` call that reports it.
+  A session directory given with `--session-dir` is not followed, and
+  whether the pi extension loads in omp is untested.
+- **opencode.** Database discovery and pinned loading are tested against
+  fixture schemas, and `OPENCODE_DB` is followed. A real 1.18.35 run, in an
+  isolated home against a mock provider, wrote its session to the `message`
+  and `part` tables, which are the ones read; its text, reasoning, tool call,
+  result and usage imported as recorded, and that session is the
+  `opencode/v1.18-run` fixture. opencode's second store (`session_message`),
+  for a newer session engine, stayed empty in that run and is not read. Text
+  opencode wrote itself into a user message, such as its account of reading
+  an attached file, reads as provided context. A sub-agent's work is a child
+  session, nested under the `task` call that records its ID. Structural patch
+  events are not a saved final diff.
+- **Hermes.** Experimental. Rewound messages are left out, and content is
+  structured only where Hermes marks it so. A continuation after context
+  compression is found in its conversation's directory and imported as its
+  own session, linked to its parent in the metadata; the two are not merged,
+  because the continuation repeats part of its parent. A delegate's session
+  is nested under the tool call that was running when it started, because
+  Hermes links it to its parent session and not to a call. `HERMES_HOME` and
+  the active profile select the store.
 
 Prompts, outputs and tool evidence use the existing importers and their golden
 fixtures. Fidelity labels remain visible. None of these adapters establishes
 exclusive ownership of working-tree changes. No final-diff guarantee is added.
-Discovery lists up to 30 native candidates, while an explicit ID can reach an
-older session. The picker is a startup list; restart to discover newly created
-sessions. An unreadable database is surfaced without hiding readable adapters.
+
+An image a person attached, and one a tool returned, import as image parts
+that carry the image itself, so the reader shows them without fetching
+anything: Claude Code's inline images, Codex's attached images, tool results
+and generated images, pi's images, omp's from the blob store beside its
+sessions, opencode's attached files, tool attachments and files in replies,
+and Hermes's image parts. The `images` fixture of each harness covers it; the
+omp and opencode ones come from real runs. An image whose bytes are not at
+hand, such as an omp reference without its blob store, or whose kind cannot
+be told, is kept as recorded, as data. Two limits remain. An exact capture,
+from the tap or the pi extension, leaves an image's bytes in the raw request
+and shows a note in its place. An excerpt cannot include an image yet.
+
+A sub-agent's work is part of the session that delegated it. Every harness
+keeps it apart, in a transcript, rollout or row of its own, and each import
+reads it back and nests it as a child agent under the tool call that started
+it, so the reader shows the delegated task and the work done on it where the
+delegation happened. Sub-agents of sub-agents nest the same way. A preview is
+made again when a sub-agent's transcript changes, not only its parent's. The
+`sub-agent` fixture of each harness covers it; the Claude Code, Codex, omp and
+opencode ones are real runs, reduced, and the Hermes one is written by hand.
+An exact capture has no such structure: the tap records every call in one
+flat sequence.
+
+A session belongs to the directory it was started in. Discovery looks in the
+current directory, then in each parent short of the home directory and the
+filesystem root, for `slink view`, `slink import` and `slink share` alike; a
+session started in the home directory is found only there. It lists up to 30
+native candidates, most recently active first, while an explicit ID can reach
+an older session. Sessions a harness records for its sub-agents are left out
+of the list and are never chosen as the newest session: Codex sub-agent and
+internal threads, opencode child sessions, and Hermes sessions started while
+their parent was live. An explicit ID still reaches one. Captures follow the
+same rule by the directory they record; the always-on tap serves every shell
+and records none, so its captures are listed in every project. The picker is a
+startup list; restart to discover newly created sessions. An unreadable
+database is surfaced without hiding readable adapters.
 
 ## Validation and remaining work
 

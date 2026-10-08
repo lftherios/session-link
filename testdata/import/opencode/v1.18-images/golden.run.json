@@ -1,0 +1,158 @@
+{
+  "created_at": "2026-10-08T06:49:19.339Z",
+  "metadata": {
+    "cwd": "/work/shots",
+    "harness_version": "1.18.35",
+    "session_id": "ses_ee5b9f914ffeqtxXMa4Y1ulXaP"
+  },
+  "name": "Image check",
+  "schema": "session/v0",
+  "source": {
+    "fidelity": "reconstructed",
+    "harness": "opencode",
+    "kind": "import",
+    "label": "session-import@0.1.0"
+  },
+  "spans": [
+    {
+      "ended_at": "2026-10-08T06:49:20.519Z",
+      "id": "root",
+      "name": "Image check",
+      "parent_id": null,
+      "started_at": "2026-10-08T06:49:19.339Z",
+      "status": "ok",
+      "type": "agent"
+    },
+    {
+      "ended_at": "2026-10-08T06:49:20.485Z",
+      "id": "s1",
+      "input": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Called the Read tool with the following input: {\"filePath\":\"/work/shots/shot.png\"}",
+                "type": "text"
+              },
+              {
+                "text": "Image read successfully",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          },
+          {
+            "content": [
+              {
+                "mime": "image/png",
+                "type": "image",
+                "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAIAAAACUFjqAAABQUlEQVR4AQE2Acn+AKVNyhglMLsdbRMs3tYjey7ZHj9yH8sZcRdElNZJPACdXDRgvjEgHmn+2qDu6LmZf1x8KZn9r+WTJTzWVK8ATfrXFCegrrP+6SMvivIhH57kkcWxC+y1Vjv8Hm+TAEJ+y8j+KVXlzY5G3I7Ut8J2TSpaTXZ3BvhdhpACSgDWvaNAG+nIy8zJNfbNH2EiauFTOK4aNABNM7oNJGoAwEyBsbryPjv57vX3nytJNK+H9VILablLDZguhbtVALZyqHJjes10Zvy2Dg6P8YRjsOSyuilwNHTwZKxo9wAA9bArPcZm9FveqizK7c0rUVdBDk3uSvKzT0MKBzQAR95jbA6AbJV7poTWQx+16tdCTQnhXQJMWEjyPR+mAPc2HX9hjRUy5w4g4qZmjef0foRn5UbVPsjioSV726pslOgvqCjrAAAAAElFTkSuQmCC"
+              },
+              {
+                "text": "\"Compare this image with READ_IMAGE/work/shots/chart.png and describe both\"",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ]
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "arguments": {
+                  "filePath": "/work/shots/chart.png"
+                },
+                "id": "call_mock_2",
+                "name": "read",
+                "type": "tool_call"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T06:49:19.737Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "reasoning_tokens": 0
+      }
+    },
+    {
+      "ended_at": "2026-10-08T06:49:20.480Z",
+      "id": "s2",
+      "input": {
+        "arguments": {
+          "filePath": "/work/shots/chart.png"
+        },
+        "name": "read",
+        "tool_call_id": "call_mock_2"
+      },
+      "name": "read",
+      "output": {
+        "result": [
+          {
+            "text": "Image read successfully",
+            "type": "text"
+          },
+          {
+            "mime": "image/png",
+            "type": "image",
+            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAIAAAACUFjqAAABQUlEQVR4AQE2Acn+AOfu52Fe818w5JtILhXK51AHIB4SYXsP7afhZHeW/wACK+qO0CqCoXWTDyM3zTeUxSIIAG1rGvDAy9YlZYoArCyfqgfRPER+MwUe7vlaYOVhQ9bEO8rXbACKmwprAF/JMxVKbeKEBKiXxSUmLmp8B7y+6EH3RcVdTp90fwBhUWTG9yjXGDU3E4J6yIPX+5ZZI0B09SWPbGgII4kA0uR/HhdakLxDL7lG5qlHEQnzt58RCib2Ip+jRSUmAOe8FkKutCvyJ9UP/wfDwgYkKS47g9Wpxurh7CoPngAs9gt1Of74ggW8mklnVq/i/3unz4Bl3GZtxHCia0UARP6zFCCNVjnm8Yxt08P8oeekJhCOFY+1nglFz+hhAAyIeUgYO+Q3vCdlZvODWwXxEltzi7FRyXIs0sZC5otmj54ocMymAAAAAElFTkSuQmCC"
+          }
+        ]
+      },
+      "parent_id": "s1",
+      "started_at": "2026-10-08T06:49:20.467Z",
+      "status": "ok",
+      "type": "tool_call"
+    },
+    {
+      "ended_at": "2026-10-08T06:49:20.519Z",
+      "id": "s3",
+      "input": {
+        "messages": []
+      },
+      "model": {
+        "id": "mock-model",
+        "provider": "mock"
+      },
+      "name": "turn",
+      "output": {
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "A square of coloured noise.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        ]
+      },
+      "parent_id": "root",
+      "started_at": "2026-10-08T06:49:20.487Z",
+      "status": "ok",
+      "type": "llm_call",
+      "usage": {
+        "cache_read_tokens": 0,
+        "input_tokens": 120,
+        "output_tokens": 18,
+        "reasoning_tokens": 0
+      }
+    }
+  ]
+}

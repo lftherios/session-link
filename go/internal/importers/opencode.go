@@ -75,9 +75,23 @@ func ocDataPart(data any) map[string]any {
 
 /* --------------------------------------------------------------- content */
 
-// ocUserContent mirrors userContent(parts).
-func ocUserContent(parts []any) []any {
-	out := []any{}
+// ocFilePart maps a file part: an image opencode recorded as a data URL
+// becomes an image, and any other file is kept as recorded.
+func ocFilePart(part any) any {
+	p := m(part)
+	if strings.HasPrefix(strOr(p["mime"], ""), "image/") {
+		if image, ok := imageURLPart(strOr(p["url"], "")); ok {
+			return image
+		}
+	}
+	return ocDataPart(part)
+}
+
+// ocUserContent maps the parts of a user message. opencode marks text it
+// wrote itself as synthetic, such as its account of reading an attached file;
+// that is returned apart, as context, from what the person typed and attached.
+func ocUserContent(parts []any) (typed, injected []any) {
+	typed = []any{}
 	for _, pv := range parts {
 		p := m(pv)
 		if t, ok := str(p["type"]); ok && t == "text" {
@@ -85,16 +99,24 @@ func ocUserContent(parts []any) []any {
 			if text == nil {
 				text = ""
 			}
-			out = append(out, map[string]any{"type": "text", "text": text})
+			part := map[string]any{"type": "text", "text": text}
+			if p["synthetic"] == true {
+				injected = append(injected, part)
+			} else {
+				typed = append(typed, part)
+			}
+		} else if t == "file" {
+			typed = append(typed, ocFilePart(pv))
 		} else if ocTruthy(p["type"]) {
-			out = append(out, ocDataPart(pv)) // file, etc. — keep, don't drop
+			typed = append(typed, ocDataPart(pv)) // keep, don't drop
 		}
 	}
-	return out
+	return typed, injected
 }
 
 // ocAssistantContent mirrors assistantContent(parts): text, reasoning→thinking,
-// tool→tool_call. step-start / step-finish / patch are structural — skipped.
+// tool→tool_call, and a file the model produced. step-start / step-finish /
+// patch are structural — skipped.
 func ocAssistantContent(parts []any) []any {
 	out := []any{}
 	for _, pv := range parts {
@@ -111,6 +133,8 @@ func ocAssistantContent(parts []any) []any {
 				kind = "thinking"
 			}
 			out = append(out, map[string]any{"type": kind, "text": text})
+		case "file":
+			out = append(out, ocFilePart(pv))
 		case "tool":
 			callID, isStr := str(p["callID"])
 			if !isStr {
@@ -198,6 +222,7 @@ func importOpencode(in Input) (map[string]any, error) {
 	spans := []any{root}
 
 	pending := []any{}
+	agentCalls := map[string]string{} // child session id -> the task call that started it
 	seq := 0
 	lastTs := session["time_created"]
 
@@ -207,9 +232,11 @@ func importOpencode(in Input) (map[string]any, error) {
 		role, _ := str(d["role"])
 		switch role {
 		case "user":
-			pending = append(pending, map[string]any{
-				"role": "user", "content": ocUserContent(arr(mm["parts"])),
-			})
+			typed, injected := ocUserContent(arr(mm["parts"]))
+			if len(injected) > 0 {
+				pending = append(pending, map[string]any{"role": "system", "content": injected})
+			}
+			pending = append(pending, map[string]any{"role": "user", "content": typed})
 			lastTs = mm["time_created"]
 		case "assistant":
 			// created = d.time?.created ?? m.time_created; completed = d.time?.completed ?? created
@@ -294,6 +321,10 @@ func importOpencode(in Input) (map[string]any, error) {
 				}
 				st := m(p["state"]) // st = p.state ?? {} (nil-map lookups behave alike)
 				isErr := st["status"] == "error"
+				// The task tool records the session of the sub-agent it ran.
+				if child := strOr(m(st["metadata"])["sessionId"], ""); child != "" {
+					agentCalls[child] = callID
+				}
 
 				var startV, endV any
 				if tm := m(st["time"]); tm != nil {
@@ -324,6 +355,20 @@ func importOpencode(in Input) (map[string]any, error) {
 					if md := m(st["metadata"]); md != nil {
 						result = md["output"]
 					}
+				}
+				// A tool can return files beside its text, such as the image it
+				// read. They are part of what the model received.
+				if attachments := arr(st["attachments"]); len(attachments) > 0 {
+					parts := []any{}
+					if text, ok := str(result); ok && text != "" {
+						parts = append(parts, map[string]any{"type": "text", "text": text})
+					} else if result != nil && !ok {
+						parts = append(parts, ocDataPart(result))
+					}
+					for _, attachment := range attachments {
+						parts = append(parts, ocFilePart(attachment))
+					}
+					result = parts
 				}
 				output := map[string]any{"result": result}
 				if isErr {
@@ -384,7 +429,7 @@ func importOpencode(in Input) (map[string]any, error) {
 		metadata["harness_version"] = session["version"]
 	}
 
-	return map[string]any{
+	run := map[string]any{
 		"schema":     "session/v0",
 		"name":       name,
 		"created_at": startedAt,
@@ -394,5 +439,7 @@ func importOpencode(in Input) (map[string]any, error) {
 		},
 		"metadata": metadata,
 		"spans":    spans,
-	}, nil
+	}
+	adoptAgents(run, "opencode", in.Agents, agentCalls)
+	return run, nil
 }

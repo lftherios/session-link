@@ -1,0 +1,14 @@
+{
+  "id": "20260930_101500_c0ffee",
+  "title": "Invoice export #2",
+  "display_name": null,
+  "model": "hermes-4-405b",
+  "billing_provider": "nous",
+  "system_prompt": null,
+  "cwd": null,
+  "source": "cli",
+  "started_at": 1790763300,
+  "ended_at": 1790763400,
+  "parent_session_id": "20260930_093000_a1b2c3",
+  "end_reason": "compression"
+}
