@@ -16,6 +16,14 @@ page share these values; the viewer's full token list is in
 the local viewer's dark theme. `favicon.svg` adapts to light and dark browser
 chrome. Keep the geometry identical between these two assets.
 
+`../social-preview.svg` is the 1280 × 640 share card in the same colors: the
+mark and wordmark, the bracketed headline, the install command and the reader
+with the fictional landing session. `../social-preview.png` is exported from it
+with `node scripts/capture-social.mjs`, which needs a Chromium-family browser
+(`BROWSER_BINARY`); edit the SVG, then export. The PNG is for the repository's
+social preview setting on GitHub, which is uploaded by hand and was not set as
+of 2026-10-08.
+
 `npm run build:viewer` copies this directory's CSS and icons into the Go
 viewer's embedded assets. The server checkout keeps matching copies under
 `public/branding/`, uses the favicon as `app/icon.svg`, and imports the same

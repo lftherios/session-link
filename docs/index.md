@@ -46,7 +46,7 @@ or an implemented slice.
 | [README.md](../README.md) | User-facing overview: install, `slink view` and sharing, privacy model, repository layout and development commands |
 | [packages/pi-extension/README.md](../packages/pi-extension/README.md) | The pi extension: `/slink` and `/slink view` commands, install steps, exact-fidelity in-process capture and publishing |
 | [packaging/README.md](../packaging/README.md) | The four CLI distribution channels driven from a tag: goreleaser archives, curl installer, npm binary channel, Homebrew tap |
-| [assets/brand/README.md](../assets/brand/README.md) | Elision mark and wordmark; `build:viewer` copies brand CSS and icons into the Go embed; the server repo keeps matching copies |
+| [assets/brand/README.md](../assets/brand/README.md) | Elision mark, wordmark and brand colors; the social preview card and its export; brand CSS and icons copied into the Go embed and the server |
 | [assets/product/README.md](../assets/product/README.md) | Product screenshots captured from fictional sessions, with sizes and the product state each one shows |
 | [assets/logos/README.md](../assets/logos/README.md) | Provenance and license of third-party harness logos |
 | [testdata/viewer/arrival/README.md](../testdata/viewer/arrival/README.md) | Fictional arrival fixture: eight exchanges, a recovered failure, Markdown, reasoning parts, standalone tool evidence, a child-agent result |

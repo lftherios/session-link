@@ -64,6 +64,8 @@ and `npm run validate`. Run the parts your change touches before finishing.
 - Fixtures under `testdata/` are fictional. Never add a real transcript, and
   keep the leakage markers the fixture READMEs describe intact.
 - Screenshots are generated, not edited: `node scripts/capture-product.mjs`.
+  The social preview PNG is exported from its SVG with
+  `node scripts/capture-social.mjs`.
 
 ## Process hygiene
 

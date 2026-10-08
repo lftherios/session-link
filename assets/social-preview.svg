@@ -1,66 +1,100 @@
 <svg width="1280" height="640" viewBox="0 0 1280 640" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1280" height="640" fill="#f5f6f3"/>
-  <rect x="0" y="0" width="1280" height="6" fill="#0e6f5c"/>
+  <defs>
+    <radialGradient id="glow-a" cx="640" cy="-150" r="560" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3d6bff" stop-opacity=".5"/><stop offset="1" stop-color="#3d6bff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="glow-b" cx="1250" cy="150" r="420" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#38c6ff" stop-opacity=".42"/><stop offset="1" stop-color="#38c6ff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="glow-c" cx="20" cy="330" r="400" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8f6bff" stop-opacity=".32"/><stop offset="1" stop-color="#8f6bff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="grid-fade" cx="640" cy="150" r="640" gradientUnits="userSpaceOnUse"><stop offset=".15" stop-color="#fff"/><stop offset=".8" stop-color="#000"/></radialGradient>
+    <pattern id="grid" width="26" height="26" patternUnits="userSpaceOnUse"><circle cx="13" cy="13" r="1" fill="#0a1033" fill-opacity=".14"/></pattern>
+    <mask id="grid-mask"><rect width="1280" height="640" fill="url(#grid-fade)"/></mask>
+    <filter id="lift" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="26" stdDeviation="26" flood-color="#0a1033" flood-opacity=".2"/></filter>
+    <clipPath id="frame"><rect x="756" y="112" width="440" height="416" rx="16"/></clipPath>
+  </defs>
 
-  <!-- left column: wordmark, hero line, sub, command -->
-  <g transform="translate(84, 140)">
-    <text font-family="Menlo, monospace" font-size="30">
-      <tspan fill="#17201c" font-family="Palatino, Georgia, serif" font-style="italic" font-size="36">session</tspan><tspan fill="#0e6f5c">.link</tspan>
-    </text>
+  <!-- the landing page's hero: white under three glows, with its dot grid -->
+  <rect width="1280" height="640" fill="#fff"/>
+  <rect width="1280" height="640" fill="url(#glow-a)"/>
+  <rect width="1280" height="640" fill="url(#glow-b)"/>
+  <rect width="1280" height="640" fill="url(#glow-c)"/>
+  <rect width="1280" height="640" fill="url(#grid)" mask="url(#grid-mask)"/>
 
-    <text y="120" font-family="Palatino, Georgia, serif" font-weight="500" font-size="68" fill="#17201c" letter-spacing="-1">
-      <tspan x="0">Every session</tspan>
-      <tspan x="0" dy="80">deserves a <tspan fill="#0e6f5c" font-style="italic">URL.</tspan></tspan>
-    </text>
-
-    <text y="300" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="23" fill="#5b6660">
-      <tspan x="0">Turn any LLM session — an eval item, an agent trace,</tspan>
-      <tspan x="0" dy="33">a one-off completion — into a permanent, shareable</tspan>
-      <tspan x="0" dy="33">URL you can inspect.</tspan>
-    </text>
-
-    <g transform="translate(0, 400)">
-      <rect width="572" height="54" rx="10" fill="#101613"/>
-      <text x="24" y="34" font-family="Menlo, monospace" font-size="19" xml:space="preserve"><tspan fill="#8fa39a">$ </tspan><tspan fill="#dfe6e2">npx </tspan><tspan fill="#57c9a6">session.link</tspan><tspan fill="#dfe6e2"> dev -- python agent.py</tspan></text>
+  <!-- left column: mark and wordmark, the bracketed headline, the lede, the install command.
+       textLength holds the headline to the width the brackets were drawn for, whatever
+       sans the viewer's system supplies. -->
+  <g transform="translate(84 62)">
+    <g transform="scale(1.05)" color="#1f44ff">
+      <path d="M12 6H6v28h6M28 6h6v28h-6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="square" stroke-linejoin="round"/>
+      <g fill="currentColor"><circle cx="13.5" cy="20" r="2.15"/><circle cx="20" cy="20" r="2.15"/><circle cx="26.5" cy="20" r="2.15"/></g>
     </g>
+    <text x="54" y="32" fill="#0a1033" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="31" font-weight="500" letter-spacing="-1.4">session<tspan fill="#1f44ff">.</tspan>link</text>
   </g>
 
-  <!-- right column: a shared-session card (mirrors the hosted runcard) -->
-  <g transform="translate(752, 176)">
-    <rect width="444" height="292" rx="16" fill="#fdfdfb" stroke="#d8ddd7" stroke-width="1"/>
-    <g transform="translate(26, 34)">
-      <text font-family="Menlo, monospace" font-size="12.5" fill="#5b6660">session.link/r/9f3kx2mvq7wt · unlisted</text>
-      <text y="42" font-family="Palatino, Georgia, serif" font-size="27" fill="#17201c">math-agent / q117</text>
-
-      <!-- chips -->
-      <g transform="translate(0, 62)" font-family="Menlo, monospace" font-size="12.5">
-        <rect width="86" height="27" rx="13.5" fill="none" stroke="#0e6f5c" stroke-opacity="0.4"/><text x="14" y="18.5" fill="#0e6f5c">correct ✓</text>
-        <g transform="translate(96,0)"><rect width="80" height="27" rx="13.5" fill="none" stroke="#d8ddd7"/><text x="13" y="18.5" fill="#5b6660">1,593 tok</text></g>
-        <g transform="translate(186,0)"><rect width="72" height="27" rx="13.5" fill="none" stroke="#d8ddd7"/><text x="13" y="18.5" fill="#5b6660">$0.0092</text></g>
-        <g transform="translate(268,0)"><rect width="58" height="27" rx="13.5" fill="none" stroke="#d8ddd7"/><text x="12" y="18.5" fill="#5b6660">4.18s</text></g>
-      </g>
-
-      <!-- timing waterfall -->
-      <g transform="translate(0, 116)" font-family="Menlo, monospace" font-size="12.5" fill="#5b6660">
-        <!-- row: dot, label, track(x220 w150 h5), bar, dur -->
-        <g>
-          <rect x="0" y="4" width="9" height="9" rx="2" fill="#5b4b8a"/><text x="18" y="12">math-agent</text>
-          <rect x="220" y="5" width="150" height="5" rx="2.5" fill="#eef1ec"/><rect x="220" y="5" width="150" height="5" rx="2.5" fill="#5b4b8a"/><text x="392" y="12">4.18s</text>
-        </g>
-        <g transform="translate(0, 30)">
-          <rect x="0" y="4" width="9" height="9" rx="2" fill="#0e6f5c"/><text x="30" y="12">plan-and-act</text>
-          <rect x="220" y="5" width="150" height="5" rx="2.5" fill="#eef1ec"/><rect x="222" y="5" width="66" height="5" rx="2.5" fill="#0e6f5c"/><text x="392" y="12">1.85s</text>
-        </g>
-        <g transform="translate(0, 60)">
-          <rect x="0" y="4" width="9" height="9" rx="2" fill="#a16418"/><text x="30" y="12">calculator</text>
-          <rect x="220" y="5" width="150" height="5" rx="2.5" fill="#eef1ec"/><rect x="288" y="5" width="4" height="5" rx="2" fill="#a16418"/><text x="392" y="12">20ms</text>
-        </g>
-        <g transform="translate(0, 90)">
-          <rect x="0" y="4" width="9" height="9" rx="2" fill="#0e6f5c"/><text x="30" y="12">final-answer</text>
-          <rect x="220" y="5" width="150" height="5" rx="2.5" fill="#eef1ec"/><rect x="293" y="5" width="77" height="5" rx="2.5" fill="#0e6f5c"/><text x="392" y="12">2.15s</text>
-        </g>
-      </g>
+  <g transform="translate(84 156)">
+    <path d="M25 2H2v192h23M585 2h23v192h-23" fill="none" stroke="#1f44ff" stroke-width="3.9"/>
+    <g fill="#0a1033" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="78" font-weight="600" letter-spacing="-3.9">
+      <text x="50" y="84" textLength="423" lengthAdjust="spacing">Every session</text>
+      <text x="50" y="160.5" textLength="335" lengthAdjust="spacing">deserves a</text>
     </g>
+    <text x="401" y="160.5" fill="#1f44ff" font-family="'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif" font-size="78" font-style="italic" font-weight="500" letter-spacing="-1.95" textLength="141" lengthAdjust="spacing">URL</text>
+    <rect x="403" y="167" width="137" height="3.7" rx="1.85" fill="#1f44ff"/>
+    <circle cx="553" cy="154" r="6.7" fill="#1f44ff"/>
   </g>
 
+  <text fill="#4c557a" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="21">
+    <tspan x="84" y="398">Bring your CLI agent’s sessions into a readable web view.</tspan>
+    <tspan x="84" dy="31">Find the issue, follow the evidence, and share it</tspan>
+    <tspan x="84" dy="31">with a colleague within seconds.</tspan>
+  </text>
+
+  <g transform="translate(84 500)">
+    <rect x="-6" y="-6" width="560" height="68" rx="20" fill="#1f44ff" fill-opacity=".07"/>
+    <rect width="548" height="56" rx="14" fill="#fff" stroke="#1f44ff" stroke-opacity=".4"/>
+    <text x="22" y="35" font-family="ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace" font-size="16.5" xml:space="preserve"><tspan fill="#1f44ff">❯ </tspan><tspan fill="#0a1033"> curl -fsSL https://session.link/install.sh | sh</tspan></text>
+  </g>
+
+  <!-- right column: the reader, as the hero shows it -->
+  <g filter="url(#lift)"><rect x="756" y="112" width="440" height="416" rx="16" fill="#f6f8ff"/></g>
+  <g clip-path="url(#frame)">
+    <rect x="756" y="112" width="440" height="416" fill="#f6f8ff"/>
+    <rect x="756" y="112" width="440" height="42" fill="#e9eeff"/>
+    <rect x="756" y="153.5" width="440" height="1" fill="#d5dcf5"/>
+    <g fill="#b8c0df"><circle cx="778" cy="133" r="5"/><circle cx="795" cy="133" r="5"/><circle cx="812" cy="133" r="5"/></g>
+    <rect x="876" y="120.5" width="200" height="25" rx="7" fill="#fff" stroke="#d5dcf5"/>
+    <text x="976" y="137.5" text-anchor="middle" fill="#4c557a" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11">session.link/demo</text>
+
+    <g transform="translate(782 180)">
+      <!-- human input -->
+      <rect width="388" height="76" rx="6" fill="#e9eeff"/>
+      <rect width="3" height="76" fill="#c9d2f3"/>
+      <text x="18" y="24" fill="#4c557a" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="10" letter-spacing="1.2">HUMAN INPUT</text>
+      <text fill="#0a1033" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="13.5">
+        <tspan x="18" y="46">Write a recommendation for the team. Include the</tspan>
+        <tspan x="18" dy="18">comparison and what we should test next.</tspan>
+      </text>
+
+      <!-- agent response -->
+      <text y="108" fill="#4c557a" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="10" letter-spacing="1.2">AGENT RESPONSE</text>
+      <text y="136" fill="#0a1033" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="18" font-weight="600" letter-spacing="-.3">Let people try it before they configure it</text>
+      <text fill="#0a1033" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="13.5">
+        <tspan x="0" y="162">Start with a sample project that produces a useful</tspan>
+        <tspan x="0" dy="18">result, then ask people to connect their workspace.</tspan>
+      </text>
+
+      <!-- comparison table -->
+      <g transform="translate(0 198)" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="12">
+        <rect x=".5" y=".5" width="387" height="84" fill="#f6f8ff" stroke="#d5dcf5"/>
+        <rect x="1" y="1" width="386" height="27" fill="#e9eeff"/>
+        <path d="M.5 28.5h387M.5 56.5h387M118.5 .5v84M262.5 .5v84" stroke="#d5dcf5" fill="none"/>
+        <g fill="#0a1033">
+          <g font-weight="600"><text x="10" y="18.5">First run</text><text x="128" y="18.5">Atlas</text><text x="272" y="18.5">Beacon</text></g>
+          <text x="10" y="46.5">Starting point</text><text x="128" y="46.5">Connect a workspace</text><text x="272" y="46.5">Sample project</text>
+          <text x="10" y="74.5">Before a result</text><text x="128" y="74.5">Account setup</text><text x="272" y="74.5">One guided action</text>
+        </g>
+      </g>
+
+      <!-- collapsed activity -->
+      <rect y="302" width="388" height="1" fill="#d5dcf5"/>
+      <text y="326" fill="#4c557a" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="12"><tspan font-size="9">▶</tspan>  Agent activity · 3 steps · 42s</text>
+    </g>
+  </g>
+  <rect x="756.5" y="112.5" width="439" height="415" rx="16" fill="none" stroke="#d5dcf5"/>
 </svg>
