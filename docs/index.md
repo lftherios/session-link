@@ -7,6 +7,12 @@ Documents in `docs/` are dated working documents; the date line under each
 title says when it was written and whether it describes a decision, a design
 or an implemented slice.
 
+## For users
+
+| File | Summary |
+|------|---------|
+| [user-guide.md](user-guide.md) | User guide for `slink` 0.9.0: install, read, share, record, supported agents, privacy, scripts, commands, files, troubleshooting |
+
 ## Product direction
 
 | File | Summary |

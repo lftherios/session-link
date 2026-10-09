@@ -112,6 +112,10 @@ finishing.
   under 150 characters.
 - When behavior a doc describes changes, update that doc. The named-sharing
   doc carries an implementation checklist that must stay true.
+- `docs/user-guide.md` is the user-facing guide and the source of the site's
+  `/docs` page. When something a user sees changes (a command, a flag, a label,
+  a limit), update it, then rebuild the page into the server checkout with
+  `node scripts/build-docs.mjs ../session-link-server/public/docs.html`.
 
 ## Releases
 

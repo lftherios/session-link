@@ -54,6 +54,9 @@ In pi, the [extension](packages/pi-extension) adds `/slink view` and `/slink`.
 Run `slink help` for everything else. On a remote machine, run
 `slink view --no-browser --port 4400` and forward the port over SSH.
 
+The [user guide](docs/user-guide.md) covers all of this in full, with sharing
+with specific people, privacy, and running `slink` from scripts.
+
 ## Privacy
 
 - **Local first.** Captures and previews stay in `~/.slink` until you publish.
