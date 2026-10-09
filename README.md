@@ -2,7 +2,7 @@
 
 # session.link
 
-**Turn coding-agent sessions into links your colleagues can actually read.**
+**Turn coding-agent sessions into end-to-end encrypted links your colleagues can actually read.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/lftherios/session-link/ci.yml?branch=main&label=ci)](https://github.com/lftherios/session-link/actions)
 [![npm](https://img.shields.io/npm/v/session.link?color=1f44ff&label=session.link)](https://www.npmjs.com/package/session.link)
