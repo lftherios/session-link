@@ -133,6 +133,13 @@ finishing.
 
 ## Releases
 
+The README and the landing page say the binary is under 15 MB installed, and
+the README that it is about 6 MB to download. Both are true of v0.9.0 on every
+platform (the largest binary is 14.7 MB, the largest archive 6.1 MB) and
+nothing checks them. Before a release, look at the sizes the npm smoke build
+prints or leaves in `go/dist-npm`; if one passes the figure, change the README,
+the landing page's card and the recording together.
+
 Tags `v*` drive releases. `release.yml` publishes `@session-link/format` and
 `@session-link/viewer` when their `package.json` versions are not yet on npm.
 On a tag push, `release-go.yml` runs goreleaser and the npm binary channel only

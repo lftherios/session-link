@@ -30,6 +30,10 @@ npm i -g session.link                              # the same native binary via 
 Windows, `.deb`, `.rpm` and `.apk` packages are on the
 [releases page](https://github.com/lftherios/session-link/releases).
 
+`slink` is one native binary: under 15 MB installed and about 6 MB to download.
+Installed with Homebrew or the script it needs nothing beside it, no Node, no
+Python and no SDK. The npm package is the same binary behind a small launcher.
+
 ## Use
 
 ```bash
