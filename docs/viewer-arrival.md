@@ -1,35 +1,40 @@
 # Viewer arrival
 
 Implemented locally on 2026-09-11, following the agreed first-open design;
-updated 2026-10-01 with fixes from a UX review of real sessions.
-No hosted deployment is part of this slice.
+updated 2026-10-01 with fixes from a UX review of real sessions, and checked
+against the code on 2026-10-09. No hosted deployment was part of the 2026-09-11
+slice; hosted encrypted excerpt publishing went live on 2026-09-12.
 
 The [viewer content model](viewer-model.md) is the guiding product reference.
-This document describes the implemented slice; its “supporting steps” label
-is a presentation of agent activity, which can itself be the focus of inspection.
+This document describes the implemented slice; its collapsed **Agent activity**
+section is one presentation of agent activity, which can itself be the focus of
+inspection.
 
 ## Opening a session
 
 The default reader starts on the latest exchange in the main conversation.
-A trailing exchange whose human input is only an exit word (exit, quit, bye)
+A trailing exchange whose human input is only an exit word (exit, quit, q, bye
+or logout, with or without a leading slash)
 and that has no response is skipped; reading starts before it, and the exit
 stays in the conversation. Any other trailing prompt still leads.
 A user prompt and its associated response form the reading unit. Consecutive
 prompt messages within the same recorded call stay together. Earlier assistant
-steps, tool arguments/results and recorded failures remain in supporting steps.
+steps, tool arguments/results and recorded failures remain in agent activity.
 Subagent exchanges remain navigable and do not replace the main landing point.
 A subagent's input reads **Delegated task**, because the main agent wrote it,
-not a person.
+not a person. Human input over 600 characters is shown as a short summary that
+opens to the full prompt.
 
 Human input means what a person contributed. Some harnesses record other
 material with the user role, so the reader and the share catalog apply one rule.
 User-role messages made only of tool results are agent activity; Claude Code
 records tool results that way. User-role messages wrapped in harness tags, such
-as environment context, system reminders and local slash-command records, are
-provided context and appear in the activity of the exchange they preceded. The
-Claude Code importer now records tool results with the tool role, rows Claude
-Code flags as injected metadata with the system role, and synthetic API
-failures such as rate limits as failed spans rather than agent responses.
+as environment context, system reminders, background-task notifications and
+local slash-command records, are provided context and appear in the activity of
+the exchange they preceded. The Claude Code importer records tool results with
+the tool role, rows Claude Code flags as injected metadata and its compaction
+summaries with the system role, and synthetic API failures such as rate limits
+as failed spans rather than agent responses.
 
 Recorded times sit beside the labels in a quieter mono style. Human input shows
 when its recorded call began, an agent response when its call ended, and each
@@ -60,8 +65,8 @@ Unavailable reasoning is explained once inside that section. The Codex importer
 preserves readable summaries or content when present; encrypted-only events now
 use an empty `thinking.text` with `unavailable: true` and `reason: "encrypted"`.
 Events with no text use `reason: "not_recorded"`. These are optional fields in
-the open content-part format, not substitute reasoning text. Ciphertext is not
-copied into normalized content. Older Codex imports containing the exact
+the open content-part format, not substitute reasoning text. Reasoning
+ciphertext is not copied into normalized content. Older Codex imports containing the exact
 `[reasoning]` placeholder receive the same treatment in the reader and selection
 catalog. Placeholder-only rows are omitted, readable steps keep their source
 addresses, and unavailable text cannot be selected for export.
@@ -75,8 +80,9 @@ in the saved metadata. Historical errors do not override later exchanges.
 
 A meaningful existing name (a title the harness recorded or a name someone typed) is the
 title. Anything else counts as untitled: placeholder IDs, filenames, empty
-names, names that look like injected context (starting with `<`), and names an
-importer clipped from the first human input. An untitled session shows a quiet
+names, the words “untitled” or “session”, names that look like injected context
+(starting with `<`) or like a path or slash command (starting with `/`), and
+names an importer clipped from the first human input. An untitled session shows a quiet
 **Untitled · Claude Code · Sep 11, 2026** label in the title slot; the reading
 below already opens on human input, so it is not repeated as a headline.
 No model call or naming form is needed to start reading. Clicking the label
@@ -91,16 +97,19 @@ Publishing the original whole session retains that original document's title.
 ## Action hierarchy and navigation
 
 The header is one row: a back link to the session list, the title, and one
-primary **Share this view** action at the top right. Nothing else sits above
-the title; harness, date and project move under **Session details**. The
+primary **Share this view** action at the top right. Above the title sits only
+the session.link brand row, with links to **Shared with people** and **Recovery
+and devices**; harness, date and project move under **Session details**. The
 local reading page carries no whole-session tools (copy local URL, download,
 publish); that flow is being redesigned. A wide, central search bar is always visible. **This view** is the
 default scope: the current exchange, including its agent activity, or the full
 session when that layout is showing. **Whole session** also searches other
 exchanges, subagents and recorded span payloads. Results identify individual
 matching content and reveal the relevant response, context or activity. They
-match and quote text as the page shows it: prose without Markdown syntax, and
-tool input and output verbatim, never as stored JSON. When
+match and quote text as the page shows it: prose without Markdown syntax, a
+tool call as its name and argument values, and tool output verbatim. Stored JSON
+is matched and quoted only for a whole-session result on a recorded span with
+no matching conversation text, and for content parts the reader has no text for. When
 **This view** finds fewer conversation matches than the whole session, the
 results offer the whole-session count. A chosen result shows its message in
 full, even where the full session or activity would clamp it.
@@ -118,7 +127,8 @@ open the readable exchange and reveal supporting material when needed. A span
 with no conversational representation opens an inspector instead.
 
 Previous/next controls navigate main exchanges; the outline includes subagent
-exchanges too, marked ↳. A subagent's exchanges count among themselves, such as
+exchanges too, marked ↳. From a subagent exchange, previous and next step
+through every exchange in recorded order. A subagent's exchanges count among themselves, such as
 **Research assistant 1 of 2**. Previous and next also close each focused
 exchange, naming the neighbouring human input, so a long answer doesn't send
 the reader back to the top. On hosted pages, **Copy link** there copies an
@@ -137,23 +147,24 @@ Blocked browser storage does not prevent reading. A replacement document resets
 component state. **Session details** closes the page, aligned with the reading
 column, with a one-line synopsis of messages, duration and errors. Expanded, it
 lists the source, project, start time, duration, human input, recorded spans,
-tokens, errors, models and session ID, followed by **Raw data** and **Trace
+tokens, cost when the capture records one, errors, models and session ID, followed by **Raw data** and **Trace
 explorer** buttons that open dialogs instead of unfolding inline.
 
 ## Selection, annotation and sharing
 
-Messages carry no per-message controls. To share part of a message, select any
-text in it: a **Comment and share** button appears beside the selection, which
+Messages carry no per-message controls. To share part of a message, select
+prose or reasoning text in it: a **Comment and share** button appears beside the selection, which
 also works on touch screens. Right-clicking the selection opens a small menu
 with **Comment and share** and **Copy**. **Comment and share** opens the share panel with exactly
 that passage and the comment field focused. The rendered selection is mapped back
 to the source text, allowing for Markdown syntax, and widened so bold text and
-links it cuts through stay whole. A selection that spans messages, or that can't
-be mapped exactly, leaves the option unavailable rather than sharing different
-text. Right-clicking without a selection keeps the browser's own menu. The title
+links it cuts through stay whole. A selection that spans messages or content
+parts, sits in tool input or output, or can't be mapped exactly, leaves the
+option unavailable rather than sharing different text. Right-clicking without a selection keeps the browser's own menu. The title
 is edited in place: click it, or the pencil beside it, type, and
 press Enter or click away to save; Escape cancels. A brief **Saved** note
-confirms the write and an error keeps the edit visible.
+confirms the write. On an error the title reverts and the error message stays
+visible.
 
 **Share this view** opens an in-place panel. It starts
 with the visible exchange's human input and agent response text, opening on the input.
@@ -166,7 +177,8 @@ The panel lists included material, permits removal and changing the starting
 point, and provides an exact source-passage selector. Source offsets continue
 to address original text, not rendered Markdown DOM text. Available source
 reference cards can be explicitly included. Title and comment fields are
-secondary and initially collapsed.
+secondary and start collapsed when the panel is opened from **Share this
+view**; **Comment and share** opens them with the comment focused.
 Annotations never rewrite the recorded conversation.
 
 **Save locally** writes a distinct immutable view and offers **Open saved view**
@@ -225,5 +237,5 @@ discovery, and exact recipient content. Set
 paths. Screenshots are written into its printed temporary artifact directory.
 
 Remaining product work includes saved diffs, live updates to immutable snapshots,
-native final-response signals where available, hosted integration and real colleague
-pilots. The local viewer is not evidence of a completed hosted handoff.
+native final-response signals where available and real colleague pilots. The
+local viewer is not evidence of a completed handoff between colleagues.

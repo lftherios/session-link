@@ -27,19 +27,22 @@ state is tagged `js-cli-v0.2`.
 ```bash
 npm run build:viewer                                   # → go/internal/open/viewer.js (go:embed'd)
 node scripts/golden.mjs --check                        # Go embeds in sync with packages/format
-cd go && goreleaser check                              # validate the release config
-cd go && goreleaser release --snapshot --clean --skip=publish   # full build → go/dist/
+(cd go && goreleaser check)                            # validate the release config
+(cd go && goreleaser release --snapshot --clean --skip=publish)   # full build → go/dist/
 node scripts/build-npm.mjs 0.0.0-ci                    # cross-compile the npm channel (no publish)
 ```
 
-## Releasing (CI, once armed)
+## Releasing (CI)
 
 `.github/workflows/release-go.yml` fires on a `v*` tag and runs goreleaser
-plus the npm binary-channel publish. It is **gated**: it runs only when the
-repo variable `GO_RELEASE_ENABLED == 'on'`. goreleaser publishes the release
-at once, not as a draft, because the Homebrew cask points at its assets.
+plus the npm binary-channel publish. A tag push is **gated**: it runs only
+when the repo variable `GO_RELEASE_ENABLED == 'on'`. A manual dispatch with a
+`version` runs the npm job alone for an existing tag and is not gated.
+goreleaser publishes the release at once, not as a draft, because the Homebrew
+cask points at its assets.
 
-To arm it (one-time):
+The variable is `on` in this repository (checked 2026-10-09). Arming a
+repository is one-time:
 
 1. Name the release workflows as trusted publishers of the npm packages
    (below). No npm token is stored.
@@ -48,7 +51,7 @@ To arm it (one-time):
 3. `gh variable set GO_RELEASE_ENABLED --body on` — **last**, or a tag pushed
    before the rest is in place fails.
 
-Then a release is just `git tag v0.3.1 && git push --tags`. `release.yml`
+Then a release is just `git tag vX.Y.Z && git push --tags`. `release.yml`
 (separate) publishes only `@session-link/format` + `@session-link/viewer`;
 the Go launcher owns `session.link`.
 
@@ -80,5 +83,4 @@ version=<x.y.z>` for the binary channel, `gh workflow run release.yml` for the
 libraries. Both skip versions already on npm.
 
 The v0.3.0 cutover was performed locally (goreleaser with a `gh auth token`,
-npm published by hand) before CI was armed — see the go-migration memory for
-the exact steps.
+npm published by hand) before CI was armed.

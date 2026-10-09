@@ -1,10 +1,14 @@
 # Named-recipient sharing
 
+2026-10-01, checked against the code on 2026-10-09 · implemented; on the hosted
+service since 2026-10-01 (v30). Independent protocol review is still open.
+
 Recipients use a browser, including on their first visit. The browser is an
 approved encryption device with private Web Crypto keys stored in IndexedDB.
 Account login, device approval and recovery retain their existing boundaries.
 
-A named share has a fresh ciphertext and an authenticated `/n/<id>` page. It is
+A named share has a fresh ciphertext and a `/n/<id>` page whose data requires
+sign-in. It is
 never an existing bearer-link share with an added account check. The share key
 stays out of the URL. Each recipient account gets a signed X25519 key wrapper.
 
@@ -128,8 +132,8 @@ Browsers need Ed25519, X25519, IndexedDB and Web Locks; unavailable primitives
 produce an explicit update-browser error. Clearing storage requires approval or
 recovery again. The native client continues to use private OS-protected files.
 
-Identity and named-share metadata reads allow 120 requests per account/minute;
-write limits retain the existing 30/minute default. Background sender work rotates
+Identity reads and reads of one named share's metadata allow 120 requests per
+account/minute; the share list and writes keep the existing 30/minute default. Background sender work rotates
 through at most eight pending shares every fifteen seconds. Recipient histories
 are fetched individually so ten invitations do not multiply one response's bound.
 Grants share one sender log per share and record only its length at grant time,
@@ -146,7 +150,9 @@ Version-1 accounts explicitly enroll their first incoming key with a signed
 ## Verification
 
 The Go identity tests cover migration, recovery of incoming keys, rotation and
-forged invitation/signature rejection. The server's named-sharing tests cover
+forged invitation/signature rejection. Migration, recovery and rotation run
+only with `SLINK_IDENTITY_BRIDGE` set to the server's
+`scripts/identity-bridge.mjs`; a plain `go test ./...` skips them. The server's named-sharing tests cover
 verified-email access, signed claims/grants, stale recipient keys, owner-only
 revocation, retries and deletion. To run the real browser flow against the server
 and iroh store, build the viewer/CLI, then in the server checkout run:

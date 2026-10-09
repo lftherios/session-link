@@ -1,7 +1,7 @@
 # CLI to web: first implementation
 
 2026-09-11 · implements the first slice of the [product plan](product-plan.md);
-harness contract updated 2026-10-08.
+harness contract updated 2026-10-08; checked against the code on 2026-10-09.
 These are development scenarios, not reports of real colleague exchanges.
 
 ## Common interaction
@@ -9,16 +9,19 @@ These are development scenarios, not reports of real colleague exchanges.
 `slink view [--from harness] [--session ID-or-path] [--span ID]`
 opens a local saved preview. An integration should pass the exact session path
 or ID when available. IDs are scoped to the current project or its ancestors;
-an explicit transcript path can refer to any project. A missing or ambiguous
-ID errors instead of substituting another session. Without explicit identity,
+an explicit transcript path can refer to any project, and so can the ID of a
+local capture given as an argument, as `slink list` prints it. A missing or
+ambiguous ID errors instead of substituting another session. Without explicit identity,
 multiple candidates open a searchable browser picker. `--pick` always opens it.
 
 Selection pins the source identity. Opening its preview imports the currently
-available data and saves a separate, validated `session/v0` document. While a
+available data and saves a separate, validated `session/v0` document under
+`~/.slink/previews/`. While a
 transcript file keeps its size and modification time, and slink itself is
 unchanged, reopening reuses that document instead of importing again. The
-browser renders that file and publishing sends those same bytes through the
-existing validation and secret scan. A large session is saved twice: the
+browser renders that file. Publishing a saved preview validates and scans those
+same bytes, then encrypts them. The reading page publishes through **Share this
+view**, which first saves the chosen material as a preview of its own. A large session is saved twice: the
 whole document, and a reading copy without the recorded results of tool
 spans. The page carries the reading copy, which is what the reader shows on
 arrival, and fetches the whole document behind it; publishing and sharing
@@ -62,8 +65,8 @@ verified.
 `testdata/import/pi/error-and-trailing/input.session.jsonl` with `slink view`.
 The failed turn and trailing prompt must survive import and remain inspectable.
 In an active pi session, `/slink view` supplies its transcript path directly.
-The preview initially contains the full session. **Choose what to share** opens
-the local composer to select the failure and necessary context for an excerpt.
+The preview initially contains the full session. **Share this view** opens
+the share panel to select the failure and necessary context for an excerpt.
 
 **Code review example:** open
 `testdata/import/codex/basic/input.session.jsonl` with `slink view`.
@@ -88,7 +91,7 @@ generated document, including its raw view and download.
 
 | Harness | Invocation into local web | Explicit identity | Capture available | Checked against |
 | --- | --- | --- | --- | --- |
-| Claude Code | `slink view --from claude-code` | Session ID or transcript path | Reconstructed transcript; proxy capture when recorded | 2.1.292: field names and directory naming read from its program; not run live |
+| Claude Code | `slink view --from claude-code` | Session ID or transcript path | Reconstructed transcript; proxy capture when recorded | 2.1.292: field names and directory naming read from its program; sub-agent layout from a 2.1.293 run against a mock provider |
 | Codex | `slink view --from codex` | Header `id` / `session_id`, or rollout path | Reconstructed transcript; proxy capture only through Codex's own configuration | 0.160.1: rollout item kinds from its source; routing run live against a mock provider |
 | pi | `/slink view` or common CLI | Current persisted transcript path | Reconstructed history; live SDK capture | 0.67.68 and 1.0.4: session format and extension events from the packages; not run live |
 | omp | `slink view --from omp` | Session ID or transcript path | Reconstructed transcript | 18.1.18: session format and directory rules from its source; run live against a mock provider |
@@ -109,7 +112,8 @@ Evidence and limits for each:
   session, is nested under the `Agent` call its meta file names; inline
   sidechain entries from older versions are still only counted. Native
   command integration remains open.
-- **Codex.** Both header spellings and independent sessions are tested.
+- **Codex.** Both header spellings and independent sessions are tested, and
+  `CODEX_HOME` is followed.
   Function, custom-tool (`apply_patch`), local shell, tool search and web
   search calls import as tool calls in recorded order; any other rollout item
   is kept verbatim in a custom span. `slink on` and `slink record` export
@@ -147,7 +151,7 @@ Evidence and limits for each:
   A session directory given with `--session-dir` is not followed, and
   whether the pi extension loads in omp is untested.
 - **opencode.** Database discovery and pinned loading are tested against
-  fixture schemas, and `OPENCODE_DB` is followed. A real 1.18.35 run, in an
+  fixture schemas, and `OPENCODE_DB` and `XDG_DATA_HOME` are followed. A real 1.18.35 run, in an
   isolated home against a mock provider, wrote its session to the `message`
   and `part` tables, which are the ones read; its text, reasoning, tool call,
   result and usage imported as recorded, and that session is the
@@ -164,7 +168,8 @@ Evidence and limits for each:
   because the continuation repeats part of its parent. A delegate's session
   is nested under the tool call that was running when it started, because
   Hermes links it to its parent session and not to a call. `HERMES_HOME` and
-  the active profile select the store.
+  the active profile select the store; `HERMES_STATE_DB` names the database
+  outright.
 - **DeepSeek Harness.** `dsh` keeps a session as a log of events under
   `sessions/` in `DSH_HOME` or `~/.dsh`: a directory per project, named by
   its own rule, a directory per session, and in it the log in each format
@@ -196,8 +201,8 @@ Evidence and limits for each:
   its own shell tool confirmed it. Capture through the tap was not tried; dsh reads its endpoint from
   `DEEPSEEK_BASE_URL`, which `slink on` does not set.
 - **Aider.** Aider has no session store. It appends every run in a project
-  to `.aider.chat.history.md` in the directory it was started in, and a
-  session here is one run of that file, named by the start time aider wrote
+  to `.aider.chat.history.md` in the directory it was started in, or the git
+  root when there is one, and a session here is one run of that file, named by the start time aider wrote
   for it. Lines aider marks as typed are the person's, unmarked lines are the
   model's reply, and aider's own notices are kept where they appeared as the
   evidence of what it did: the edits it applied, its commits, its lint and
@@ -206,8 +211,9 @@ Evidence and limits for each:
   an isolated home and throwaway repositories against a mock provider, are
   the `aider` fixtures, among them an edit that failed aider's lint check
   and the fix that followed. The history holds less than other harnesses
-  record, and nothing is made up for it: there are no tool calls, because
-  aider's edits are text in the reply; no token counts, because aider prints
+  record, and nothing is made up for it: there are no tool calls by the model,
+  because aider's edits are text in the reply, so its notices import as
+  `tool_call` spans named `aider` with a result and no arguments; no token counts, because aider prints
   them rounded, and they stay in its notices as written; and one time, the
   start of the run. Where `.aider.input.history` is beside the file, a typed
   entry found there with the same text takes its time from it. Aider writes
@@ -231,23 +237,27 @@ anything: Claude Code's inline images, Codex's attached images, tool results
 and generated images, pi's images, omp's from the blob store beside its
 sessions, opencode's attached files, tool attachments and files in replies,
 Hermes's image parts, and DeepSeek Harness's from the attachment store beside
-its sessions. The `images` fixture of each harness covers it; the omp,
-opencode and DeepSeek Harness ones come from real runs. Aider's history
+its sessions. The `images` fixture of each harness covers it, and for Hermes
+the `stored-content` fixture; the omp, opencode and DeepSeek Harness ones come
+from real runs. Aider's history
 records no images. An image whose bytes are not at
 hand, such as an omp reference without its blob store, or whose kind cannot
-be told, is kept as recorded, as data. Two limits remain. An exact capture,
-from the tap or the pi extension, leaves an image's bytes in the raw request
-and shows a note in its place. An excerpt cannot include an image yet.
+be told, is kept as recorded, as data. Two limits remain. An exact capture of
+an Anthropic-format request through the tap, or from the pi extension, leaves an
+image's bytes in the raw request and shows a note in its place; an
+OpenAI-format request keeps the image part with the URL it was sent with. An
+excerpt cannot include an image yet.
 
 A sub-agent's work is part of the session that delegated it. Every harness
-keeps it apart, in a transcript, rollout or row of its own, and each import
-reads it back and nests it as a child agent under the tool call that started
+read for sub-agents keeps that work apart, in a transcript, rollout or row of
+its own, and each import reads it back and nests it as a child agent under the tool call that started
 it, so the reader shows the delegated task and the work done on it where the
 delegation happened. Sub-agents of sub-agents nest the same way. A preview is
 made again when a sub-agent's transcript changes, not only its parent's. The
-`sub-agent` fixture of each harness covers it; the Claude Code, Codex, omp,
-opencode and DeepSeek Harness ones are real runs, reduced, and the Hermes one
-is written by hand. Aider has no sub-agents.
+sub-agent fixture of each of those harnesses covers it (`delegate` for
+Hermes); the Claude Code, Codex, omp, opencode and DeepSeek Harness ones are
+real runs, reduced, and the Hermes one is written by hand. Aider has no
+sub-agents, and none are read for pi.
 An exact capture has no such structure: the tap records every call in one
 flat sequence.
 
@@ -275,12 +285,14 @@ files and live spools, immutable preview bytes, failed upload retry, secret
 blocking, cross-origin rejection, hostname checks, foreground/background
 startup, browser launch failure, SSH guidance and occupied-port recovery.
 The pi bridge is exercised with a stub CLI so tests cannot publish externally.
-Browser checks cover picker search, real embedded rendering, unauthenticated
-reload, mobile dark layout and stopping the detached server.
+The browser scripts cover real embedded rendering, reload and copied links with
+the access key, the mobile dark layout and stopping the viewer. Picker search
+and the detached server are not covered by a script in this checkout.
 
-The outgoing document and `/api/runs` contract are unchanged and verified
-against a local mock receiver. The hosted service is outside this checkout;
-no live publication or hosted compatibility test was performed. Local selection,
+Publishing encrypts the saved document on this machine and posts the envelope
+to `/api/shares`, or `/api/named-shares` for named recipients; a local mock
+receiver verifies the upload. The hosted service is outside this checkout, and
+these checks publish nothing to it. Local selection,
 author context and export projection are implemented in the next slice; see the
 [excerpt contract and verification](share-excerpt-v1.md). Excerpt publishing was
 gated at the time; the hosted service has accepted encrypted excerpts since

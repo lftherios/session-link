@@ -1,7 +1,7 @@
 # Product screenshots
 
 These are browser captures of the current local product, built from the working
-tree at `4a3c9e1` with the Elision mark and the white and cobalt palette. The
+tree committed as `f365c80`, with the Elision mark and the white and cobalt palette. The
 interface is captured as rendered by the product, at a device scale factor of 2, so each
 file has twice the pixel dimensions listed below and stays sharp on HiDPI
 screens. Sizes are CSS pixels; the landing page declares the same sizes. The sessions are fictional examples
@@ -15,12 +15,12 @@ private transcripts or claims about real companies.
 | `sessions.webp` | 1100 × 680 | Searchable project list with individual cards and day groups |
 | `search.webp` | 1280 × 940 | Whole-session search, including earlier answers and agent activity |
 | `agent-activity.webp` | 1280 × 1200 | Recorded command and test output expanded beneath the answer |
-| `prepare-view.webp` | 1100 × 960 | Title, author comment, explicit inclusion, preview, and local save |
+| `prepare-view.webp` | 1100 × 960 | Title, author comment, explicit inclusion, preview, local save, and **Publish link** |
 
 Use `focused.webp` as the landing hero, with `focused-mobile.webp` for narrow
 screens. Link screenshots to their full-size assets. Label the examples as
-fictional. The view preparation screenshot shows the current local-only save
-and download flow; it must not be presented as hosted excerpt publishing.
+fictional. The view preparation screenshot shows the share panel before
+anything is published: preview, local save and **Publish link**.
 Keep the hero's declared width and height in CSS pixels; the 2x files scale down
 in the browser.
 The landing page's live example is `sessions[0]` from the same fixture file,

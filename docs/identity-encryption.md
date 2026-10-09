@@ -1,6 +1,6 @@
 # Identity and encrypted sharing
 
-2026-09-12, updated 2026-10-01 · deployed: encrypted sharing live since 2026-09-12
+2026-09-12, updated 2026-10-09 · deployed: encrypted sharing live since 2026-09-12
 (v29), named sharing and email sign-in since 2026-10-01 (v30). Independent
 protocol review and a volume restore rehearsal remain open.
 
@@ -48,8 +48,9 @@ No iroh transport key is involved in this integration: FsStore runs as a private
 storage subprocess, and delivery uses HTTPS. The server's session-signing secret
 and email provider key are service credentials, separate from content encryption.
 
-Account identity is a random internal ID, independent of email addresses,
-GitHub handles and device keys. Provider identities use stable subjects. Linking
+Account identity is an internal ID, independent of email addresses, GitHub
+handles and device keys. New accounts get a random one; accounts created before
+email sign-in keep `gh_<GitHub numeric id>`. Provider identities use stable subjects. Linking
 a login method requires proof of both accounts; matching email strings never
 merge accounts automatically. Account login authorizes service access and does
 not unlock the vault or approve a decryption device.
@@ -92,20 +93,24 @@ The protocol uses Go's [X25519](https://pkg.go.dev/crypto/ecdh),
 [HKDF-SHA-256](https://www.rfc-editor.org/info/rfc5869/). The service checks Ed25519
 signatures with [Node crypto](https://nodejs.org/api/crypto.html#cryptoverifyalgorithm-data-key-signature-callback).
 This is an application protocol using those primitives, not an implementation
-of HPKE, MLS or an iroh identity protocol. Independent protocol review remains
-part of production preparation.
+of HPKE, MLS or an iroh identity protocol. Independent protocol review is
+still open.
 
 A signed object is `{payload, signature}`, both canonical unpadded base64url.
 The payload is the exact UTF-8 JSON bytes. Signatures cover
 `"slink/" + purpose + "/v1" + NUL + payload_bytes`, with separate purposes
 `event`, `vault` and `request`. Named sharing adds `named-invite`,
-`recipient-claim` and `named-grant`. Verification never reserializes JSON. The SHA-256
+`recipient-claim` and `named-grant`. A browser recovering with the recovery key
+also signs and checks a local-only `recovery-check` to confirm the root key it
+unsealed. Verification never reserializes JSON. The SHA-256
 of decoded event bytes identifies each history head.
 
 Each event contains account ID, sequence, previous head, operation, signer,
-fixed recovery public keys/package, key epoch and the complete approved device
-list with wrappers. The root signs genesis. An active device signs a single
-approval or revocation; the recovery root signs a single recovery enrollment.
+fixed recovery public keys/package, the current recovery wrapper, the
+incoming-share public key once one is enrolled, key epoch and the complete
+approved device list with wrappers. The root signs genesis. An active device
+signs a single approval, revocation or `sharing` enrollment of the first
+incoming-share key; the recovery root signs a single recovery enrollment.
 Existing device public keys cannot change in place. Both client and server
 verify the full chain and reject unapproved signers and invalid transitions.
 Native and browser clients pin the root, previous history head and highest vault revision
@@ -114,8 +119,8 @@ locally; old or conflicting histories are rejected.
 Vault snapshots separately sign account ID, increasing revision, current history
 head, key epoch, writer and ciphertext. An event and its new vault snapshot
 commit together using expected previous head/revision. Ordinary vault updates
-also use compare-and-swap; concurrent share-key backup merges and retries up to
-three times. Disk replacement is atomic and flushed on both client and server.
+also use compare-and-swap; a concurrent share-key backup merges and is attempted
+up to three times in all. Disk replacement is atomic and flushed on both client and server.
 Native processes use an advisory file lock to protect local device state.
 
 A key wrapper uses a fresh ephemeral X25519 key pair. HKDF has an empty salt
@@ -143,16 +148,20 @@ log or independently verified human identity.
 
 ## Storage, scope and limits
 
-- Local captures, spools, config and device private keys use mode 0600, with
-  mode 0700 data directories. CLI startup repairs permissions on existing local
-  data without following symlinks. Device records are scoped
+- Spools, imported captures, config and device private keys are written at mode
+  0600 in mode 0700 data directories. A recorded capture is assembled with the
+  process umask inside its 0700 directory and set to 0600 by the next CLI
+  command that works on local data. That startup step repairs permissions on
+  existing local data without following symlinks. Device records are scoped
   by server and account under `~/.slink/identity`. Their containing directory is
   mode 0700. These files rely on local OS/disk protection; no OS keychain
   integration is included yet.
 - Completed links live under `~/.slink/shares`. Pending uploads retain ciphertext
   and a key before transmission, allowing idempotent retry after a lost response.
-- Vault entries contain complete private links and ciphertext hashes, not session
-  documents. New share keys back up automatically from approved devices. A failed
+- Vault entries contain complete private links and ciphertext hashes. A
+  version-2 vault also holds the incoming-share private keys and the named-share
+  outbox: content keys, invitations with recipient emails, and invitation
+  secrets. It never holds session documents. New share keys back up automatically from approved devices. A failed
   backup leaves the published link and durable local receipt intact and reports
   that backup needs a retry.
 - Receipts carry an account ID. Older unscoped receipts are included only when
@@ -178,7 +187,11 @@ log or independently verified human identity.
 The hosted recipient viewer is trusted JavaScript: compromised delivered code
 could read its fragment key and decrypted session. A complete link also grants
 access to anyone it is forwarded to. The native recovery/device UI is served
-from the local CLI bundle. Loss of all approved devices and the recovery key
+from the local CLI bundle. On an approved browser device the hosted bundle
+serves the same **Recovery and devices** page at `/devices`: it holds that
+browser's device keys, decrypts the vault with its backed-up links and
+incoming-share keys, and accepts a typed recovery key, so compromised delivered
+code could read those as well. Loss of all approved devices and the recovery key
 makes old backed-up links unrecoverable through account login alone.
 
 ## Verification and deployment
@@ -187,12 +200,14 @@ Local checks cover Go/Web Crypto share interoperability, authenticated-encryptio
 tampering, wrong recovery keys, account-only lock, approval code mismatch, device
 revocation and vault rotation, unauthorized/stale writes, root replacement,
 rollback, exact-link recovery, and server storage privacy. Go/Node integration
-exercises the actual signature/CAS store. The real-browser smoke covers first
+exercises the actual signature/CAS store; it runs only with
+`SLINK_IDENTITY_BRIDGE` set to the server's `scripts/identity-bridge.mjs`, so a
+plain `go test ./...` skips it and most of the checks in this list with it. The real-browser smoke covers first
 share through email account creation, cancel/retry, preserved excerpts, explicit
 publication, and approval/recovery across three native device profiles.
 
-See the server's [implementation guide](../../session-link-server/docs/encrypted-sharing.md)
-for the ciphertext envelope, iroh version decision, Fly configuration, smoke
-commands and the outstanding volume restore check. The single-machine Fly design
-runs in production unchanged (v30 since 2026-10-01) with Resend email sign-in
+See `docs/encrypted-sharing.md` in the server repository for the ciphertext
+envelope, iroh version decision, Fly configuration, smoke commands and the
+outstanding volume restore check. The single-machine Fly design runs in
+production unchanged (as of v30, 2026-10-01) with Resend email sign-in
 configured. These local checks perform no deployment or real email delivery.

@@ -1,5 +1,9 @@
 # The capture spool protocol (v1, frozen 2026-07-18)
 
+Frozen contract, 2026-07-18 · unchanged since. Where the reference now lives,
+and where the Go implementation differs, is noted at
+[the end](#status-of-the-implementations-2026-10-09).
+
 The contract between a slink **recorder** (tap daemon / `slink dev`) and
 every other slink process (`list`, `push`, `open`, `prune`, recovery) for
 in-progress captures. The Go implementation targets this document, not the
@@ -150,3 +154,26 @@ Run at tap startup and opportunistically during `list`:
   boot token).
 - An append wedged in the final write syscall across a shutdown can lose
   that one span (never the capture).
+
+## Status of the implementations (2026-10-09)
+
+The contract above is unchanged. Two things around it have changed.
+
+The JS reference is no longer in the tree. `cli/store.mjs` and its tests were
+removed at the v0.3.0 cutover (`922ffa1`) and are readable at `7caaf91` or the
+tag `js-cli-v0.2`. The Go package `go/internal/spool`, its tests and the
+fixtures under `testdata/spool/` now carry the contract. `slink dev` and
+`slink open` are today's `slink record` and `slink view`; the old names still
+work.
+
+The Go implementation differs from the contract in two places, found by
+reading the code and not exercised:
+
+- `slink record` has no heartbeat timer. Only the tap daemon refreshes the
+  sidecars of its open sessions every 60 s; a wrapper-mode sidecar is refreshed
+  by appends alone. Three minutes after its last call, such a session is alive
+  only through the boot-token branch.
+- Windows builds check neither the process nor the boot time
+  (`platform_windows.go`), so liveness there is sidecar freshness alone. With
+  the point above, a `slink record` session on Windows that is quiet for three
+  minutes reads as dead by the rule as coded.

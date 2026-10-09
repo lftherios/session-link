@@ -22,7 +22,7 @@ link. Nothing leaves your machine until you do.
 
 ```bash
 brew install lftherios/tap/slink                   # macOS, Linux
-curl -fsSL https://session.link/install.sh | sh    # any platform, checksum-verified
+curl -fsSL https://session.link/install.sh | sh    # macOS, Linux; checksum-verified
 npm i -g session.link                              # the same native binary via npm
 ```
 
@@ -41,11 +41,14 @@ re-run. To share one, choose **Share this view**: keep what matters, add a note,
 then publish a link for anyone who has it or for specific people by email.
 
 ```bash
-slink record -- python agent.py    # record any Anthropic or OpenAI API client, wire-exact
+slink record -- python agent.py    # record a client's Anthropic or OpenAI API calls, wire-exact
 slink import --from codex          # convert an agent's newest session without the viewer
 slink share                        # publish from the terminal instead
 slink tap --install                # optional always-on recorder; then eval "$(slink on)"
 ```
+
+`slink record` sees a client that takes its endpoint from `ANTHROPIC_BASE_URL`
+or `OPENAI_BASE_URL`. Codex does not, so read its sessions with `slink view`.
 
 In pi, the [extension](packages/pi-extension) adds `/slink view` and `/slink`.
 Run `slink help` for everything else. On a remote machine, run

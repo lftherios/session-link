@@ -1,6 +1,6 @@
 # What makes session.link succeed
 
-2026-09-12 · product direction from the planning conversation.
+2026-09-12, updated 2026-10-09 · product direction from the planning conversation.
 
 These are product requirements and evaluation criteria, not claims that every
 part is already delivered. Use them with the [product plan](product-plan.md) to
@@ -73,24 +73,26 @@ more dependable, or more trustworthy.
    exchanges: can the recipient answer the question or take the next action
    without asking the sender to reconstruct the story?
 
-## Encrypted-sharing prototype and remaining decisions
+## Encrypted sharing and remaining decisions
 
-Local-first use is an agreed requirement. The selected prototype direction is
-client encryption with iroh-blobs, a persistent hosted provider and ordinary
-browser access. The service should hold ciphertext without content keys.
-See [identity and encryption](identity-encryption.md) for the accepted scope
-and proposed sign-in model. This is not a current capability or production
-dependency decision. Resolve recipient key verification, forwarded links,
-key recovery, device changes, and what revocation or deletion can promise
-after someone has received a copy. Direct peer-to-peer delivery and
-end-to-end encryption are separate design decisions.
+Local-first use is an agreed requirement. Sharing is client encryption with
+iroh-blobs, a persistent hosted provider and ordinary browser access. The
+service holds ciphertext without content keys, and clients from v0.6.0 upload
+nothing else. See [identity and encryption](identity-encryption.md) for
+sign-in, recovery, device approval and revocation, and
+[named-recipient sharing](named-recipient-sharing.md) for shares limited to
+verified emails. Still open, as the [product plan](product-plan.md) lists:
+iroh version support, a rehearsed restore of the hosted volume, and an
+independent review of the recovery and device protocol. Revocation and
+deletion cannot erase a copy or a key someone has already received. Direct
+peer-to-peer delivery is a separate design decision.
 
-The current hosted flow uses unlisted links readable by anyone who has the
-link. The server can read uploaded content; local captures are plaintext.
-Current hosted deletion hides the published share while retaining its blob.
-Do not describe those behaviors as peer-only encryption or complete erasure.
-A private sharing design must account for the current server's validation,
-secret scanning, rendering, and link previews without exposing private content.
+Links published by v0.5.0 and earlier (`/r/…`) are unlisted, readable by
+anyone who has the link, and readable by the server. Local captures are
+plaintext. Current hosted deletion hides the published share while retaining
+its blob. Do not describe those behaviors as peer-only encryption or complete
+erasure. The server cannot validate, scan or render an encrypted share, so the
+client does that before it encrypts.
 
 ## How to judge progress
 

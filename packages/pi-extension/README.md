@@ -10,8 +10,9 @@ it as an end-to-end encrypted link, and hands you back the URL.
 ## Install
 
 Install the `slink` CLI first; it does the capture and the publishing. The
-[main README](../../README.md#install) lists the channels. `/slink view` needs
-slink 0.6.0 or later (`slink --version`).
+[main README](../../README.md#install) lists the channels. The extension needs
+slink 0.6.0 or later (`slink --version`): `/slink view` and encrypted links both
+arrived in that release.
 
 The extension is not on npm yet. Install it from a checkout of this
 repository:
@@ -23,7 +24,7 @@ pi install ./packages/pi-extension
 `pi install` adds the extension to your pi settings and loads it. If `slink`
 is not on your `PATH`, the extension falls back to `npx --yes session.link`,
 which runs whatever version npm serves; that version must also be 0.6.0 or
-later for `/slink view`.
+later.
 
 ## Use
 
@@ -36,8 +37,9 @@ In a pi session:
 Opens the current session in a local browser preview and returns control to pi.
 It uses the persisted transcript to include earlier turns in resumed sessions
 (`reconstructed` fidelity), falling back to the live capture for in-memory
-sessions. Nothing is uploaded. Review the saved snapshot and use Publish in
-the browser when ready. Stop the background viewer from its sessions page.
+sessions. Nothing is uploaded. Review the saved snapshot and choose **Share
+this view** in the browser when ready. Stop the background viewer from its
+sessions page.
 
 To publish directly:
 

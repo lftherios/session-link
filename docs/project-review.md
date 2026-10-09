@@ -1,5 +1,10 @@
 # Project review · 2026-09-11
 
+Snapshot of the checkout at `eb8888d`, kept as a record and not updated. Since
+then the importers have grown from five to eight, and priorities 1, 2 and 5 at
+the end are done; [viewer arrival](viewer-arrival.md) describes the reader as
+it is now.
+
 The local checkout has a working Go CLI, a shared React viewer, the
 `session/v0` format, and a pi capture extension. The viewer is the best
 place to concentrate the next product work: capture and distribution have

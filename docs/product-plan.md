@@ -1,16 +1,16 @@
 # session.link product plan
 
-Working draft · updated 2026-10-08 · based on the planning conversation.
+Working draft · updated 2026-10-09 · based on the planning conversation.
 
 The [success criteria](success-criteria.md) record the nine agreed requirements:
 easy installation anywhere, a tiny and efficient daemon, current and dependable
 harness integrations, an inviting viewer, user control of data, and simple
 sharing, plus trustworthy records, uninterrupted agent work, and immediate
 recipient value. The [KPI scorecard](kpis.md) proposes targets and measurement
-methods. The selected encrypted-sharing prototype direction is iroh-blobs with
+methods. Encrypted sharing uses iroh-blobs with
 a persistent hosted provider and browser decryption; recovery, device approval
-and named-recipient sharing are implemented and live on the hosted service
-(v30, 2026-10-01). See [identity and encryption](identity-encryption.md).
+and named-recipient sharing are implemented and went live on the hosted service
+on 2026-10-01 (v30). See [identity and encryption](identity-encryption.md).
 Use these criteria to prioritize the work below.
 
 The [viewer content model](viewer-model.md) is the agreed reference for session
@@ -22,10 +22,10 @@ implemented in this checkout. See [handoff design and verification](handoff-desi
 for the journeys and harness matrix, and the [excerpt contract](share-excerpt-v1.md)
 for selection, author context, saved drafts, recipient preview and omission
 checks. Encrypted excerpt publishing is live on the hosted service (since
-2026-09-12); the client side ships in the first release after v0.5.0.
+2026-09-12); the client side shipped in v0.6.0 (2026-10-01).
 The [viewer arrival slice](viewer-arrival.md) adds the latest-exchange landing,
-local titles, compact navigation, prominent scoped search, hover selection,
-annotation, local saved views and Markdown document rendering. Saved diffs and
+local titles, compact navigation, prominent scoped search, sharing a selected
+passage, annotation, local saved views and Markdown document rendering. Saved diffs and
 real handoff pilots remain open.
 
 Integration TODO:
@@ -102,9 +102,10 @@ Working assumptions to revisit after trying the first prototype:
   context. The full session remains available locally.
 - Recipients respond through their existing conversation or review system,
   using precise links back to the shared material.
-- The current hosted flow uses unlisted links. Make that audience explicit
-  while prototyping encrypted sharing with iroh-blobs. Account access, device
-  approval and content-key grants remain separate design responsibilities.
+- Shares are encrypted links, opened by anyone with the complete link or by
+  named recipients, and the sender chooses that audience before publishing.
+  Account access, device approval and content-key grants remain separate
+  design responsibilities.
 
 | Handoff | Recipient starts with | Supporting material | Successful outcome |
 | --- | --- | --- | --- |
@@ -148,9 +149,10 @@ use cases guide the design and tests; users need not choose a category to
 begin.
 For remote or headless CLI use, provide an explicit browser connection path
 and actionable fallback; an automatically opened localhost URL is not a
-complete solution when the session runs on another machine. The transport
-design remains a milestone-1 decision. Opening a local draft does not
-publish its contents.
+complete solution when the session runs on another machine. The first
+transport is SSH forwarding of the loopback viewer; automatic forwarding and a
+hosted relay are not built. Opening a local draft does not publish its
+contents.
 
 The opening page should present the author's note, the selected material,
 and routes into supporting context. Research should read like a clear
@@ -160,17 +162,18 @@ Moving into detail and back should preserve selection and reading position.
 
 The current checkout provides a useful foundation: eight importers, local
 capture, explicit publishing, a shared React viewer, span links, immutable
-published documents, and an extensible format. The main gaps are:
+published documents, and an extensible format. The gaps identified on
+2026-09-11, and where each stands on 2026-10-09:
 
-| Gap | Evidence in this repository | Implication |
+| Gap | State in this repository | What remains |
 | --- | --- | --- |
-| Entry from the harness | A dedicated pi extension exists; the common CLI discovers and imports sessions across eight harnesses. | Define one handoff contract and the most direct supported invocation for each harness. |
-| Active session identity | Generic discovery selects by recency and project directory. | Concurrent sessions, resumed work, and subdirectories need tests and a clear ambiguity flow. |
-| CLI-to-browser continuity | Local viewing and publishing exist, but selected-output transfer and a composed draft are absent. | The handoff must preserve the user's intended material and survive authentication or upload failure. |
-| Preparing a share | Local publishing reads and uploads the capture file as a whole. | Selecting content requires creating a separate export, beyond changing what the viewer displays. |
-| Author context | No dedicated composition flow for a handoff note and selected outcome. | The author currently has to explain the link elsewhere. |
-| Complete inspection | Some standalone tool results are absent from transcript mode; switching views loses reading state. | A colleague can miss evidence or lose their place. |
-| Research presentation | Markdown handles code and links, with limited support for document structure. | Research tables, lists, headings, and citations need a deliberate reading experience. |
+| Entry from the harness | A dedicated pi extension exists; the common CLI discovers and imports sessions across eight harnesses. | Define the most direct supported invocation for each harness. Claude Code and Codex have no in-harness entry. |
+| Active session identity | `slink view` takes an explicit session ID or path, refuses a missing or ambiguous one, and shows a picker when several sessions qualify. `slink import` and `slink share` without `--session` still choose by recency and project directory. | Integrations that pass the running session's own identity, as the pi extension and DeepSeek Harness do. |
+| CLI-to-browser continuity | Closed. Saved previews, `--span` for the intended starting point, and drafts and saved views that survive sign-in and a failed upload. | Remote use beyond SSH forwarding. |
+| Preparing a share | Closed in the browser. **Share this view** exports the selected material as a separate document and publishes that. `slink share` and `slink push` publish the whole session. | Images and attachments cannot be included in an excerpt yet. |
+| Author context | Closed. The share panel takes a title and a comment, exported as a separate author note. | Nothing identified. |
+| Complete inspection | Closed. Standalone tool results appear in the reader, and the reading position survives inspection and reload. | Nothing identified. |
+| Research presentation | Closed. The reader renders CommonMark and GFM: headings, lists, tables, code, links and footnotes. | Nothing identified. |
 | Saved code changes | Tool arguments may contain patches, but there is no standard changeset representation; the opencode importer skips structural patch events. | A trustworthy final diff needs an explicit source and baseline. |
 | Evidence of usefulness | We have not yet reviewed actual recipient feedback or recurring usage. | Progress should be evaluated through real handoffs as well as implementation checks. |
 
@@ -341,10 +344,10 @@ links. Broad harness coverage is part of the strategy; prioritize new
 integrations by actual usage and apply the same quality requirements.
 
 Remaining decisions are deliberately visible: the native invocation for
-each harness, remote/headless transport, the preferred Git baseline, how
-much supporting context to suggest, whether author editing should later
-extend to source outputs, and the access and encryption model for sharing
-with chosen peers.
-Resolve invocation and transport during the initial journey design;
-prototype the remaining choices with the three examples. Calendar estimates
+each harness, remote use beyond SSH forwarding, the preferred Git baseline,
+how much supporting context to suggest, and whether author editing should
+later extend to source outputs. Sharing with chosen people is decided and
+built as [named-recipient sharing](named-recipient-sharing.md).
+Resolve invocation during the journey design; prototype the remaining
+choices with the three examples. Calendar estimates
 should follow that design and the hosted-service check.

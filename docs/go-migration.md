@@ -1,5 +1,11 @@
 # Migrating the daemon and CLI to Go
 
+Decision record, 2026-07-18 · completed on 2026-07-19 with v0.3.0, the first Go
+release. The JS CLI was removed in `922ffa1`; its last state is the tag
+`js-cli-v0.2`. What follows is the plan as written, corrected on 2026-10-09
+only where a statement named something that does not exist or contradicted
+the decisions below.
+
 Decision (2026-07-18): the `slink` daemon (tap) and CLI move to Go. The
 motivations are measured, not aesthetic: the Bun-compiled binaries are
 61–95MB where Go lands ~10–15MB, and the always-on tap idles at ~70MB RSS
@@ -9,22 +15,22 @@ product stays where it is.
 **What does NOT move:** the hosted server (Next.js), `@session-link/viewer`
 (React — it *is* the product's rendering, embedded by the Go CLI as a
 static bundle), and `@session-link/format` as the reference implementation
-and schema home. The JS CLI remains in-tree as the reference
-implementation and parity oracle until the cutover completes.
+and schema home. The JS CLI remained in-tree as the reference
+implementation and parity oracle until the cutover completed.
 
 ## Contracts (frozen inputs to the Go implementation)
 
 The Go code implements contracts, not the JS code's shape:
 
-1. **`session/v0`** — the JSON Schema in `packages/format/schema/`.
+1. **`session/v0`** — the JSON Schema in `packages/format/session.schema.json`.
    Acceptance is byte-level: same inputs → equivalent documents (timestamps
    normalized) vs the JS implementation.
-2. **The spool protocol** (as of commit `8a74941`, pending round-3
-   verification): `<capture>.json.spool` JSONL — line 1 is the run
+2. **The spool protocol**, since frozen in
+   [spool-protocol.md](spool-protocol.md): `<capture>.json.spool` JSONL — line 1 is the run
    skeleton (must carry `.schema`; assembly refuses otherwise), one span
    per line, U+2028/U+2029 escaped, appends begin on a fresh line;
    `.spool.pid` owner sidecar `{pid, boot}` with EPERM-is-alive and
-   boot-token semantics; `<capture>.lock` O_EXCL commit mutex with age
+   boot-token semantics; `<capture>.json.lock` O_EXCL commit mutex with age
    break; snapshot-vs-finalize rules; `.corrupt` set-aside. A Go tap and a
    JS CLI (or vice versa) must interoperate on the same `~/.slink` during
    the transition.
@@ -58,9 +64,10 @@ The Go code implements contracts, not the JS code's shape:
 - **P4 — distribution cutover.** goreleaser: tar.gz/zip archives +
   checksums, GitHub Release, Homebrew tap auto-update (retires
   `update-formula.mjs` + manual copy), deb/rpm. The `session.link` npm
-  package is deprecated with a pointer (decision below — npm sunsets);
-  `install.sh` switches to archives. First Go release = v0.3.0. JS CLI
-  enters maintenance as the reference implementation.
+  package continues as a binary channel (decision below);
+  `install.sh` switches to archives. First Go release = v0.3.0. The JS CLI
+  was to enter maintenance as the reference implementation; it was removed
+  instead.
 
 ## Decisions (settled 2026-07-19)
 
@@ -76,7 +83,7 @@ The Go code implements contracts, not the JS code's shape:
   sunset. (`@session-link/format` and `@session-link/viewer` stay on npm
   for the server and embedders.)
 - **Importers port to Go in P3** as phased. The golden fixtures pin all
-  five mappings; contributions become fixtures + Go mapping.
+  five mappings of the time (eight harnesses today); contributions become fixtures + Go mapping.
 - **`session/v0` is hard-frozen until parity.** No format changes while
   the port runs; blob-ref/attachment work queues behind it.
 
@@ -88,4 +95,4 @@ The Go code implements contracts, not the JS code's shape:
   not. Accepted in the decision.
 - **Interop window** — a Go tap and JS CLI sharing `~/.slink` mid-
   transition; mitigated by the spool protocol being the tested contract.
-- **Format churn** — see the freeze recommendation.
+- **Format churn** — see the freeze decision above.

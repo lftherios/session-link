@@ -11,7 +11,7 @@ or an implemented slice.
 
 | File | Summary |
 |------|---------|
-| [product-plan.md](product-plan.md) | Product promise and thesis, the three handoff use cases, six milestones in dependency order, and the integration TODO; draft updated 2026-10-08 |
+| [product-plan.md](product-plan.md) | Product promise and thesis, the three handoff use cases, six milestones in dependency order, and the integration TODO; draft updated 2026-10-09 |
 | [success-criteria.md](success-criteria.md) | The nine agreed requirements: install, daemon, integrations, viewer, data control, sharing, trustworthy record, no disruption, recipient value |
 | [kpis.md](kpis.md) | Proposed measurable targets and measurement definitions per criterion plus a week-two retention goal; proposed targets, not measured baselines |
 | [project-review.md](project-review.md) | Review of the 2026-09-11 checkout: CLI, format, viewer and test state, fixes made during the review, and the next viewer priorities |
@@ -22,7 +22,7 @@ or an implemented slice.
 |------|---------|
 | [viewer-model.md](viewer-model.md) | Agreed viewer content model: session metadata, human input, agent responses, agent activity, provided context, exchanges, design implications |
 | [viewer-arrival.md](viewer-arrival.md) | Implemented first-open slice: latest-exchange landing, role rules per harness, timing labels, collapsed agent activity, scoped search, saved views |
-| [handoff-design.md](handoff-design.md) | The `slink view` handoff: explicit session identity, saved previews, loopback server, background mode, SSH path, and three annotated journeys |
+| [handoff-design.md](handoff-design.md) | The `slink view` handoff: session identity, saved previews, loopback server, background mode, SSH path, three journeys, per-harness contract matrix |
 | [share-excerpt-v1.md](share-excerpt-v1.md) | Local excerpt composition v1: Share this view panel, drafts under ~/.slink/drafts, content-addressed preview, allowlist exporter, omission checks |
 
 ## Identity and encryption
@@ -37,7 +37,7 @@ or an implemented slice.
 | File | Summary |
 |------|---------|
 | [spool-protocol.md](spool-protocol.md) | Frozen v1 contract for in-progress captures: `.spool` JSONL skeleton and spans, `.spool.pid` liveness, `.lock` commit mutex, `.corrupt` set-aside |
-| [go-migration.md](go-migration.md) | 2026-07-18 decision to move the tap and CLI to Go: frozen contracts (format, spool, secret patterns, CLI surface, server API), phases and gates |
+| [go-migration.md](go-migration.md) | 2026-07-18 decision record for moving the tap and CLI to Go, completed at v0.3.0 on 2026-07-19: frozen contracts, phases P0–P4, decisions, risks |
 
 ## Documentation outside docs/
 
@@ -45,9 +45,9 @@ or an implemented slice.
 |------|---------|
 | [README.md](../README.md) | User-facing overview: install, `slink view` and sharing, privacy model, repository layout and development commands |
 | [packages/pi-extension/README.md](../packages/pi-extension/README.md) | The pi extension: `/slink` and `/slink view` commands, install steps, exact-fidelity in-process capture and publishing |
-| [packaging/README.md](../packaging/README.md) | The four CLI distribution channels driven from a tag: goreleaser archives, curl installer, npm binary channel, Homebrew tap |
+| [packaging/README.md](../packaging/README.md) | The four CLI distribution channels driven from a tag: goreleaser (archives, packages, Homebrew cask), curl installer, npm, GitHub Release |
 | [assets/brand/README.md](../assets/brand/README.md) | Elision mark, wordmark and brand colors; the social preview card and its export; brand CSS and icons copied into the Go embed and the server |
 | [assets/product/README.md](../assets/product/README.md) | Product screenshots captured from fictional sessions, with sizes and the product state each one shows |
-| [assets/logos/README.md](../assets/logos/README.md) | Provenance and license of third-party harness logos |
+| [assets/logos/README.md](../assets/logos/README.md) | Provenance and license of the Hermes Agent logo; the other four harness logos have no note yet |
 | [testdata/viewer/arrival/README.md](../testdata/viewer/arrival/README.md) | Fictional arrival fixture: eight exchanges, a recovered failure, Markdown, reasoning parts, standalone tool evidence, a child-agent result |
 | [testdata/share/research/README.md](../testdata/share/research/README.md) | Synthetic research handoff fixture; the `OMITTED_INTERNAL_STRATEGY` marker must be absent from every exported channel |

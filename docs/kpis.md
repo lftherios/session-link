@@ -1,7 +1,7 @@
 # Product KPI scorecard
 
-2026-09-12 · translates the nine agreed [success criteria](success-criteria.md)
-into measurable outcomes.
+2026-09-12, updated 2026-10-09 · translates the nine agreed
+[success criteria](success-criteria.md) into measurable outcomes.
 
 These are **proposed initial targets**, not measured results or published
 guarantees. Baselines have not been collected for this scorecard. Validate the
@@ -81,10 +81,10 @@ opened alone does not establish a useful handoff.
   Ask pilot users who can read a share before they publish. Test stop-capture,
   retention, export, and deletion against their documented behavior. Measure
   withdrawing access and physical erasure separately; current tombstoning
-  must not be reported as a purge. Encrypted sharing has a locally tested
-  [iroh-blobs prototype](identity-encryption.md). Deployment, recipient-key
-  recovery and broader operational checks remain; local test success alone
-  does not satisfy the production KPI.
+  must not be reported as a purge. Encrypted sharing is
+  [deployed](identity-encryption.md), with recovery and device approval. An
+  independent protocol review and a rehearsed volume restore remain;
+  deployment alone does not satisfy the production KPI.
 - **Sharing:** measure signed-in, standard-size whole-session publishing from
   final confirmation until the returned URL successfully serves the intended
   document. Keep first-share sign-in time, larger files, and excerpt
