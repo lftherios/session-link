@@ -12,6 +12,12 @@ or an implemented slice.
 | File | Summary |
 |------|---------|
 | [user-guide.md](user-guide.md) | User guide for `slink` 0.9.0: install, read, share, record, supported agents, privacy, scripts, commands, files, troubleshooting |
+| [guides/claude-code.md](guides/claude-code.md) | Site page `/docs/claude-code`: reading and sharing a Claude Code session, what its transcript holds, what `/export` does by itself |
+| [guides/codex.md](guides/codex.md) | Site page `/docs/codex`: reading and sharing a Codex CLI session, what a rollout holds, why `slink record` captures nothing from Codex |
+| [guides/opencode.md](guides/opencode.md) | Site page `/docs/opencode`: reading and sharing an opencode session, what its database holds, how this differs from opencode's `/share` |
+| [guides/aider.md](guides/aider.md) | Site page `/docs/aider`: reading and sharing a run from `.aider.chat.history.md`, and what Aider's history leaves out |
+| [guides/pi.md](guides/pi.md) | Site page `/docs/pi`: sharing a pi session with the extension's `/slink` commands or from the terminal; exact and reconstructed capture |
+| [guides/compare.md](guides/compare.md) | Site page `/docs/compare`: `slink` beside four other session-sharing tools and the agents' own commands, from their docs on 2026-10-09 |
 
 ## Product direction
 

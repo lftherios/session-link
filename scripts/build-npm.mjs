@@ -31,6 +31,14 @@ if (!version || version.startsWith("-")) {
 // repository its publishing workflow runs in.
 const REPOSITORY = { type: "git", url: "git+https://github.com/lftherios/session-link.git" };
 
+// What people search npm for when they want this: the agents it reads and
+// the words they use for a session.
+const KEYWORDS = [
+  "claude-code", "codex", "opencode", "aider", "pi", "coding-agent", "ai-agent", "llm", "cli",
+  "session", "transcript", "conversation-history", "session-viewer", "share", "export",
+  "end-to-end-encryption", "local-first",
+];
+
 // node os/cpu values, keyed by go os/arch.
 const NODE_OS = { darwin: "darwin", linux: "linux", windows: "win32" };
 const NODE_CPU = { amd64: "x64", arm64: "arm64" };
@@ -90,7 +98,8 @@ writeFileSync(
     {
       name: "session.link",
       version,
-      description: "Capture LLM sessions locally, publish the ones worth sharing",
+      description: "Turn Claude Code, Codex, opencode, pi and Aider sessions into end-to-end encrypted links. Read your coding agent's transcripts locally, share what matters.",
+      keywords: KEYWORDS,
       homepage: "https://session.link",
       repository: REPOSITORY,
       license: "MIT",

@@ -9,7 +9,9 @@
     "llm",
     "trace",
     "agent",
-    "share"
+    "share",
+    "coding-agent",
+    "transcript"
   ],
   "homepage": "https://session.link",
   "license": "MIT",

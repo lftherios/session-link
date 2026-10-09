@@ -195,18 +195,20 @@ each parent directory.
 
 | Agent | `--from` | Good to know |
 | --- | --- | --- |
-| Claude Code | `claude-code` | Sub-agent work appears under the call that started it. |
-| Codex | `codex` | Cannot be recorded with `slink record`; its saved sessions read normally. |
-| opencode | `opencode` | |
-| pi | `pi` | The [pi extension](../packages/pi-extension/README.md) adds `/slink view` and `/slink` inside pi. |
+| [Claude Code](guides/claude-code.md) | `claude-code` | Sub-agent work appears under the call that started it. |
+| [Codex](guides/codex.md) | `codex` | Cannot be recorded with `slink record`; its saved sessions read normally. |
+| [opencode](guides/opencode.md) | `opencode` | |
+| [pi](guides/pi.md) | `pi` | The [pi extension](../packages/pi-extension/README.md) adds `/slink view` and `/slink` inside pi. |
 | omp | `omp` | |
 | DeepSeek Harness | `dsh` | `slink view` run from the agent's own shell opens the session that ran it. |
-| Aider | `aider` | Each run in `.aider.chat.history.md` is a session. Aider keeps no token counts and one time per run; its own notices show what it did. |
+| [Aider](guides/aider.md) | `aider` | Each run in `.aider.chat.history.md` is a session. Aider keeps no token counts and one time per run; its own notices show what it did. |
 | Hermes | `hermes` | Experimental. |
 
 `slink import --from <agent>` converts an agent's newest session into a local
 one without opening the reader. What each agent's history does and does not
-contain is listed in the [handoff design](handoff-design.md).
+contain is listed in the [handoff design](handoff-design.md). A linked agent
+has a guide of its own, and [tools compared](guides/compare.md) sets `slink`
+beside other ways to share a session.
 
 ## Privacy and security
 

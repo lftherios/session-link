@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 /**
- * Render docs/user-guide.md as the site's /docs page: one static, dependency-free
- * HTML file in the hosted pages' palette, written to the path given.
+ * Render the site's documentation: docs/user-guide.md as the /docs page and
+ * each file in docs/guides as /docs/<its name>. Every page is one static,
+ * dependency-free HTML file in the hosted pages' palette.
  *
  *   node scripts/build-docs.mjs ../session-link-server/public/docs.html
  *
- * The server repo commits that file and serves it at /docs. The guide is the
- * source; edit it, not the HTML. Two options serve a preview outside the site:
+ * writes docs.html and, beside it, docs/<name>.html for each guide. The server
+ * repo commits those files and serves them. The Markdown is the source; edit
+ * it, not the HTML. Three options serve a preview of one page outside the site:
  *
+ *   --page <name>       write that guide, and only it, to the path given
  *   --fragment          only the title, style and body content, no document wrapper
  *   --origin <url>      prefix for links to the site itself (default: none, same origin)
  */
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createElement as h } from "react";
@@ -21,37 +24,67 @@ import remarkGfm from "remark-gfm";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const REPO = "https://github.com/lftherios/session-link";
+const SITE = "https://session.link";
+const USER_GUIDE = "docs/user-guide.md";
+const GUIDES = "docs/guides";
 
 const text = node => typeof node === "string" || typeof node === "number" ? String(node)
   : Array.isArray(node) ? node.map(text).join("") : node?.props ? text(node.props.children) : "";
 export const slug = value => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const escape = value => value.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-// A link to another file in the repository works on GitHub and nowhere else,
-// so on the site it points at GitHub. The guide lives in docs/.
-export const siteLink = href => {
+// Where the site serves a source file: the user guide at /docs and a guide at
+// /docs/<its name>. Nothing else in the repository has a page.
+export const routeOf = source => source === USER_GUIDE ? "/docs"
+  : path.posix.dirname(source) === GUIDES && source.endsWith(".md") ? `/docs/${path.posix.basename(source, ".md")}` : null;
+
+// A link from one page to another stays on the site. A link to any other file
+// in the repository works on GitHub and nowhere else, so it points there.
+export const siteLink = (href, from = USER_GUIDE, origin = "") => {
   if (!href || /^[a-z][a-z0-9+.-]*:|^[#/]/i.test(href)) return href;
   const [file, anchor] = href.split("#");
-  const target = path.posix.normalize(path.posix.join("docs", file));
-  return `${REPO}/${path.posix.extname(target) ? "blob" : "tree"}/main/${target}${anchor ? `#${anchor}` : ""}`;
+  const target = path.posix.normalize(path.posix.join(path.posix.dirname(from), file));
+  const hash = anchor ? `#${anchor}` : "";
+  const route = routeOf(target);
+  return route ? `${origin}${route}${hash}` : `${REPO}/${path.posix.extname(target) ? "blob" : "tree"}/main/${target}${hash}`;
 };
 
-export async function buildDocs({ fragment = false, origin = "" } = {}) {
-  const source = await readFile(path.join(root, "docs/user-guide.md"), "utf8");
-  // The first heading is the page title and the line under it says which
-  // version the guide describes; both sit in the page header, not the body.
-  const [, title, status, body] = source.match(/^# (.+)\n\n(.+)\n\n([\s\S]+)$/) ?? [];
-  if (!body) throw new Error("docs/user-guide.md must open with a title and a status line");
-  const sections = [...body.matchAll(/^(##|###) (.+)$/gm)].map(([, level, name]) => ({ deep: level === "###", name, id: slug(name) }));
+// What a search result shows under the title: the page's opening paragraph as
+// plain text, ending on a sentence within the 160 characters a result has.
+export const describe = body => {
+  const opening = body.split(/\n\n/)[0].replace(/\s+/g, " ").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[`*]/g, "").trim();
+  if (opening.length <= 160) return opening;
+  const end = opening.slice(0, 160).lastIndexOf(". ");
+  return end > 0 ? opening.slice(0, end + 1) : `${opening.slice(0, 159).replace(/\s+\S*$/, "")}…`;
+};
+
+// The first heading is the page title and the line under it says which
+// version the page describes; both sit in the page header, not the body.
+const readPage = async source => {
+  const [, title, status, body] = (await readFile(path.join(root, source), "utf8")).match(/^# (.+)\n\n(.+)\n\n([\s\S]+)$/) ?? [];
+  if (!body) throw new Error(`${source} must open with a title and a status line`);
+  return { source, route: routeOf(source), title, status, body };
+};
+
+export const guideSources = async () =>
+  (await readdir(path.join(root, GUIDES))).filter(name => name.endsWith(".md")).sort().map(name => `${GUIDES}/${name}`);
+
+export async function buildDocs({ fragment = false, origin = "", source = USER_GUIDE } = {}) {
+  if (!routeOf(source)) throw new Error(`${source} is not a page of the site`);
+  const { route, title, status, body } = await readPage(source);
+  const others = (await Promise.all([USER_GUIDE, ...await guideSources()].filter(other => other !== source).map(readPage)));
+  const more = "More guides";
+  const sections = [...[...body.matchAll(/^(##|###) (.+)$/gm)].map(([, level, name]) => ({ deep: level === "###", name, id: slug(name) })),
+    { deep: false, name: more, id: slug(more) }];
   const duplicate = sections.find((s, i) => sections.findIndex(o => o.id === s.id) !== i);
-  if (duplicate) throw new Error(`two sections of the guide are both named “${duplicate.name}”`);
+  if (duplicate) throw new Error(`two sections of ${source} are both named “${duplicate.name}”`);
 
   const heading = tag => ({ children }) => h(tag, { id: slug(text(children)) }, children);
   const content = renderToStaticMarkup(h(Markdown, {
     remarkPlugins: [remarkGfm],
     components: {
       h2: heading("h2"), h3: heading("h3"),
-      a: ({ href, children }) => { const to = siteLink(href); return h("a", /^https?:/.test(to ?? "") ? { href: to, rel: "noopener" } : { href: to }, children); },
+      a: ({ href, children }) => { const to = siteLink(href, source, origin); return h("a", /^https?:/.test(to ?? "") ? { href: to, rel: "noopener" } : { href: to }, children); },
       pre: ({ children }) => h("div", { className: "code" }, h("pre", null, children), h("button", { type: "button", className: "copy" }, "Copy")),
       table: ({ children }) => h("div", { className: "table" }, h("table", null, children)),
     },
@@ -63,7 +96,12 @@ export async function buildDocs({ fragment = false, origin = "" } = {}) {
   const contents = sections.map(s => `<li${s.deep ? ' class="deep"' : ""}><a href="#${s.id}">${escape(s.name)}</a></li>`).join("");
   const inlineStatus = renderToStaticMarkup(h(Markdown, { components: { p: ({ children }) => h("span", null, children) } }, status));
 
-  const head = `<title>session.link Docs</title>
+  // Every page links to every other, so none is reachable only from a list
+  // someone has to remember to update.
+  const moreGuides = `<h2 id="${slug(more)}">${more}</h2><ul>${others.map(other => `<li><a href="${origin}${other.route}">${escape(other.title)}</a></li>`).join("")}</ul>`;
+  const pageTitle = source === USER_GUIDE ? "session.link docs — read and share coding-agent sessions with slink" : `${title} — session.link`;
+
+  const head = `<title>${escape(pageTitle)}</title>
 <style>
 /* Layout: a sticky brand bar, then a contents column beside one reading column.
    Colours are the hosted pages' tokens; commands sit on the terminal navy. */
@@ -82,7 +120,8 @@ a:hover{text-decoration:none}
 .bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:2;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
 .bar .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:64px}
 .brand-row{display:flex;align-items:baseline;gap:14px;min-width:0}
-.brand-row .here{font:12px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.brand-row .here{font:12px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);text-decoration:none}
+.brand-row a.here:hover{color:var(--signal)}
 .slink-brand svg{align-self:center}
 .links{display:flex;align-items:center;gap:18px;font-size:14px;white-space:nowrap}
 .links a{color:var(--ink);text-decoration:none}
@@ -132,7 +171,7 @@ th:first-child,td:first-child{width:38%}}
 </style>`;
 
   const page = `<div class="bar"><div class="wrap">
-  <div class="brand-row"><a class="slink-brand slink-brand--compact" href="${origin}/" aria-label="session.link home">${mark}<span class="slink-brand-name">session<span class="slink-brand-dot">.</span>link</span></a><span class="here">Docs</span></div>
+  <div class="brand-row"><a class="slink-brand slink-brand--compact" href="${origin}/" aria-label="session.link home">${mark}<span class="slink-brand-name">session<span class="slink-brand-dot">.</span>link</span></a>${source === USER_GUIDE ? '<span class="here">Docs</span>' : `<a class="here" href="${origin}/docs">Docs</a>`}</div>
   <nav class="links" aria-label="Site"><a class="plain" href="${REPO}" rel="noopener">GitHub ↗</a><a class="btn" href="${origin}/#start">Get started</a></nav>
 </div></div>
 <div class="wrap page">
@@ -141,9 +180,10 @@ th:first-child,td:first-child{width:38%}}
     <h1>${escape(title)}</h1>
     <p class="status">${inlineStatus}</p>
     ${content}
+    ${moreGuides}
   </article>
 </div>
-<footer class="foot"><div class="wrap"><span>Written from <a href="${REPO}/blob/main/docs/user-guide.md" rel="noopener">docs/user-guide.md</a> in the session-link repository.</span><span><a href="${origin}/">session.link</a></span></div></footer>
+<footer class="foot"><div class="wrap"><span>Written from <a href="${REPO}/blob/main/${source}" rel="noopener">${source}</a> in the session-link repository.</span><span><a href="${origin}/">session.link</a></span></div></footer>
 <script>
 // Copy buttons, and the contents list marking the section being read. The
 // page reads the same without either.
@@ -172,10 +212,14 @@ if ('IntersectionObserver' in window) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="How to install slink, read and share coding-agent sessions, record, what stays private, and how to run it from scripts.">
-<link rel="canonical" href="https://session.link/docs">
+<meta name="description" content="${escape(describe(body))}">
+<link rel="canonical" href="${SITE}${route}">
+<meta property="og:title" content="${escape(title)}">
+<meta property="og:description" content="${escape(describe(body))}">
+<meta property="og:type" content="article">
+<meta property="og:url" content="${SITE}${route}">
 <link rel="icon" href="data:image/svg+xml;base64,${icon}" type="image/svg+xml">
-<!-- Generated from docs/user-guide.md in the session-link repository by scripts/build-docs.mjs. Edit the guide, not this file. -->
+<!-- Generated from ${source} in the session-link repository by scripts/build-docs.mjs. Edit that file, not this one. -->
 ${head}
 </head>
 <body>
@@ -189,13 +233,29 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const args = process.argv.slice(2);
   const take = name => { const i = args.indexOf(name); return i < 0 ? undefined : args.splice(i, 2)[1]; };
   const origin = take("--origin") ?? "";
+  const only = take("--page");
   const fragment = args.includes("--fragment");
   const out = args.find(arg => !arg.startsWith("--"));
   if (!out) {
-    console.error("usage: node scripts/build-docs.mjs <output.html> [--fragment] [--origin https://session.link]");
+    console.error("usage: node scripts/build-docs.mjs <output.html> [--page <guide>] [--fragment] [--origin https://session.link]");
     process.exit(1);
   }
-  const html = await buildDocs({ fragment, origin });
-  await writeFile(out, html);
-  console.log(`built ${out} (${(html.length / 1024).toFixed(0)} KB) from docs/user-guide.md`);
+  const write = async (file, source) => {
+    const html = await buildDocs({ fragment, origin, source });
+    await writeFile(file, html);
+    console.log(`built ${file} (${(html.length / 1024).toFixed(0)} KB) from ${source}`);
+  };
+  await write(out, only ? `${GUIDES}/${only}.md` : USER_GUIDE);
+  // The guides go in a directory named after the user guide's file: docs.html
+  // and docs/<name>.html, which is where the site looks for /docs/<name>.
+  if (!only && !fragment) {
+    const dir = out.replace(/\.html$/, "");
+    await mkdir(dir, { recursive: true });
+    const sources = await guideSources();
+    for (const source of sources) await write(path.join(dir, `${path.posix.basename(source, ".md")}.html`), source);
+    // A page whose source is gone would still be served, so say so. Removing
+    // it is left to whoever commits the directory.
+    const built = new Set(sources.map(source => `${path.posix.basename(source, ".md")}.html`));
+    for (const file of await readdir(dir)) if (file.endsWith(".html") && !built.has(file)) console.warn(`stale: ${path.join(dir, file)} has no source in ${GUIDES}; remove it`);
+  }
 }

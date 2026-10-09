@@ -2,6 +2,17 @@
   "name": "@session-link/viewer",
   "version": "0.7.0",
   "description": "The session.link viewer — renders a session/v0 document as an interactive trace tree. React component; consume with a bundler that transpiles the package (e.g. Next transpilePackages).",
+  "keywords": [
+    "session.link",
+    "session-viewer",
+    "transcript-viewer",
+    "coding-agent",
+    "llm",
+    "trace",
+    "react",
+    "claude-code",
+    "codex"
+  ],
   "homepage": "https://session.link",
   "repository": {
     "type": "git",

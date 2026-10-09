@@ -1,7 +1,19 @@
 {
   "name": "@session-link/format",
   "version": "0.1.1",
-  "description": "The open session/v0 format for LLM sessions: types, JSON Schema, and validator.",
+  "description": "The open session/v0 format for coding-agent and LLM sessions: types, JSON Schema, and validator.",
+  "keywords": [
+    "session.link",
+    "session-format",
+    "coding-agent",
+    "llm",
+    "transcript",
+    "trace",
+    "json-schema",
+    "validator",
+    "claude-code",
+    "codex"
+  ],
   "homepage": "https://session.link",
   "repository": {
     "type": "git",

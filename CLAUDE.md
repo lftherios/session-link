@@ -116,6 +116,15 @@ finishing.
   `/docs` page. When something a user sees changes (a command, a flag, a label,
   a limit), update it, then rebuild the page into the server checkout with
   `node scripts/build-docs.mjs ../session-link-server/public/docs.html`.
+- `docs/guides/` holds one page for each question people search with: how to
+  share a session from a named agent, and how `slink` compares with other
+  tools. The same command builds each into `public/docs/<file name>.html`,
+  served at `/docs/<file name>`. A page's title is its first heading and its
+  search description is its opening sentence, so both stay short; the test in
+  `test/user-guide.test.mjs` holds them to that. A new guide also needs a line
+  in the server's `public/sitemap.xml` and `public/llms.txt`. The comparison
+  states only what each tool's own documentation says, with the date it was
+  read.
 
 ## Releases
 

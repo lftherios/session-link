@@ -14,9 +14,10 @@
 
 </div>
 
-`slink` opens the sessions of the agent you already use in a local web reader.
-Pick the exchange that matters, add a note, and publish an end-to-end encrypted
-link. Nothing leaves your machine until you do.
+`slink` is an open-source CLI that turns Claude Code, Codex, opencode, pi and
+Aider sessions into end-to-end encrypted links. It opens the transcript your
+agent already keeps in a local web reader. Pick the exchange that matters, add
+a note, and publish. Nothing leaves your machine until you do.
 
 ## Install
 
@@ -55,7 +56,11 @@ Run `slink help` for everything else. On a remote machine, run
 `slink view --no-browser --port 4400` and forward the port over SSH.
 
 The [user guide](docs/user-guide.md) covers all of this in full, with sharing
-with specific people, privacy, and running `slink` from scripts.
+with specific people, privacy, and running `slink` from scripts. There is a
+guide for each of [Claude Code](docs/guides/claude-code.md),
+[Codex](docs/guides/codex.md), [opencode](docs/guides/opencode.md),
+[Aider](docs/guides/aider.md) and [pi](docs/guides/pi.md), and a
+[comparison](docs/guides/compare.md) with other ways to share a session.
 
 ## Privacy
 
