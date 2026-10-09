@@ -8,7 +8,7 @@
 [![npm](https://img.shields.io/npm/v/session.link?color=1f44ff&label=session.link)](https://www.npmjs.com/package/session.link)
 [![license](https://img.shields.io/badge/license-MIT-1f44ff)](LICENSE)
 
-[![The session.link reader: a human input, the agent's response and its collapsed activity](https://raw.githubusercontent.com/lftherios/session-link/main/assets/product/focused.webp)](https://session.link/demo)
+[![How it works, in three steps: install slink with one command; run slink view in a project to read a session in your browser; run slink share --pick to publish it as an encrypted link](https://raw.githubusercontent.com/lftherios/session-link/main/assets/product/how-it-works.gif)](https://session.link/#start)
 
 **[Try it on a sample session →](https://session.link/demo)**
 

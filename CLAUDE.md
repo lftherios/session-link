@@ -76,6 +76,11 @@ finishing.
   These three take the browser from `CHROME_PATH`, not `BROWSER_BINARY`.
 - Fixtures under `testdata/` are fictional. Never add a real transcript, and
   keep the leakage markers the fixture READMEs describe intact.
+- The README opens with a recording of the landing page's "How it works"
+  section, `assets/product/how-it-works.gif`. It is generated too:
+  `node scripts/capture-how-it-works.mjs` plays the section from the server
+  checkout's `public/landing.html` in a headless browser and writes the GIF
+  with `scripts/gif.mjs`. Record it again when that section changes.
 - Screenshots are generated, not edited: `node scripts/capture-product.mjs`,
   whose `SLINK_BINARY` defaults to `/tmp/session-link-landing-slink`
   (`assets/product/README.md` has the steps). The social preview PNG is

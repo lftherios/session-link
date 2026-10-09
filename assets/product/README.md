@@ -17,6 +17,11 @@ private transcripts or claims about real companies.
 | `agent-activity.webp` | 1280 × 1200 | Recorded command and test output expanded beneath the answer |
 | `prepare-view.webp` | 1100 × 960 | Title, author comment, explicit inclusion, preview, local save, and **Publish link** |
 
+`how-it-works.gif` (1160 × 661, at 1.5 device pixels to one) is a recording, not
+a screenshot: the landing page's "How it works" section playing its three
+steps through once, which is what this repository's README opens with. It loops
+after holding its last frame for four seconds.
+
 Use `focused.webp` as the landing hero, with `focused-mobile.webp` for narrow
 screens. Link screenshots to their full-size assets. Label the examples as
 fictional. The view preparation screenshot shows the share panel before
@@ -38,6 +43,21 @@ go build -o /tmp/session-link-landing-slink ./cmd/slink
 cd ..
 node scripts/capture-product.mjs
 ```
+
+The recording has its own script, which needs the server checkout beside this
+one and no binary:
+
+```sh
+node scripts/capture-how-it-works.mjs
+```
+
+It serves the server checkout's `public/` on loopback, opens the landing page
+in a headless browser, brings "How it works" into view and photographs it
+while the steps play, then writes the GIF with `scripts/gif.mjs`, so nothing
+needs installing. `LANDING_DIR` names another `public/`, and `SCALE` the device
+pixels to a CSS pixel. Record it again when that section changes, which
+includes the release shown in its install step. Typing is random in its
+timing, so two recordings differ in their bytes.
 
 `SLINK_BINARY` and `BROWSER_BINARY` override the binary locations.
 `SCREENSHOT_DIR` overrides this output folder, so the same captures can be

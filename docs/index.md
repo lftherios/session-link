@@ -59,7 +59,7 @@ or an implemented slice.
 | [packages/pi-extension/README.md](../packages/pi-extension/README.md) | The pi extension: `/slink` and `/slink view` commands, install steps, exact-fidelity in-process capture and publishing |
 | [packaging/README.md](../packaging/README.md) | The four CLI distribution channels driven from a tag: goreleaser (archives, packages, Homebrew cask), curl installer, npm, GitHub Release |
 | [assets/brand/README.md](../assets/brand/README.md) | Elision mark, wordmark and brand colors; the social preview card and its export; brand CSS and icons copied into the Go embed and the server |
-| [assets/product/README.md](../assets/product/README.md) | Product screenshots captured from fictional sessions, with sizes and the product state each one shows |
+| [assets/product/README.md](../assets/product/README.md) | Product screenshots from fictional sessions and the README's How it works recording: sizes, what each shows, how to regenerate |
 | [assets/logos/README.md](../assets/logos/README.md) | Provenance and license of the Hermes Agent logo; the other four harness logos have no note yet |
 | [testdata/viewer/arrival/README.md](../testdata/viewer/arrival/README.md) | Fictional arrival fixture: eight exchanges, a recovered failure, Markdown, reasoning parts, standalone tool evidence, a child-agent result |
 | [testdata/share/research/README.md](../testdata/share/research/README.md) | Synthetic research handoff fixture; the `OMITTED_INTERNAL_STRATEGY` marker must be absent from every exported channel |
