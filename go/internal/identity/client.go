@@ -27,15 +27,26 @@ var operations sync.Mutex
 
 type Client struct{ Home, Server, APIKey string }
 type localDevice struct {
-	Seed            []byte  `json:"seed"`
-	Box             []byte  `json:"box"`
-	Root            string  `json:"root"`
-	Seq             int     `json:"seq"`
-	Head            string  `json:"head"`
-	Revision        int     `json:"revision"`
-	Request         *Signed `json:"request,omitempty"`
-	PendingRecovery string  `json:"pending_recovery,omitempty"`
+	Seed            []byte          `json:"seed"`
+	Box             []byte          `json:"box"`
+	Root            string          `json:"root"`
+	Seq             int             `json:"seq"`
+	Head            string          `json:"head"`
+	Revision        int             `json:"revision"`
+	Request         *Signed         `json:"request,omitempty"`
+	PendingRecovery string          `json:"pending_recovery,omitempty"`
+	PendingSetup    *identityUpdate `json:"pending_setup,omitempty"`
 }
+
+// The exact signed, encrypted initial request survives interrupted setup.
+// It contains no unencrypted vault data or recovery private keys.
+type identityUpdate struct {
+	ExpectedHead     string  `json:"expected_head"`
+	ExpectedRevision int     `json:"expected_revision"`
+	Event            *Signed `json:"event,omitempty"`
+	Vault            Signed  `json:"vault"`
+}
+
 type OwnedShare struct {
 	ID     string `json:"id"`
 	SHA256 string `json:"sha256"`
@@ -204,6 +215,14 @@ func (d *localDevice) public(name string) Device {
 	return v
 }
 func (c Client) pin(d *localDevice, r Record, state State, v Vault) error {
+	// Also protect interrupted setup from older clients that saved a recovery
+	// token without a root pin. Never acknowledge a token for another identity.
+	if d.PendingRecovery != "" {
+		parts := strings.Split(d.PendingRecovery, ".")
+		if len(parts) != 3 || parts[0] != "slr1" || parts[1] != digest([]byte(state.Account+"\x00"+state.Root)) {
+			return errors.New("server recovery identity does not match the saved recovery key")
+		}
+	}
 	if d.Root != "" && d.Root != state.Root {
 		return errors.New("server recovery identity changed; refusing replacement")
 	}
@@ -214,6 +233,7 @@ func (c Client) pin(d *localDevice, r Record, state State, v Vault) error {
 		return errors.New("device history conflicts with this device's saved history")
 	}
 	d.Root, d.Seq, d.Head, d.Revision = state.Root, state.Seq, r.head(), v.Revision
+	d.PendingSetup = nil
 	return c.save(d, state.Account)
 }
 func (c Client) save(d *localDevice, account string) error { return privateWrite(c.file(account), d) }
@@ -381,25 +401,25 @@ func (c Client) importShares(data contents) error {
 
 	return nil
 }
-func (c Client) commit(ctx context.Context, old *Record, next State, event *Signed, data contents, key []byte, signer ed25519.PrivateKey) (remote, error) {
+func (c Client) prepareUpdate(old *Record, next State, event *Signed, data contents, key []byte, signer ed25519.PrivateKey) (identityUpdate, error) {
 	if len(data.Named) > 10000 || (len(data.Named) > 0 && data.Version != 2) {
-		return remote{}, errors.New("invalid private sharing backup")
+		return identityUpdate{}, errors.New("invalid private sharing backup")
 	}
 	for _, item := range data.Named {
 		if !validOutbox(item, c.Server, next.Account, next.Root) {
-			return remote{}, errors.New("invalid private sharing backup")
+			return identityUpdate{}, errors.New("invalid private sharing backup")
 		}
 	}
 	raw, err := json.Marshal(data)
 	if err != nil {
-		return remote{}, err
+		return identityUpdate{}, err
 	}
 	if len(raw) > 4*1024*1024 {
-		return remote{}, errors.New("key vault exceeds the backup limit")
+		return identityUpdate{}, errors.New("key vault exceeds the backup limit")
 	}
 	encrypted, err := seal(key, raw, "slink/vault/v1/"+next.context())
 	if err != nil {
-		return remote{}, err
+		return identityUpdate{}, err
 	}
 	rev := 0
 	head := ""
@@ -415,11 +435,14 @@ func (c Client) commit(ctx context.Context, old *Record, next State, event *Sign
 	}
 	vault, err := sign("vault", Vault{Account: next.Account, Revision: rev + 1, Head: nextHead, Epoch: next.Epoch, Signer: next.Signer, Data: encrypted}, signer)
 	if err != nil {
-		return remote{}, err
+		return identityUpdate{}, err
 	}
-	body := map[string]any{"expected_head": head, "expected_revision": rev, "vault": vault}
-	if event != nil {
-		body["event"] = event
+	return identityUpdate{ExpectedHead: head, ExpectedRevision: rev, Event: event, Vault: vault}, nil
+}
+func (c Client) commit(ctx context.Context, old *Record, next State, event *Signed, data contents, key []byte, signer ed25519.PrivateKey) (remote, error) {
+	body, err := c.prepareUpdate(old, next, event, data, key, signer)
+	if err != nil {
+		return remote{}, err
 	}
 	return c.request(ctx, body)
 }
@@ -461,7 +484,7 @@ func (c Client) handle(ctx context.Context, action string, in Input) (Status, er
 	}
 	result := Status{Server: c.Server, Account: remote.Account, State: "setup", Devices: []DeviceInfo{}, Requests: []Pending{}, Shares: []Receipt{}}
 	if remote.Record == nil {
-		if d != nil && d.Root != "" {
+		if d != nil && d.Root != "" && d.PendingSetup == nil {
 			return result, errors.New("encrypted identity is missing from the server; refusing to replace it")
 		}
 		if action == "status" {
@@ -476,45 +499,58 @@ func (c Client) handle(ctx context.Context, action string, in Input) (Status, er
 				return result, err
 			}
 		}
-		seed := random(32)
-		root := ed25519.NewKeyFromSeed(seed)
-		recovery, err := ecdh.X25519().GenerateKey(rand.Reader)
+		if d.PendingSetup == nil {
+			seed := random(32)
+			root := ed25519.NewKeyFromSeed(seed)
+			recovery, err := ecdh.X25519().GenerateKey(rand.Reader)
+			if err != nil {
+				return result, err
+			}
+			secret := random(32)
+			key := random(32)
+			state := State{Account: remote.Account, Kind: "init", Signer: "root", Root: enc.EncodeToString(root.Public().(ed25519.PublicKey)), Recovery: enc.EncodeToString(recovery.PublicKey().Bytes()), Epoch: 1}
+			state.RecoveryBox, err = seal(secret, append(seed, recovery.Bytes()...), "slink/recovery/v1/"+state.Account+"/"+state.Root)
+			if err != nil {
+				return result, err
+			}
+			first := d.public(deviceName(in.Name))
+			first.Wrap, err = wrap(first.Box, key, state.context())
+			if err != nil {
+				return result, err
+			}
+			state.Devices = []Device{first}
+			state.RecoveryWrap, err = wrap(state.Recovery, key, state.context())
+			if err != nil {
+				return result, err
+			}
+			event, err := sign("event", state, root)
+			if err != nil {
+				return result, err
+			}
+			data, err := c.merge(contents{}, state, remote.Owned)
+			if err != nil {
+				return result, err
+			}
+			body, err := c.prepareUpdate(nil, state, &event, data, key, root)
+			if err != nil {
+				return result, err
+			}
+			// Pin our own genesis before the first upload. Retain the exact signed
+			// request so a failed upload can be retried without replacing the root.
+			d.Root, d.Seq, d.Head, d.Revision = state.Root, 0, event.hash(), 1
+			d.PendingSetup = &body
+			d.PendingRecovery = "slr1." + digest([]byte(state.Account+"\x00"+state.Root)) + "." + enc.EncodeToString(secret)
+			if err = c.save(d, state.Account); err != nil {
+				return result, err
+			}
+		}
+		account := remote.Account
+		remote, err = c.request(ctx, d.PendingSetup)
 		if err != nil {
 			return result, err
 		}
-		secret := random(32)
-		key := random(32)
-		state := State{Account: remote.Account, Kind: "init", Signer: "root", Root: enc.EncodeToString(root.Public().(ed25519.PublicKey)), Recovery: enc.EncodeToString(recovery.PublicKey().Bytes()), Epoch: 1}
-		state.RecoveryBox, err = seal(secret, append(seed, recovery.Bytes()...), "slink/recovery/v1/"+state.Account+"/"+state.Root)
-		if err != nil {
-			return result, err
-		}
-		first := d.public(deviceName(in.Name))
-		first.Wrap, err = wrap(first.Box, key, state.context())
-		if err != nil {
-			return result, err
-		}
-		state.Devices = []Device{first}
-		state.RecoveryWrap, err = wrap(state.Recovery, key, state.context())
-		if err != nil {
-			return result, err
-		}
-		event, err := sign("event", state, root)
-		if err != nil {
-			return result, err
-		}
-		data, err := c.merge(contents{}, state, remote.Owned)
-		if err != nil {
-			return result, err
-		}
-		// Save before contacting the server. A lost response must not lose recovery.
-		d.PendingRecovery = "slr1." + digest([]byte(state.Account+"\x00"+state.Root)) + "." + enc.EncodeToString(secret)
-		if err = c.save(d, state.Account); err != nil {
-			return result, err
-		}
-		remote, err = c.commit(ctx, nil, state, &event, data, key, root)
-		if err != nil {
-			return result, err
+		if remote.Account != account || remote.Record == nil {
+			return result, errors.New("server did not acknowledge the initial encrypted identity")
 		}
 	}
 	state, vault, err := remote.Record.verify(remote.Account)

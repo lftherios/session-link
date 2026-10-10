@@ -1,8 +1,11 @@
 # Identity and encrypted sharing
 
-2026-09-12, updated 2026-10-09 · deployed: encrypted sharing live since 2026-09-12
+2026-09-12, updated 2026-10-10 · deployed: encrypted sharing live since 2026-09-12
 (v29), named sharing and email sign-in since 2026-10-01 (v30). Independent
 protocol review and a volume restore rehearsal remain open.
+
+The initial-setup identity pinning fix described below is in the client source;
+it is not part of the deployment status above.
 
 The Go client scans and encrypts the prepared export locally. The hosted
 `session-link-server` stores ciphertext in iroh-blobs FsStore and serves it over
@@ -64,6 +67,16 @@ that acknowledgment, the key stays in the private local device file so closing
 the page or losing the setup response cannot strand it. The acknowledgment
 removes that local recovery secret. Ordinary approved devices never retain the
 recovery signing seed or recovery encryption private key.
+
+Before the first setup upload, native and browser clients durably pin their own
+generated recovery root and initial signed history head. A server response must
+match that identity before it can unlock the vault or enable later backups.
+An interrupted setup retains the exact signed, encrypted request alongside the
+pending recovery token: retry resends it if the server did not store it, or
+verifies the stored identity if only the acknowledgment was lost. Successful
+verification removes the pending request; acknowledging the recovery key removes
+the token. Pending recovery tokens from older clients are also checked against
+the returned identity before acceptance.
 
 On a new device, account login shows a locked vault. **Request device approval**
 creates new device key pairs and displays a 12-character code. On an approved
@@ -142,9 +155,10 @@ Every encryption generates a fresh 12-byte nonce and uses a 16-byte tag.
 Approval requests sign account/root, both device public keys, display name,
 a 24-byte random nonce and creation time. The code is the first twelve base32
 characters of SHA-256(payload bytes), grouped 4-4-4. An approved client computes
-it independently and requires the code from the new device. Initial root
-association is trust on first use; this does not provide a public transparency
-log or independently verified human identity.
+it independently and requires the code from the new device. A device first
+encountering an existing account history uses trust on first use; a client
+creating an identity pins its own generated root before upload. This does not
+provide a public transparency log or independently verified human identity.
 
 ## Storage, scope and limits
 
@@ -195,6 +209,12 @@ code could read those as well. Loss of all approved devices and the recovery key
 makes old backed-up links unrecoverable through account login alone.
 
 ## Verification and deployment
+
+Native and browser setup regression tests reject a valid server-substituted
+identity both in the initial response and after a restart. They also exercise
+retries before server commit and after a lost acknowledgment, checking that the
+same recovery token and signed setup request survive. These tests run in the
+ordinary Go and JavaScript suites without the server bridge.
 
 Local checks cover Go/Web Crypto share interoperability, authenticated-encryption
 tampering, wrong recovery keys, account-only lock, approval code mismatch, device

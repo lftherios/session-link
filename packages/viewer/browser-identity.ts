@@ -1,7 +1,8 @@
 import {b64,unb64,utf8,random,concat,pair,privateKey,seal,unseal,wrap,unwrap,sign,verify,unpack,head,hash,confirmation,type Signed} from "./identity-crypto";
 import {deviceID,keyContext,verifyRecord,type Device,type DeviceRequest,type IdentityRecord,type IdentityState,type KeyVault,type VaultSnapshot} from "./identity-protocol";
 
-type LocalDevice={sign:CryptoKey;box:CryptoKey;signPublic:string;boxPublic:string;root:string;seq:number;head:string;revision:number;pendingRecovery?:string};
+type IdentityUpdate={expected_head:string;expected_revision:number;event?:Signed;vault:Signed};
+type LocalDevice={sign:CryptoKey;box:CryptoKey;signPublic:string;boxPublic:string;root:string;seq:number;head:string;revision:number;pendingRecovery?:string;pendingSetup?:IdentityUpdate};
 export type IdentityResponse={account:string;record:IdentityRecord|null;requests:Signed[]};
 export type IdentityStatus={account:string;state:"setup"|"locked"|"ready";device_id?:string;devices:{id:string;name:string;current:boolean}[];requests:{id:string;name:string}[];confirmation?:string;recovery_key?:string;recovery_pending:boolean;sharing_ready?:boolean};
 export type UnlockedIdentity={account:string;device:LocalDevice;deviceID:string;record:IdentityRecord;state:IdentityState;vault:VaultSnapshot;key:Uint8Array<ArrayBuffer>;data:KeyVault;head:string};
@@ -19,9 +20,11 @@ async function newDevice():Promise<LocalDevice>{try{const [s,b]=await Promise.al
 async function publicDevice(d:LocalDevice,name:string):Promise<Device>{return {id:await deviceID(d.signPublic,d.boxPublic),name,sign:d.signPublic,box:d.boxPublic,wrap:""}}
 function nameFor(name?:string){let value=name?.trim()||"This browser";while(utf8(value).length>80)value=Array.from(value).slice(0,-1).join("");return value}
 async function pin(account:string,device:LocalDevice,record:IdentityRecord,state:IdentityState,vault:VaultSnapshot){
+ // Older clients retained the recovery token before they pinned a root.
+ if(device.pendingRecovery){const parts=device.pendingRecovery.split(".");if(parts.length!==3||parts[0]!=="slr1"||parts[1]!==await hash(utf8(account+"\0"+state.root)))throw new Error("The server's recovery identity does not match your saved recovery key.")}
  if(device.root&&device.root!==state.root)throw new Error("The server's recovery identity changed. Refusing to replace your keys.");
  if(device.seq>=record.events.length||device.revision>vault.revision||(device.seq>=0&&device.head&&await head(record.events[device.seq])!==device.head))throw new Error("The server returned an older or conflicting key history.");
- device.root=state.root;device.seq=state.seq;device.head=vault.head;device.revision=vault.revision;await saveLocal(account,device);
+ device.root=state.root;device.seq=state.seq;device.head=vault.head;device.revision=vault.revision;delete device.pendingSetup;await saveLocal(account,device);
 }
 async function decodeVault(key:Uint8Array<ArrayBuffer>,state:IdentityState,vault:VaultSnapshot):Promise<KeyVault>{
  const raw=await unseal(key,vault.data,"slink/vault/v1/"+keyContext(state));if(raw.length>4*1024*1024)throw new Error("Key vault exceeds the supported size");
@@ -33,10 +36,13 @@ async function decodeVault(key:Uint8Array<ArrayBuffer>,state:IdentityState,vault
  return data;
 }
 async function rotateInbox(state:IdentityState,data:KeyVault){const keys=await pair("X25519",true);state.inbox=keys.public;data.inboxes??={};data.inboxes[keys.public]=b64(keys.seed!);data.version=2}
-async function commit(record:IdentityRecord|null,state:IdentityState,data:KeyVault,key:Uint8Array<ArrayBuffer>,signer:CryptoKey,event?:Signed):Promise<IdentityResponse>{
+async function prepareUpdate(record:IdentityRecord|null,state:IdentityState,data:KeyVault,key:Uint8Array<ArrayBuffer>,signer:CryptoKey,event?:Signed):Promise<IdentityUpdate>{
  const old=record?unpack<VaultSnapshot>(record.vault):null,raw=utf8(JSON.stringify(data));if(raw.length>4*1024*1024)throw new Error("Key vault exceeds the supported size");
  const value:VaultSnapshot={account:state.account,revision:(old?.revision??0)+1,head:event?await head(event):old?.head??"",epoch:state.epoch,signer:state.signer,data:await seal(key,raw,"slink/vault/v1/"+keyContext(state))};
- return browserRequest("/api/identity","POST",{expected_head:old?.head??"",expected_revision:old?.revision??0,...(event?{event}:{}),vault:await sign("vault",value,signer)});
+ return {expected_head:old?.head??"",expected_revision:old?.revision??0,...(event?{event}:{}),vault:await sign("vault",value,signer)};
+}
+async function commit(record:IdentityRecord|null,state:IdentityState,data:KeyVault,key:Uint8Array<ArrayBuffer>,signer:CryptoKey,event?:Signed):Promise<IdentityResponse>{
+ return browserRequest("/api/identity","POST",await prepareUpdate(record,state,data,key,signer,event));
 }
 export async function unlockedIdentity():Promise<UnlockedIdentity>{
  if(!navigator.locks)throw new Error("This browser does not support private device storage locks. Update your browser.");
@@ -58,14 +64,24 @@ async function identityAction(action:string,input:IdentityInput):Promise<Identit
  let remote=await browserRequest<IdentityResponse>("/api/identity"),d=await readLocal(remote.account);
  const result:IdentityStatus={account:remote.account,state:"setup",devices:[],requests:[],recovery_pending:false};
  if(!remote.record){
-  if(d?.root)throw new Error("The server's encrypted identity is missing. Refusing to replace it.");
+  if(d?.root&&!d.pendingSetup)throw new Error("The server's encrypted identity is missing. Refusing to replace it.");
   if(action==="status")return result;if(action!=="setup")throw new Error("Set up private access first");
-  d??=await newDevice();const [root,recovery]=await Promise.all([pair("Ed25519",true),pair("X25519",true)]),secret=random(),key=random();
-  const state:IdentityState={account:remote.account,seq:0,prev:"",kind:"init",signer:"root",root:root.public,recovery:recovery.public,recovery_box:await seal(secret,concat(root.seed!,recovery.seed!),`slink/recovery/v1/${remote.account}/${root.public}`),recovery_wrap:"",epoch:1,devices:[]};
-  const own=await publicDevice(d,nameFor(input.name));own.wrap=await wrap(own.box,key,keyContext(state));state.devices=[own];state.recovery_wrap=await wrap(state.recovery,key,keyContext(state));
-  const data:KeyVault={version:2,shares:[]};await rotateInbox(state,data);
-  d.pendingRecovery=`slr1.${await hash(utf8(state.account+"\0"+state.root))}.${b64(secret)}`;await saveLocal(remote.account,d);
-  remote=await commit(null,state,data,key,root.private,await sign("event",state,root.private));
+  d??=await newDevice();
+  if(!d.pendingSetup){
+   const [root,recovery]=await Promise.all([pair("Ed25519",true),pair("X25519",true)]),secret=random(),key=random();
+   const state:IdentityState={account:remote.account,seq:0,prev:"",kind:"init",signer:"root",root:root.public,recovery:recovery.public,recovery_box:await seal(secret,concat(root.seed!,recovery.seed!),`slink/recovery/v1/${remote.account}/${root.public}`),recovery_wrap:"",epoch:1,devices:[]};
+   const own=await publicDevice(d,nameFor(input.name));own.wrap=await wrap(own.box,key,keyContext(state));state.devices=[own];state.recovery_wrap=await wrap(state.recovery,key,keyContext(state));
+   const data:KeyVault={version:2,shares:[]};await rotateInbox(state,data);
+   const event=await sign("event",state,root.private);
+   // Persist our genesis and exact encrypted request before contacting the
+   // server. Retrying an interrupted setup must keep the same trust anchor.
+   d.root=state.root;d.seq=0;d.head=await head(event);d.revision=1;
+   d.pendingSetup=await prepareUpdate(null,state,data,key,root.private,event);
+   d.pendingRecovery=`slr1.${await hash(utf8(state.account+"\0"+state.root))}.${b64(secret)}`;await saveLocal(remote.account,d);
+  }
+  const account=remote.account;
+  remote=await browserRequest<IdentityResponse>("/api/identity","POST",d.pendingSetup);
+  if(remote.account!==account||!remote.record)throw new Error("The server did not acknowledge the initial encrypted identity.");
  }
  const record=remote.record!,{state,vault}=await verifyRecord(record,remote.account);
  if(d)await pin(remote.account,d,record,state,vault);
