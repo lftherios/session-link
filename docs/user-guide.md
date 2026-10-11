@@ -1,6 +1,6 @@
 # session.link user guide
 
-For `slink` 0.9.0 · updated 2026-10-09.
+For `slink` 0.9.1 · updated 2026-10-11.
 
 `slink` reads the sessions your coding agent already keeps, shows them in a
 local web reader, and publishes the part you choose as an encrypted link.
