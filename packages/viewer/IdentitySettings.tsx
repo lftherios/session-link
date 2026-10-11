@@ -16,18 +16,22 @@ export function IdentitySettings({ browser = false, embedded = false, onReady }:
  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
  const [name, setName] = useState(""), [recovery, setRecovery] = useState(""), [newRecovery, setNewRecovery] = useState("");
  const [codes, setCodes] = useState<Record<string, string>>({}), [revoke, setRevoke] = useState(""), [copied, setCopied] = useState("");
+ // Set when this device holds a setup the account's recovery identity did not come from.
+ const [conflict, setConflict] = useState(false), here = browser ? "browser" : "device";
  const act = async (action: string, input: Record<string, string> = {}) => {
   setBusy(true); setError(""); setNotice("");
   try {
    const data = browser ? { ...await browserIdentity(action,input), server:location.origin, shares:[] } as Status : await localRequest<Status>("/api/identity", "POST", { action, ...input });
-   setStatus(data); if (data.recovery_key) setNewRecovery(data.recovery_key);
+   setStatus(data); setConflict(false); if (data.recovery_key) setNewRecovery(data.recovery_key);
    if (action === "confirm-recovery") setNewRecovery("");
    if (action === "recover") setRecovery("");
    if (action === "sync") setNotice("Your share keys are backed up.");
+   if (action === "discard-setup") setNotice(`The unfinished setup is gone. Approve this ${here} from the one where you set up recovery, or use its recovery key.`);
    if (data.state === "ready" && !data.recovery_pending) onReady?.();
    setRevoke("");
   } catch (error) {
    setError((error as Error).message);
+   if ((error as {code?:string}).code === "setup_conflict") { setConflict(true); setStatus(null); setNewRecovery(""); } else setConflict(false);
    if ([401,403].includes((error as {status?:number}).status ?? 0)) { setSignedIn(false); setStatus(null); setNewRecovery(""); }
   }
   finally { setBusy(false); }
@@ -50,7 +54,14 @@ export function IdentitySettings({ browser = false, embedded = false, onReady }:
   {signedIn === false && (browser ? <p><a href={`/login?next=${encodeURIComponent(location.pathname)}`}>Sign in to continue</a></p> : <LocalLogin preparing={false} onSignedIn={() => { setSignedIn(true); void act("status"); }} />)}
   {error && <p role="alert" style={{ color: "var(--error)" }}>{error}</p>}
   {notice && <p role="status">{notice}</p>}
-  {signedIn && !status && <button disabled={busy} onClick={() => act("status")}>{busy ? "Loading…" : "Retry"}</button>}
+  {signedIn && !status && !conflict && <button disabled={busy} onClick={() => act("status")}>{busy ? "Loading…" : "Retry"}</button>}
+  {conflict && <section>
+   <h2>Recovery was set up somewhere else</h2>
+   <p>This {here} started to set up recovery and never finished, and your account now has a recovery key that was not created here. That is what you see after setting up recovery on another device or browser first. If you did, discard the unfinished setup, then approve this {here} from the other one or use its recovery key.</p>
+   <p>If you have not set up recovery anywhere else, stop here. The recovery key on this account is not yours, and discarding will not change that.</p>
+   <button disabled={busy} onClick={() => act("discard-setup")}>Discard unfinished setup</button>
+   <button disabled={busy} onClick={() => act("status")}>Check again</button>
+  </section>}
   {status && <fieldset disabled={busy} style={{ border: 0, padding: 0 }}>
    {status.state === "setup" && <section>
     <h2>Set up recovery</h2>

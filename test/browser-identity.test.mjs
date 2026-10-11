@@ -21,6 +21,7 @@ function environment(t, api) {
       const tx = { objectStore: () => ({
         get(key) { const result = {}; queueMicrotask(() => { result.result = structuredClone(devices.get(key)); result.onsuccess(); }); return result; },
         put(value, key) { const copy = structuredClone(value); queueMicrotask(() => { devices.set(key, copy); tx.oncomplete(); }); },
+        delete(key) { queueMicrotask(() => { devices.delete(key); tx.oncomplete(); }); },
       }) };
       return tx;
     } } };
@@ -70,7 +71,7 @@ for (const lostResponse of [false, true]) test(`browser setup rejects substitute
   });
   await assert.rejects(browserIdentity("setup"), lostResponse ? /Connection lost/ : /recovery identity/);
   const pinned = structuredClone(devices.get(account));
-  for (const action of ["status", "setup", "confirm-recovery", "sharing"]) await assert.rejects(browserIdentity(action), /recovery identity/);
+  for (const action of ["status", "setup", "confirm-recovery", "sharing", "discard-setup"]) await assert.rejects(browserIdentity(action), /recovery identity/);
   assert.deepEqual(devices.get(account), pinned);
   assert.equal(posts, 1, "no keys may be uploaded after accepting the forged response");
 });
@@ -112,5 +113,84 @@ test("browser setup checks recovery tokens retained by older clients", async t =
   await assert.rejects(browserIdentity("setup"), /Connection lost/);
   const saved = devices.get(account);
   saved.root = ""; saved.seq = -1; saved.head = ""; saved.revision = 0; delete saved.pendingSetup;
-  await assert.rejects(browserIdentity("setup"), /recovery identity/);
+  for (const action of ["setup", "discard-setup"]) await assert.rejects(browserIdentity(action), /recovery identity/);
+});
+
+// An honest account shared by several browsers, with pending approval requests.
+function sharedAccount() {
+  const server = { record: null, requests: [], offline: false, posts: 0 };
+  server.api = body => {
+    if (body) {
+      if (server.offline) throw new Error("Connection lost");
+      server.posts++;
+      if (body.request) server.requests.push(body.request);
+      else server.record = { events: [...(server.record?.events ?? []), ...(body.event ? [body.event] : [])], vault: body.vault };
+    }
+    return { account, record: server.record, requests: server.requests };
+  };
+  return server;
+}
+// Run one action as a second browser that has its own key storage.
+async function elsewhere(devices, other, action) {
+  const mine = new Map(devices);
+  devices.clear(); for (const entry of other) devices.set(...entry);
+  try { return await action(); } finally {
+    other.clear(); for (const entry of devices) other.set(...entry);
+    devices.clear(); for (const entry of mine) devices.set(...entry);
+  }
+}
+const conflict = error => error.code === "setup_conflict";
+
+// A browser whose own setup never reached the server must not stay locked out
+// once another device has set the account up. It refuses that identity until
+// the unfinished setup is discarded, then joins with fresh keys.
+for (const [name, legacy, join] of [["approval", false, "request"], ["the recovery key", false, "recover"], ["the recovery key after an older client", true, "recover"]]) test(`browser setup lost to another device joins by ${name}`, async t => {
+  const server = sharedAccount(), devices = environment(t, server.api), other = new Map();
+  server.offline = true;
+  await assert.rejects(browserIdentity("setup"), /Connection lost/);
+  server.offline = false;
+  if (legacy) { const saved = devices.get(account); saved.root = ""; saved.seq = -1; saved.head = ""; saved.revision = 0; delete saved.pendingSetup; }
+  const unfinished = structuredClone(devices.get(account));
+  const first = await elsewhere(devices, other, () => browserIdentity("setup", { name: "Other" }));
+  assert.equal(first.state, "ready");
+  const posts = server.posts;
+  for (const action of ["status", "setup", "request", "recover", "sharing", "confirm-recovery"]) await assert.rejects(browserIdentity(action, { recovery_key: first.recovery_key }), conflict);
+  assert.deepEqual(devices.get(account), unfinished);
+  assert.equal(server.posts, posts, "an undecided conflict must not upload anything");
+  const discarded = await browserIdentity("discard-setup");
+  assert.equal(discarded.state, "locked");
+  assert.equal(discarded.device_id, "");
+  assert.equal(discarded.recovery_pending, false);
+  assert.equal(devices.has(account), false);
+  if (join === "request") {
+    const pending = await browserIdentity("request", { name: "This browser" });
+    assert.ok(pending.confirmation);
+    await elsewhere(devices, other, () => browserIdentity("approve", { id: pending.device_id, code: pending.confirmation }));
+  } else await browserIdentity("recover", { recovery_key: first.recovery_key });
+  const joined = await browserIdentity("status");
+  assert.equal(joined.state, "ready");
+  assert.equal(joined.devices.length, 2);
+  assert.notEqual(devices.get(account).signPublic, unfinished.signPublic, "keys the server has seen must not be reused");
+  assert.notEqual(devices.get(account).boxPublic, unfinished.boxPublic);
+  assert.equal(devices.get(account).pendingRecovery, undefined);
+});
+
+// Discarding is only for a setup that was never acknowledged. A browser whose
+// identity the server did acknowledge keeps refusing a replacement, and keeps
+// the only copy of a recovery key it has not shown yet.
+test("browser discards only a setup that was never acknowledged", async t => {
+  const server = sharedAccount(), devices = environment(t, server.api), other = new Map();
+  await browserIdentity("setup");
+  await assert.rejects(browserIdentity("discard-setup"), /no unfinished/);
+  const own = server.record;
+  server.record = null;
+  await elsewhere(devices, other, () => browserIdentity("setup"));
+  const replaced = server.record;
+  for (const confirmed of [false, true]) {
+    const saved = structuredClone(devices.get(account));
+    assert.equal(saved.pendingRecovery === undefined, confirmed);
+    for (const action of ["discard-setup", "status"]) await assert.rejects(browserIdentity(action), error => !conflict(error) && /recovery identity/.test(error.message));
+    assert.deepEqual(devices.get(account), saved);
+    if (!confirmed) { server.record = own; await browserIdentity("confirm-recovery"); server.record = replaced; }
+  }
 });

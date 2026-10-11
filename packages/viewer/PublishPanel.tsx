@@ -24,7 +24,8 @@ export function PublishPanel({ endpoint, title, ready = false, onPublished, loca
  useEffect(() => {
   if (audience !== "named" || !signedIn) return;
   localRequest<{state: string; recovery_pending: boolean}>("/api/identity", "POST", {action: "status"})
-   .then(data => setKeysReady(data.state === "ready" && !data.recovery_pending)).catch(e => setError(e.message));
+   // The settings shown for a missing key also explain an unfinished setup and can discard it.
+   .then(data => setKeysReady(data.state === "ready" && !data.recovery_pending)).catch(e => e.code === "setup_conflict" ? setKeysReady(false) : setError(e.message));
  }, [audience, signedIn]);
  useEffect(() => {
   if (!open) return;

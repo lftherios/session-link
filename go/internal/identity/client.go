@@ -214,14 +214,41 @@ func (d *localDevice) public(name string) Device {
 	v.ID = deviceID(v.Sign, v.Box)
 	return v
 }
+func (d *localDevice) recoveryMatches(state State) bool {
+	parts := strings.Split(d.PendingRecovery, ".")
+	return len(parts) == 3 && parts[0] == "slr1" && parts[1] == digest([]byte(state.Account+"\x00"+state.Root))
+}
+
+// A setup the server never acknowledged to this device, while the account
+// holds an identity built without this device's keys: another device set the
+// account up first, or the server replaced the upload. The two cannot be told
+// apart, so only an explicit discard-setup moves past it. An identity that
+// does list these keys can only come from the upload, and is always refused.
+func (d *localDevice) setupConflict(state State) bool {
+	switch {
+	case d.PendingSetup != nil:
+		if d.Root == state.Root {
+			return false
+		}
+	case d.Root == "" && d.PendingRecovery != "":
+		// Older clients kept only the recovery token until the first response.
+		if d.recoveryMatches(state) {
+			return false
+		}
+	default:
+		return false
+	}
+	_, listed := state.device(d.public("").ID)
+	return !listed
+}
 func (c Client) pin(d *localDevice, r Record, state State, v Vault) error {
+	if d.setupConflict(state) {
+		return ErrSetupConflict
+	}
 	// Also protect interrupted setup from older clients that saved a recovery
 	// token without a root pin. Never acknowledge a token for another identity.
-	if d.PendingRecovery != "" {
-		parts := strings.Split(d.PendingRecovery, ".")
-		if len(parts) != 3 || parts[0] != "slr1" || parts[1] != digest([]byte(state.Account+"\x00"+state.Root)) {
-			return errors.New("server recovery identity does not match the saved recovery key")
-		}
+	if d.PendingRecovery != "" && !d.recoveryMatches(state) {
+		return errors.New("server recovery identity does not match the saved recovery key")
 	}
 	if d.Root != "" && d.Root != state.Root {
 		return errors.New("server recovery identity changed; refusing replacement")
@@ -557,10 +584,21 @@ func (c Client) handle(ctx context.Context, action string, in Input) (Status, er
 	if err != nil {
 		return result, err
 	}
+	if d != nil && action == "discard-setup" && d.setupConflict(state) {
+		// Drop the device keys with the unfinished setup: the server has seen
+		// them. This device then joins like any other new device.
+		if err = os.Remove(c.file(state.Account)); err != nil {
+			return result, err
+		}
+		d, action = nil, "status"
+	}
 	if d != nil {
 		if err = c.pin(d, *remote.Record, state, vault); err != nil {
 			return result, err
 		}
+	}
+	if action == "discard-setup" {
+		return result, errors.New("this device has no unfinished recovery setup to discard")
 	}
 	if d == nil && (action == "request" || action == "recover") {
 		d, err = newDevice()

@@ -132,7 +132,7 @@ func TestSetupRejectsServerIdentitySubstitution(t *testing.T) {
 			if _, err := client.Handle(context.Background(), "setup", Input{}); err == nil {
 				t.Fatal("substitution accepted")
 			}
-			for _, action := range []string{"status", "setup", "confirm-recovery", "sync"} {
+			for _, action := range []string{"status", "setup", "confirm-recovery", "sync", "discard-setup"} {
 				if _, err := client.Handle(context.Background(), action, Input{}); err == nil || !strings.Contains(err.Error(), "recovery identity") {
 					t.Fatalf("%s accepted substitution: %v", action, err)
 				}
@@ -237,7 +237,184 @@ func TestSetupChecksLegacyPendingRecovery(t *testing.T) {
 	if err := client.save(d, account); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Handle(context.Background(), "setup", Input{}); err == nil || !strings.Contains(err.Error(), "recovery identity") {
-		t.Fatalf("legacy setup accepted substitution: %v", err)
+	for _, action := range []string{"setup", "discard-setup"} {
+		if _, err := client.Handle(context.Background(), action, Input{}); err == nil || !strings.Contains(err.Error(), "recovery identity") {
+			t.Fatalf("legacy %s accepted substitution: %v", action, err)
+		}
+	}
+}
+
+// An honest account shared by several devices: compare-and-swap writes and
+// pending approval requests, as the server keeps them.
+type sharedAccount struct {
+	t        *testing.T
+	record   *Record
+	requests []Signed
+	offline  bool
+	posts    int
+}
+
+func (s *sharedAccount) client() Client {
+	return Client{Home: s.t.TempDir(), Server: "https://setup.example.test", APIKey: "fixture"}
+}
+func newSharedAccount(t *testing.T, account string) *sharedAccount {
+	t.Helper()
+	s := &sharedAccount{t: t}
+	previous := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = previous })
+	reply := func(status int, value any) (*http.Response, error) {
+		raw, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(raw))}, nil
+	}
+	http.DefaultTransport = setupTransport(func(r *http.Request) (*http.Response, error) {
+		if r.Method == "POST" {
+			if s.offline {
+				return nil, errors.New("connection lost")
+			}
+			s.posts++
+			var body struct {
+				identityUpdate
+				Request *Signed `json:"request"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Request != nil {
+				s.requests = append(s.requests, *body.Request)
+			} else {
+				next := Record{Vault: body.Vault}
+				if s.record != nil {
+					next.Events = append(next.Events, s.record.Events...)
+				}
+				if body.ExpectedHead != next.head() {
+					return reply(409, map[string]any{"error": map[string]string{"message": "Vault changed; refresh and retry"}})
+				}
+				if body.Event != nil {
+					next.Events = append(next.Events, *body.Event)
+				}
+				s.record = &next
+			}
+		}
+		return reply(200, remote{Account: account, Record: s.record, Requests: s.requests})
+	})
+	return s
+}
+
+// A device whose own setup never reached the server must not stay locked out
+// once another device has set the account up. It refuses that identity until
+// the unfinished setup is discarded, then joins with fresh keys.
+func TestSetupLostToAnotherDevice(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		legacy bool
+		join   string
+	}{{"approval", false, "request"}, {"recovery_key", false, "recover"}, {"older_client", true, "recover"}} {
+		t.Run(test.name, func(t *testing.T) {
+			const account = "usr_race"
+			ctx := context.Background()
+			server := newSharedAccount(t, account)
+			a, b := server.client(), server.client()
+			server.offline = true
+			if _, err := a.Handle(ctx, "setup", Input{Name: "A"}); err == nil {
+				t.Fatal("expected interrupted setup")
+			}
+			server.offline = false
+			unfinished, err := a.load(account)
+			if err != nil || unfinished == nil {
+				t.Fatal("interrupted setup was not saved", err)
+			}
+			if test.legacy {
+				// Older clients saved only the recovery token before their first upload.
+				unfinished.Root, unfinished.Head, unfinished.Seq, unfinished.Revision, unfinished.PendingSetup = "", "", -1, 0, nil
+				if err := a.save(unfinished, account); err != nil {
+					t.Fatal(err)
+				}
+			}
+			first, err := b.Handle(ctx, "setup", Input{Name: "B"})
+			if err != nil || first.State != "ready" || first.RecoveryKey == "" {
+				t.Fatal("the other device could not set up", err)
+			}
+			posts := server.posts
+			for _, action := range []string{"status", "setup", "request", "recover", "sync", "confirm-recovery"} {
+				if _, err := a.Handle(ctx, action, Input{RecoveryKey: first.RecoveryKey}); !errors.Is(err, ErrSetupConflict) {
+					t.Fatalf("%s did not report the unfinished setup: %v", action, err)
+				}
+			}
+			if current, _ := a.load(account); !reflect.DeepEqual(unfinished, current) || server.posts != posts {
+				t.Fatal("an undecided conflict changed local keys or uploaded")
+			}
+			status, err := a.Handle(ctx, "discard-setup", Input{})
+			if err != nil || status.State != "locked" || status.DeviceID != "" || status.RecoveryPending {
+				t.Fatalf("discard did not leave a new device: %+v %v", status, err)
+			}
+			if d, err := a.load(account); d != nil || err != nil {
+				t.Fatal("discard kept the unfinished setup", err)
+			}
+			if test.join == "request" {
+				pending, err := a.Handle(ctx, "request", Input{Name: "A"})
+				if err != nil || pending.Confirmation == "" {
+					t.Fatal("could not request approval", err)
+				}
+				if _, err := b.Handle(ctx, "approve", Input{ID: pending.DeviceID, Code: pending.Confirmation}); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := a.Handle(ctx, "recover", Input{Name: "A", RecoveryKey: first.RecoveryKey}); err != nil {
+				t.Fatal(err)
+			}
+			status, err = a.Handle(ctx, "sync", Input{})
+			if err != nil || status.State != "ready" || len(status.Devices) != 2 {
+				t.Fatalf("device did not join the account: %+v %v", status, err)
+			}
+			joined, _ := a.load(account)
+			if bytes.Equal(joined.Seed, unfinished.Seed) || bytes.Equal(joined.Box, unfinished.Box) || joined.PendingRecovery != "" {
+				t.Fatal("discard kept keys the server had already seen")
+			}
+		})
+	}
+}
+
+// Discarding is only for a setup that was never acknowledged. A device whose
+// identity the server did acknowledge keeps refusing a replacement, and keeps
+// the only copy of a recovery key it has not shown yet.
+func TestDiscardSetupNeedsAnUnfinishedSetup(t *testing.T) {
+	const account = "usr_keep"
+	ctx := context.Background()
+	server := newSharedAccount(t, account)
+	a := server.client()
+	if _, err := a.Handle(ctx, "setup", Input{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Handle(ctx, "discard-setup", Input{}); err == nil || !strings.Contains(err.Error(), "no unfinished") {
+		t.Fatalf("a finished setup was discarded: %v", err)
+	}
+	own, replaced := server.record, server.client()
+	server.record = nil
+	if _, err := replaced.Handle(ctx, "setup", Input{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, confirmed := range []bool{false, true} {
+		saved, _ := a.load(account)
+		if saved == nil || (saved.PendingRecovery == "") != confirmed {
+			t.Fatal("unexpected recovery token state")
+		}
+		for _, action := range []string{"discard-setup", "status"} {
+			if _, err := a.Handle(ctx, action, Input{}); err == nil || errors.Is(err, ErrSetupConflict) || !strings.Contains(err.Error(), "recovery identity") {
+				t.Fatalf("%s accepted a replaced identity (confirmed=%v): %v", action, confirmed, err)
+			}
+		}
+		if current, _ := a.load(account); !reflect.DeepEqual(saved, current) {
+			t.Fatal("a replaced identity changed local keys")
+		}
+		if !confirmed {
+			theirs := server.record
+			server.record = own
+			if _, err := a.Handle(ctx, "confirm-recovery", Input{}); err != nil {
+				t.Fatal(err)
+			}
+			server.record = theirs
+		}
 	}
 }

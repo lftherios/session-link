@@ -68,7 +68,8 @@ export function NamedView({ id }: { id: string }) {
     if (invited.invitation.id !== invite.id || await hash(unb64(invite.secret, 32)) !== invited.invitation.commitment) throw final("This invitation link doesn't match the sender's invitation. Ask the sender to send it again.");
     if (!abort.signal.aborted) setMode("accept");
    }
-  })().catch(e => { if (!abort.signal.aborted) { setRun(undefined); setError(e.message); setMode(e.status === 401 ? "login" : e.status === 403 ? "account" : e.final ? "final" : "error"); } });
+  // The identity settings explain an unfinished setup themselves and can discard it.
+  })().catch(e => { if (!abort.signal.aborted) { const conflict = e.code === "setup_conflict"; setRun(undefined); setError(conflict ? "" : e.message); setMode(conflict ? "identity" : e.status === 401 ? "login" : e.status === 403 ? "account" : e.final ? "final" : "error"); } });
   return () => { abort.abort(); clearTimeout(timer); };
  }, [id, retry, ready]);
  const accept = async () => {

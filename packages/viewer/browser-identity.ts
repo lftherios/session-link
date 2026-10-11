@@ -16,12 +16,27 @@ export async function browserRequest<T>(path:string,method="GET",body?:unknown):
 async function database():Promise<IDBDatabase>{return new Promise((resolve,reject)=>{const r=indexedDB.open("slink-device-v1",1);r.onupgradeneeded=()=>r.result.createObjectStore("devices");r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(new Error("Browser key storage is unavailable"))})}
 async function readLocal(account:string):Promise<LocalDevice|undefined>{const db=await database();try{return await new Promise((resolve,reject)=>{const request=db.transaction("devices","readonly").objectStore("devices").get(account);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)})}finally{db.close()}}
 async function saveLocal(account:string,device:LocalDevice):Promise<void>{const db=await database();try{await new Promise<void>((resolve,reject)=>{const transaction=db.transaction("devices","readwrite");transaction.objectStore("devices").put(device,account);transaction.oncomplete=()=>resolve();transaction.onerror=transaction.onabort=()=>reject(new Error("Could not save browser device keys"))})}finally{db.close()}}
+async function removeLocal(account:string):Promise<void>{const db=await database();try{await new Promise<void>((resolve,reject)=>{const transaction=db.transaction("devices","readwrite");transaction.objectStore("devices").delete(account);transaction.oncomplete=()=>resolve();transaction.onerror=transaction.onabort=()=>reject(new Error("Could not remove browser device keys"))})}finally{db.close()}}
 async function newDevice():Promise<LocalDevice>{try{const [s,b]=await Promise.all([pair("Ed25519"),pair("X25519")]);return {sign:s.private,box:b.private,signPublic:s.public,boxPublic:b.public,root:"",seq:-1,head:"",revision:0}}catch{throw new Error("This browser does not support private sharing. Use a current browser with Ed25519 and X25519 support.")}}
 async function publicDevice(d:LocalDevice,name:string):Promise<Device>{return {id:await deviceID(d.signPublic,d.boxPublic),name,sign:d.signPublic,box:d.boxPublic,wrap:""}}
 function nameFor(name?:string){let value=name?.trim()||"This browser";while(utf8(value).length>80)value=Array.from(value).slice(0,-1).join("");return value}
+async function recoveryMatches(account:string,device:LocalDevice,state:IdentityState){const parts=(device.pendingRecovery??"").split(".");return parts.length===3&&parts[0]==="slr1"&&parts[1]===await hash(utf8(account+"\0"+state.root))}
+// A setup the server never acknowledged to this browser, while the account
+// holds an identity built without this browser's keys: another device set the
+// account up first, or the server replaced the upload. The two cannot be told
+// apart, so only an explicit discard-setup moves past it. An identity that
+// does list these keys can only come from the upload, and is always refused.
+async function setupConflict(account:string,device:LocalDevice,state:IdentityState){
+ if(device.pendingSetup){if(device.root===state.root)return false}
+ // Older clients kept only the recovery token until the first response.
+ else if(!device.root&&device.pendingRecovery){if(await recoveryMatches(account,device,state))return false}
+ else return false;
+ const id=await deviceID(device.signPublic,device.boxPublic);return !state.devices.some(v=>v.id===id);
+}
 async function pin(account:string,device:LocalDevice,record:IdentityRecord,state:IdentityState,vault:VaultSnapshot){
+ if(await setupConflict(account,device,state))throw Object.assign(new Error("This account already has a recovery identity that this browser did not create."),{code:"setup_conflict"});
  // Older clients retained the recovery token before they pinned a root.
- if(device.pendingRecovery){const parts=device.pendingRecovery.split(".");if(parts.length!==3||parts[0]!=="slr1"||parts[1]!==await hash(utf8(account+"\0"+state.root)))throw new Error("The server's recovery identity does not match your saved recovery key.")}
+ if(device.pendingRecovery&&!await recoveryMatches(account,device,state))throw new Error("The server's recovery identity does not match your saved recovery key.");
  if(device.root&&device.root!==state.root)throw new Error("The server's recovery identity changed. Refusing to replace your keys.");
  if(device.seq>=record.events.length||device.revision>vault.revision||(device.seq>=0&&device.head&&await head(record.events[device.seq])!==device.head))throw new Error("The server returned an older or conflicting key history.");
  device.root=state.root;device.seq=state.seq;device.head=vault.head;device.revision=vault.revision;delete device.pendingSetup;await saveLocal(account,device);
@@ -84,7 +99,11 @@ async function identityAction(action:string,input:IdentityInput):Promise<Identit
   if(remote.account!==account||!remote.record)throw new Error("The server did not acknowledge the initial encrypted identity.");
  }
  const record=remote.record!,{state,vault}=await verifyRecord(record,remote.account);
+ // Drop the device keys with the unfinished setup: the server has seen them.
+ // This browser then joins like any other new device.
+ if(d&&action==="discard-setup"&&await setupConflict(remote.account,d,state)){await removeLocal(remote.account);d=undefined;action="status"}
  if(d)await pin(remote.account,d,record,state,vault);
+ if(action==="discard-setup")throw new Error("This browser has no unfinished recovery setup to discard.");
  if(!d&&(action==="request"||action==="recover")){d=await newDevice();await pin(remote.account,d,record,state,vault)}
  const id=d?await deviceID(d.signPublic,d.boxPublic):"",own=state.devices.find(v=>v.id===id);
  result.sharing_ready=!!state.inbox;result.device_id=id;result.state=own?"ready":"locked";result.devices=state.devices.map(v=>({id:v.id,name:v.name,current:v.id===id}));result.recovery_pending=!!d?.pendingRecovery;

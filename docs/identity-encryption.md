@@ -78,6 +78,19 @@ verification removes the pending request; acknowledging the recovery key removes
 the token. Pending recovery tokens from older clients are also checked against
 the returned identity before acceptance.
 
+A setup upload that never reached the server can lose to another device that
+sets the account up first. The first device then holds a setup the server never
+acknowledged, and the account has an identity built without its keys. An honest
+race and a server that replaced the upload look the same from that device, so
+it accepts neither silently: every action fails with a setup conflict until the
+user chooses **Discard unfinished setup** (`discard-setup`). Discarding deletes
+the local device keys, pins, pending request and recovery token. The device is
+then a new device and joins by approval or with the recovery key, under the same
+trust on first use as any other. Two cases never get the offer. An identity that
+already lists the device's keys can only have been built from its upload, so it
+is refused outright. A device whose setup the server did acknowledge keeps
+refusing a replaced identity, and keeps the recovery key it has not shown yet.
+
 On a new device, account login shows a locked vault. **Request device approval**
 creates new device key pairs and displays a 12-character code. On an approved
 device, enter that code under **Waiting for approval**. The client verifies the
@@ -156,9 +169,10 @@ Approval requests sign account/root, both device public keys, display name,
 a 24-byte random nonce and creation time. The code is the first twelve base32
 characters of SHA-256(payload bytes), grouped 4-4-4. An approved client computes
 it independently and requires the code from the new device. A device first
-encountering an existing account history uses trust on first use; a client
-creating an identity pins its own generated root before upload. This does not
-provide a public transparency log or independently verified human identity.
+encountering an existing account history uses trust on first use, as does one
+that discarded an unfinished setup; a client creating an identity pins its own
+generated root before upload. This does not provide a public transparency log
+or independently verified human identity.
 
 ## Storage, scope and limits
 
@@ -213,8 +227,11 @@ makes old backed-up links unrecoverable through account login alone.
 Native and browser setup regression tests reject a valid server-substituted
 identity both in the initial response and after a restart. They also exercise
 retries before server commit and after a lost acknowledgment, checking that the
-same recovery token and signed setup request survive. These tests run in the
-ordinary Go and JavaScript suites without the server bridge.
+same recovery token and signed setup request survive. A setup lost to another
+device is covered from the conflict on every action through discarding to
+joining by approval and by recovery key, with the refusals for a forged identity
+that lists the device and for a device whose setup was acknowledged. These tests
+run in the ordinary Go and JavaScript suites without the server bridge.
 
 Local checks cover Go/Web Crypto share interoperability, authenticated-encryption
 tampering, wrong recovery keys, account-only lock, approval code mismatch, device

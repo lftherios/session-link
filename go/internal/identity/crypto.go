@@ -18,6 +18,7 @@ import (
 
 var enc = base64.RawURLEncoding
 var ErrLocked = errors.New("this device needs approval or your recovery key")
+var ErrSetupConflict = errors.New("this account already has a recovery identity that this device did not create")
 
 func random(n int) []byte    { b := make([]byte, n); rand.Read(b); return b }
 func digest(b []byte) string { h := sha256.Sum256(b); return enc.EncodeToString(h[:]) }

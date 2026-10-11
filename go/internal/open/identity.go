@@ -2,6 +2,7 @@ package open
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/lftherios/session-link/internal/cli"
@@ -31,8 +32,13 @@ func (s *Server) identityAPI(w http.ResponseWriter, r *http.Request) {
 	client := identity.Client{Home: cli.Home(), Server: s.Target, APIKey: s.apiKey()}
 	result, err := client.Handle(r.Context(), input.Action, input.Input)
 	if err != nil {
+		failure := map[string]string{"message": err.Error()}
+		// The settings page offers to discard the unfinished setup on this code.
+		if errors.Is(err, identity.ErrSetupConflict) {
+			failure["code"] = "setup_conflict"
+		}
 		w.WriteHeader(identity.HTTPStatus(err))
-		json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"message": err.Error()}})
+		json.NewEncoder(w).Encode(map[string]any{"error": failure})
 		return
 	}
 	json.NewEncoder(w).Encode(result)

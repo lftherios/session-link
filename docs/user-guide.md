@@ -335,6 +335,7 @@ account.
 | `not a TTY — pass --yes` | Add `--yes` when publishing from a script. |
 | "This link is missing its encryption key" | The link was cut short. Ask the sender for the complete link, including everything after `#`. |
 | "This share is unavailable" | The sender deleted it. |
+| "Recovery was set up somewhere else" | Setup never finished here and another device or browser set up recovery first. If that was you, choose **Discard unfinished setup**, then approve this one from the other or use its recovery key. If it was not, do not discard. |
 | The reader does not open on a remote machine | Use `--no-browser --port` and forward the port, as above. |
 
 `slink doctor` checks the recorder end to end, and `slink status` shows what is
