@@ -72,7 +72,17 @@ try {
   };
   const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++seq; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })); });
   const evaluate = async expression => { const result = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true, userGesture: true }); if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails)); return result.result.value; };
-  const waitFor = async expression => { for (let i = 0; i < 100; i++) { if (await evaluate(expression)) return; await new Promise(r => setTimeout(r, 50)); } throw new Error(`Timed out: ${expression}; page: ${await evaluate("document.body.innerText.slice(0,500)")}`); };
+  // A page that is still arriving has no body yet, and the browser drops a
+  // question asked across a navigation. Neither is an answer, so ask again.
+  const waitFor = async expression => {
+    let last;
+    for (let i = 0; i < 100; i++) {
+      try { if (await evaluate(expression)) return; last = undefined; } catch (error) { last = error; }
+      await new Promise(r => setTimeout(r, 50));
+    }
+    const page = await evaluate("document.body?.innerText.slice(0,500)").catch(() => "");
+    throw new Error(`Timed out: ${expression}; ${last ? `last error: ${last.message ?? JSON.stringify(last)}; ` : ""}page: ${page}`);
+  };
   await send("Page.enable"); await send("Network.enable");
   await send("Page.navigate", { url: base + url.pathname });
   await waitFor("document.body.innerText.includes('Open the complete local URL')");
