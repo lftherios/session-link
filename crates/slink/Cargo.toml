@@ -34,6 +34,11 @@ slink-local = { path = "../slink-local" }
 slink-protocol = { path = "../slink-protocol" }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
 
+# One call, so that a background viewer on Windows is not handed the streams
+# of the command that started it (src/view.rs).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation"] }
+
 [build-dependencies]
 serde_json = "1"
 sha2 = "0.11"
@@ -43,5 +48,7 @@ rcgen = "0.14"
 tokio = { version = "1", features = ["io-util"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 
-[lints]
-workspace = true
+# The workspace forbids unsafe code. This crate denies it, so that the one
+# call above can be allowed where it is made, with its reason.
+[lints.rust]
+unsafe_code = "deny"

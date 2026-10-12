@@ -12,7 +12,7 @@ before the port depends on them.
 
 | File | What it holds |
 | --- | --- |
-| [Cargo.toml](../Cargo.toml) | The workspace: every directory under `crates/`, a lint that forbids unsafe code, and the release profile |
+| [Cargo.toml](../Cargo.toml) | The workspace: every directory under `crates/`, a lint that forbids unsafe code, and the release profile. The CLI crate denies it instead, for one call that [rust-cli.md](rust-cli.md#what-building-it-found) explains |
 | [rust-toolchain.toml](../rust-toolchain.toml) | The pinned toolchain, 1.98.0, with rustfmt and clippy |
 | [.cargo/config.toml](../.cargo/config.toml) | Static C runtime on Windows and the macOS deployment target |
 | [Cargo.lock](../Cargo.lock) | Committed; every command in CI passes `--locked` |
@@ -91,7 +91,8 @@ half minutes with empty caches, the Intel macOS job being the slowest.
 The workflow triggers on `main` and on `feature/rust-**` branches, because this
 repository merges without pull requests and the existing CI would not see the
 branch. Beyond the Rust toolchain, the runners needed only `musl-tools` on
-Linux.
+Linux. Each build job stops after thirty minutes; the jobs take about four,
+and a test that waited for ever once held two runners for hours.
 
 What this does not show is installation: the binaries ran where they were
 built, on machines with a development toolchain. Running them on a clean

@@ -1,6 +1,6 @@
 # Rust CLI: importers, the local viewer and excerpts
 
-2026-10-12 · Implemented slices of the [Rust migration](rust-migration.md), backlog items 6 and 7 · `slink-rs` imports all eight harnesses, serves the local viewer with its sessions page, and composes and exports excerpts; 86 of the 104 runner cases agree with Go, and both browser checks pass against it. Item 7's tests have run on macOS arm64 only; item 6's pass on all six targets in CI.
+2026-10-12 · Implemented slices of the [Rust migration](rust-migration.md), backlog items 6 and 7 · `slink-rs` imports all eight harnesses, serves the local viewer with its sessions page, and composes and exports excerpts; 86 of the 104 runner cases agree with Go, and both browser checks pass against it. The tests of both pass on all six targets in CI.
 
 Everything a person does with a session before publishing it now runs in the
 Rust binary, in a home of its own: a session of any supported agent is found
@@ -101,6 +101,9 @@ a reading copy without them, as in Go.
 - **Background.** `--background` starts the viewer as a process of its own,
   prints the address once it listens and returns. Its diagnostics go to
   `viewer-<pid>-<time>.log` in the home. It is stopped from the sessions page.
+  Neither it nor whatever opens the browser is given the command's own
+  streams, so a caller that reads them to the end is done when the command
+  is; the eighth finding has what that took on Windows.
 - **A preview used again.** A session whose files and binary have not changed
   is not imported again.
 - **Excerpts.** `/compose/<id>` and the endpoints behind it: the catalog of
@@ -119,10 +122,10 @@ a reading copy without them, as in Go.
 | --- | --- |
 | `SLINK_BINARY=go/slink SLINK_CANDIDATE=target/release/slink-rs node scripts/compat.mjs` | 86 of 104: usage 11 of 11, help 37 of 37, flags 2 of 2, completion 4 of 4, import 32 of 32 |
 | The same with no candidate | 104 of 104, as before |
-| `cargo test` | 210 pass, 114 of them in the importer crate, 23 in the home crate and 12 that run the built binary |
+| `cargo test` | 211 pass, 114 of them in the importer crate, 23 in the home crate and 13 that run the built binary, one of those on Unix only |
 | [check-viewer-browser.mjs](../scripts/check-viewer-browser.mjs) against `slink-rs` | All 11 groups, composing and exporting a view among them |
 | [check-security-browser.mjs](../scripts/check-security-browser.mjs) against `slink-rs` | Passes: private capture modes, reads and actions only with the key, a reload, a copied link, framing refused, no image fetched until asked. Six runs of six, and six of six against Go |
-| [tests/cli.rs](../crates/slink/tests/cli.rs) | The journeys in homes of their own: import to page to stop; an excerpt composed, saved, exported and reopened; a background viewer; two Aider runs as two previews; the pi extension's command; a view opened from inside a session. A test that fails stops the viewer it started |
+| [tests/cli.rs](../crates/slink/tests/cli.rs) | The journeys in homes of their own: import to page to stop; an excerpt composed, saved, exported and reopened; a background viewer; a browser opener that stays; two Aider runs as two previews; the pi extension's command; a view opened from inside a session. A test that fails stops the viewer it started |
 | [pi-handoff.test.mjs](../test/pi-handoff.test.mjs) with `SLINK_HANDOFF_BINARY` | The real extension's `/slink view` gets its address from the built binary, Rust or Go, and reports a session that is not there |
 
 The 18 cases that differ are the commands not ported: `record`, `on` and
@@ -192,6 +195,22 @@ Each is known and none shows on a fixture.
    group and stopped at a line break; Go skips line breaks and decodes whole
    groups of four. A short string became an image in one and stayed data in
    the other. Rust now follows Go's rule, and a pi test pins it.
+8. **A background viewer kept its caller waiting.** Windows gives a new
+   process every handle of its parent's that may be inherited, and the
+   streams a command is started with are such handles. Go's runtime names
+   the handles a child gets; Rust's standard library does not. The viewer
+   started by `--background` therefore held the caller's pipes for as long
+   as it ran, and the first run of these tests on Windows waited three and a
+   half hours on two of them before it was cancelled. The command now marks
+   its own streams as not to be inherited before it starts the viewer,
+   [keep_from_children](../crates/slink/src/view.rs), which is one call to
+   the system and the only unsafe code in the workspace: the CLI crate
+   denies unsafe code where the others forbid it, and allows that function.
+   The same wait was possible on every system through the browser's opener,
+   which Go starts with no streams and Rust started with the command's. It
+   has none now, and `a_browser_that_stays_open_does_not_hold_the_caller`
+   takes twenty seconds and fails without that. The build jobs in CI stop
+   after thirty minutes.
 
 ### Left as Go has it
 
@@ -252,7 +271,5 @@ there for the build check and now has callers.
   it has no `/settings` or `/shared` page. Asked whether anyone is signed in,
   it says no.
 - The runner in CI, and on Linux and Windows at all.
-- Item 7 on Linux and Windows. Its tests have run on macOS arm64; the six
-  targets run them when the branch is pushed.
 - The browser checks and the opt-in handoff test in CI. They were run by
   hand.

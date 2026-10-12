@@ -783,6 +783,48 @@ fn a_background_viewer_outlives_the_command_that_started_it() {
     home.assert_contained();
 }
 
+/// Whatever opens the browser can stay for as long as the browser does. It
+/// is given none of the command's streams, so a caller that reads them to
+/// the end is done when the command is.
+#[cfg(unix)]
+#[test]
+fn a_browser_that_stays_open_does_not_hold_the_caller() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = Home::new("opener");
+    // An opener under either name that outlasts the command by far.
+    let bin = home.0.join("work/bin");
+    fs::create_dir_all(&bin).unwrap();
+    for name in ["open", "xdg-open"] {
+        let opener = bin.join(name);
+        fs::write(&opener, "#!/bin/sh\nexec /bin/sleep 20\n").unwrap();
+        fs::set_permissions(&opener, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let session = fixture("viewer/arrival/session.json");
+    let mut command = home.command(&["view", "--session", &session, "--background"]);
+    command.env("PATH", &bin);
+    let began = std::time::Instant::now();
+    let started = command.output().expect("running slink-rs");
+    let took = began.elapsed();
+    let said = text(&started.stderr);
+    assert!(started.status.success(), "{said}");
+    let url = text(&started.stdout).trim().to_owned();
+    let rest = url
+        .strip_prefix("http://127.0.0.1:")
+        .unwrap_or_else(|| panic!("not a loopback URL: {url}"));
+    let (port, rest) = rest.split_once('/').unwrap();
+    let (_, key) = rest.split_once("#access=").unwrap();
+    let _stopped = Background {
+        port: port.to_owned(),
+        key: key.to_owned(),
+    };
+    // The opener was found and started, and is still there.
+    assert!(!said.contains("Could not open a browser"), "{said}");
+    assert!(
+        took < std::time::Duration::from_secs(10),
+        "the command's streams stayed open for {took:?}"
+    );
+}
+
 /// Every run in an Aider history is in one file, so a saved preview is found
 /// again by the run and not by the file alone: viewing a second run never
 /// shows the first.

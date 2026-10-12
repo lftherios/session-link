@@ -254,6 +254,11 @@ fn background(args: &[String]) -> Result<String, Exit> {
         use std::os::windows::process::CommandExt;
         // DETACHED_PROCESS and CREATE_NEW_PROCESS_GROUP.
         command.creation_flags(0x0000_0008 | 0x0000_0200);
+        // The viewer is given the three streams above and none of this
+        // command's own.
+        keep_from_children(&std::io::stdin());
+        keep_from_children(&std::io::stdout());
+        keep_from_children(&std::io::stderr());
     }
     let mut viewer = command.spawn().map_err(failed)?;
     let output = viewer.stdout.take().expect("the viewer's stdout is piped");
@@ -281,6 +286,27 @@ fn background(args: &[String]) -> Result<String, Exit> {
         display_path(&log)
     );
     Ok(url)
+}
+
+/// Marks one of this command's own streams as not for the processes it
+/// starts. Windows gives a new process every handle of its parent's that may
+/// be inherited, and the streams a command was started with are such
+/// handles. A background viewer would hold its caller's pipes open for as
+/// long as it ran, and a caller that reads them to the end, as the pi
+/// extension does, would never be done. Go's runtime names the handles a
+/// child gets; the standard library here does not, and has no call for
+/// this, which is why it is the workspace's one use of unsafe code.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn keep_from_children(stream: &impl std::os::windows::io::AsRawHandle) {
+    use windows_sys::Win32::Foundation::{HANDLE_FLAG_INHERIT, SetHandleInformation};
+    // SAFETY: the handle is a standard stream of this process, open for as
+    // long as it runs, and the call changes one flag on it and touches no
+    // memory. Where the command has no such stream the call fails and
+    // nothing has changed.
+    unsafe {
+        SetHandleInformation(stream.as_raw_handle(), HANDLE_FLAG_INHERIT, 0);
+    }
 }
 
 /// What names this build: a preview an older importer made is not used
@@ -352,7 +378,14 @@ fn open_browser(url: &str, port: u16, disabled: bool) {
     } else {
         std::process::Command::new("xdg-open")
     };
-    if let Err(error) = command.arg(url).spawn() {
+    // The opener gets none of this command's streams either: one that stays
+    // for as long as the browser does would keep a waiting caller waiting.
+    command
+        .arg(url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    if let Err(error) = command.spawn() {
         eprintln!(
             "Could not open a browser: {error}\nOpen the printed URL manually; the preview is ready."
         );
