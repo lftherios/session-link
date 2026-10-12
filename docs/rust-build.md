@@ -1,0 +1,129 @@
+# Rust workspace and build
+
+2026-10-12 · Implemented slice of the [Rust migration](rust-migration.md), backlog item 2 · the workspace, viewer artifact and a build-check binary work on both macOS targets; the Linux and Windows targets have a workflow that has not run yet.
+
+How the Rust side of the repository is built, which choices the first build
+fixed, and what it measured. The binary it produces is not the product yet: it
+has `version` and a check of its own build, and exists to prove the toolchain,
+the native dependencies and the viewer embed on every distribution target
+before the port depends on them.
+
+## Layout
+
+| File | What it holds |
+| --- | --- |
+| [Cargo.toml](../Cargo.toml) | The workspace: every directory under `crates/`, a lint that forbids unsafe code, and the release profile |
+| [rust-toolchain.toml](../rust-toolchain.toml) | The pinned toolchain, 1.98.0, with rustfmt and clippy |
+| [.cargo/config.toml](../.cargo/config.toml) | Static C runtime on Windows and the macOS deployment target |
+| [Cargo.lock](../Cargo.lock) | Committed; every command in CI passes `--locked` |
+| [crates/slink](../crates/slink) | The CLI crate. Its binary is named `slink-rs` until it replaces Go |
+| [rust.yml](../.github/workflows/rust.yml) | Lint, then build, test and run on six native runners |
+
+Crates are added when their first code lands, as the plan asks; `slink-format`
+is next.
+
+## Viewer artifact
+
+[build-viewer.mjs](../scripts/build-viewer.mjs) now writes the bundle, the
+three brand files and `manifest.json` to `build/viewer/`, which is gitignored.
+The manifest records each file's size and SHA-256, the viewer and format
+package versions, and the commit, with `dirty` set when anything the bundle is
+built from differs from that commit.
+
+- The Go embed under `go/internal/open/` is copied from that directory, so the
+  two implementations cannot embed different bundles. Its bytes did not change:
+  the bundle's digest is still the one the
+  [baseline](compatibility-baseline.md) pins.
+- The Rust build reads the directory in place.
+  [build.rs](../crates/slink/build.rs) checks every file against the manifest
+  and embeds what the manifest lists, so a file added to the artifact needs no
+  Rust change. `SLINK_VIEWER_DIR` points it at another directory. With no
+  artifact the build stops and says to run `npm run build:viewer`.
+
+This is most of backlog item 3. Two parts are open: the manifest has no
+protocol versions, because the viewer has no single place that states them,
+and the server's copy of the bundle is still written by `--hosted-output`.
+
+## Choices the build fixed
+
+| Area | Choice | Reason |
+| --- | --- | --- |
+| HTTP server | axum on Tokio, HTTP/1 only, default features off | The plan's default; the loopback server needs nothing more yet |
+| HTTP client | reqwest with rustls | No OpenSSL to find or ship on any target |
+| Trust store | The operating system's, through `rustls-platform-verifier` | What Go's client used; a machine behind an inspecting proxy keeps working |
+| Crypto provider | ring, installed in [tls.rs](../crates/slink/src/tls.rs) | Needs only a C compiler. reqwest's default, aws-lc-rs, was not tried |
+| SQLite | rusqlite with the bundled library, 3.53.2 | Readers behave the same on every machine; costs a C compiler at build time, which pure-Go builds never needed |
+| Linux | musl targets, fully static | One binary for glibc distributions and Alpine, as the `.apk` package needs |
+| Windows | MSVC targets with the C runtime linked in | No redistributable to install |
+| macOS | Deployment target 12.0 on both architectures | A floor had to be stated; confirm it is the one wanted |
+| Panics | Unwind, not abort | A panic while handling one proxied request must not stop the recorder |
+
+The lockfile holds 192 packages across all targets, development dependencies
+included. The plan's dependency review has not been done.
+
+## Targets
+
+Each target is built on a runner of its own architecture, so tests and the
+release binary run natively and nothing depends on a cross toolchain.
+
+| Target | Runner | State |
+| --- | --- | --- |
+| `aarch64-apple-darwin` | `macos-15` | Built, tested and run locally |
+| `x86_64-apple-darwin` | `macos-15-intel` | Built locally; tests and binary run under Rosetta, which is not a native result |
+| `x86_64-unknown-linux-musl` | `ubuntu-24.04` | Not built yet |
+| `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` | Not built yet |
+| `x86_64-pc-windows-msvc` | `windows-2025` | Not built yet |
+| `aarch64-pc-windows-msvc` | `windows-11-arm` | Not built yet. ring needs clang here, and whether the runner has rustup and clang is unknown |
+
+The workflow has never run. It triggers on `main` and on `feature/rust-**`
+branches, because this repository merges without pull requests and the
+existing CI would not see the branch. Until it passes, "six targets" is a
+workflow file and two local builds.
+
+## What is checked
+
+- `slink-rs version` prints what the Go binary prints. With `slink-rs` as the
+  candidate, the [differential runner](../scripts/compat.mjs) agrees on the
+  version cases.
+- `slink-rs build-check` runs what the binary links: a round trip through the
+  bundled SQLite, the embedded files against their manifest digests, and the
+  bundle served by axum on loopback and fetched by the publishing client. It is
+  scaffolding and goes when real commands reach the same code.
+- [tests/cli.rs](../crates/slink/tests/cli.rs) runs the built binary with an
+  empty environment and a home of its own, and fails if the home is not empty
+  afterwards. That is the plan's rule that no Rust executable writes to a real
+  home, held as a test from the first command.
+- [tests/tls.rs](../crates/slink/tests/tls.rs) completes a handshake with a
+  certificate the client was told to trust and is refused with one it was not.
+  A third test, ignored by default because it reaches the network, has the
+  system trust store verify `https://session.link/api/health`; it passed on
+  macOS and CI runs it on every target.
+
+## First measurements
+
+On an Apple M1 Max with macOS 26.6.2, release profile.
+
+| Measurement | Go `slink` | `slink-rs` |
+| --- | --- | --- |
+| Binary, darwin/arm64 | 13.2 MiB | 5.2 MiB |
+| Binary, darwin/amd64 | not measured | 5.4 MiB |
+| `version`, median of 20 runs including process start, quietest run | 18.1 ms | 6.5 ms |
+
+The machine was busy with unrelated work during the timing, so the absolute
+figures are not a baseline: over six runs of the same loop Go's median ranged
+from 18 to 41 ms and `slink-rs` from 6.5 to 16 ms. Within each run `slink-rs`
+started 2.0 to 2.8 times faster. The baseline's 13.7 ms for Go came from a
+quieter day.
+
+The Rust figures are a floor, not a forecast: the binary holds SQLite, TLS, the
+HTTP client and server, and the viewer, and none of the importers, the
+recorder, the envelope code or the CLI itself.
+
+## Not done
+
+- A first run of the workflow, which needs the branch pushed.
+- Packaging. Archives, checksums, the npm platform packages, Homebrew and the
+  Linux packages still come from the Go build; replacing them is P5.
+- The differential runner in CI, which waits for a Linux run of it.
+- Measuring musl's allocator under the recorder's load, when there is a
+  recorder to measure.

@@ -8,6 +8,11 @@ viewer the CLI embeds (`packages/viewer`), and the pi extension
 (encrypted or named publishing, account login) can only be exercised against
 that repository's smoke server.
 
+A Rust port of the CLI is under way in `crates/`, following
+`docs/rust-migration.md`. Its binary, `slink-rs`, is not the product yet, and
+Go remains the reference until the plan's P5. Nobody uses the software yet, so
+the port migrates nothing and need not read state Go wrote.
+
 ## Before starting
 
 - Check `git status` and the current branch. Work on the feature branch you
@@ -20,17 +25,20 @@ that repository's smoke server.
 
 ## Building and testing
 
-The repo is a Node workspace plus a Go module. Install with `npm ci`. CI uses
-Node 22 and Go 1.26.
+The repo is a Node workspace, a Go module and a Cargo workspace. Install with
+`npm ci`. CI uses Node 22 and Go 1.26; `rust-toolchain.toml` pins Rust.
 
-The Go binary `go:embed`s generated files, and the viewer bundle and brand
+Both native binaries embed generated files, and the viewer bundle and brand
 files among them are gitignored, so build order matters in a fresh checkout:
 
-1. `npm run build:viewer` writes `go/internal/open/viewer.js` and copies
-   `mark.svg`, `favicon.svg` and `brand.css` from `assets/brand/` into
-   `go/internal/open/branding/`. It also regenerates the tracked
-   `packages/viewer/validate-session.js` from the schema. Run it before any
-   `go build` or `go test`, and again after viewer, brand or schema changes.
+1. `npm run build:viewer` writes the viewer artifact to `build/viewer/`: the
+   bundle, `mark.svg`, `favicon.svg` and `brand.css` from `assets/brand/`, and
+   a manifest of their digests. The Rust build reads that directory; the same
+   files are copied to `go/internal/open/viewer.js` and
+   `go/internal/open/branding/` for the Go embed. It also regenerates the
+   tracked `packages/viewer/validate-session.js` from the schema. Run it before
+   any `go build`, `go test` or `cargo` command, and again after viewer, brand
+   or schema changes.
 2. `node scripts/golden.mjs --check` verifies that the generated copies of the
    schema and secret patterns (`go/internal/format/session.schema.json`,
    `go/internal/scan/secret-patterns.json` and
@@ -50,20 +58,31 @@ files among them are gitignored, so build order matters in a fresh checkout:
 | Build the CLI | `cd go && go build -o slink ./cmd/slink` |
 | Viewer preview with fixtures, no Go needed | `npm run dev:viewer` then open `http://127.0.0.1:4173` |
 | npm binary channel smoke build | `node scripts/build-npm.mjs 0.0.0-ci` |
+| Compatibility inventory matches the Go source | `node scripts/compat-inventory.mjs --check` |
+| Differential runner against a built CLI | `SLINK_BINARY=go/slink node scripts/compat.mjs` |
+| The same, with the Rust binary as the candidate | add `SLINK_CANDIDATE=target/release/slink-rs` and a name filter for the cases it has, such as `version` |
+| Rust format, lint and tests | `cargo fmt --all --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked` |
+| Build the Rust binary | `cargo build --release --locked`, which writes `target/release/slink-rs` |
 
 CI (`.github/workflows/ci.yml`) has two jobs. `test` runs `node --check` over
 `scripts/*.mjs` and `packages/format/*.mjs`, then `npm test`,
-`npm run check:viewer` and `node scripts/golden.mjs --check`. `go` runs
+`npm run check:viewer`, `node scripts/golden.mjs --check` and
+`node scripts/compat-inventory.mjs --check`. `go` runs
 `npm run build:viewer`, the golden check, `go vet` and `go test`, the npm smoke
-build and `npm run validate`. Run the parts your change touches before
-finishing.
+build and `npm run validate`. A second workflow, `rust.yml`, lints the Cargo
+workspace and then builds, tests and runs the release binary on a native runner
+for each of the six targets; it also runs on `feature/rust-**` branches.
+`docs/rust-build.md` has the choices behind it. Run the parts your change
+touches before finishing.
 
 ## Verifying in the real product
 
 - Run the CLI with an isolated home: `SLINK_HOME=$(mktemp -d) go/slink view
   --session testdata/viewer/arrival/session.json --no-browser`. Never point
   checks at the real `~/.slink`; it holds the user's captures, previews, drafts
-  and share receipts.
+  and share receipts. The same holds for `slink-rs`: its tests in
+  `crates/slink/tests/cli.rs` give it a home of its own and fail if a command
+  that should not write leaves anything there.
 - `node scripts/check-security-browser.mjs` checks private capture permissions,
   local viewer access, framing restrictions and external-image privacy.
 - `node scripts/check-viewer-browser.mjs` drives the built binary in a headless
@@ -102,6 +121,12 @@ finishing.
 - Secret patterns have one source, `packages/format/secret-patterns.mjs`.
 - The `slink help` text in `go/cmd/slink/help.go` is the CLI spec. Keep its
   `commands` list in sync with the switch in `dispatch()` in `main.go`.
+- `testdata/compat/cli.json` is the command, flag and environment-variable
+  surface the Rust port is held to, generated from the Go source. After
+  changing any of those, run `node scripts/compat-inventory.mjs --update` and
+  commit the file; add `--server ../session-link-server` after a hosted route
+  changes. `docs/compatibility-baseline.md` says what the differential runner,
+  `scripts/compat.mjs`, covers.
 - Fidelity is honest: `exact` for recorded traffic, `reconstructed` for
   imports. Missing data is shown as missing, never invented (success
   criterion 7).

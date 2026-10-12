@@ -1,0 +1,12 @@
+# Release binaries depend on nothing the machine may lack, as the static Go
+# binaries did. Linux builds target musl, which links statically by default;
+# Windows needs the C runtime linked in.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[env]
+# The oldest macOS the binaries and the C code they bundle are built for.
+MACOSX_DEPLOYMENT_TARGET = "12.0"

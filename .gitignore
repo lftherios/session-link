@@ -11,3 +11,9 @@ node_modules
 /go/dist/
 /go/dist-npm/
 slink-dev
+
+# Viewer artifact both native builds embed (npm run build:viewer)
+/build/
+
+# Cargo build output
+/target/

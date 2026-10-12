@@ -1,0 +1,92 @@
+name: rust
+
+# The Rust port (docs/rust-build.md): lint once, then build, test and run the
+# release binary natively on each of the six distribution targets. It also
+# runs on the port's own branches, which reach main without a pull request.
+on:
+  push:
+    branches: [main, "feature/rust-**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Built once and handed to every other job, so no target needs Node.
+  viewer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:viewer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: viewer
+          path: build/viewer
+          if-no-files-found: error
+
+  lint:
+    needs: viewer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: viewer
+          path: build/viewer
+      # Reads rust-toolchain.toml. An empty rustflags keeps the action from
+      # overriding the per-target flags in .cargo/config.toml.
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+
+  build:
+    needs: viewer
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-15, target: aarch64-apple-darwin }
+          - { os: macos-15-intel, target: x86_64-apple-darwin }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: windows-2025, target: x86_64-pc-windows-msvc }
+          - { os: windows-11-arm, target: aarch64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: viewer
+          path: build/viewer
+      # The C compiler for the bundled SQLite and ring on a musl target.
+      - if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+          rustflags: ""
+      - run: cargo test --locked --target ${{ matrix.target }}
+      # The one test that reaches the network: this machine's trust store
+      # verifies the hosted service.
+      - run: cargo test --locked --target ${{ matrix.target }} --test tls -- --ignored
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Run the release binary
+        shell: bash
+        run: |
+          bin="target/${{ matrix.target }}/release/slink-rs${{ runner.os == 'Windows' && '.exe' || '' }}"
+          "$bin" build-check
+          ls -l "$bin"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slink-rs-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/slink-rs${{ runner.os == 'Windows' && '.exe' || '' }}
+          if-no-files-found: error
