@@ -678,6 +678,10 @@ const explained = [
     when: ({ js, go, rust, name }) => accepts(go) && !accepts(js) && rust.rule === "payload" && /not UTF-8|overlong|surrogate encoded/.test(name),
   },
   {
+    name: "half a surrogate pair in a device name: Go reads U+FFFD; the viewer refuses the name and Rust the escape",
+    when: ({ js, go, rust, name }) => !accepts(js) && accepts(go) && rust.rule === "payload" && /surrogate pair in a device name/.test(name),
+  },
+  {
     name: "half a surrogate pair as an escape: JavaScript and Go read it; Rust refuses the payload",
     when: ({ js, go, rust, name }) => accepts(js) && accepts(go) && rust.rule === "payload" && /surrogate pair/.test(name),
   },

@@ -17,8 +17,19 @@ export const head = async(s: Signed)=>hash(unb64(s.payload));
 export async function sign(kind: string,value: unknown,key: CryptoKey): Promise<Signed>{
  const raw=utf8(JSON.stringify(value));return {payload:b64(raw),signature:b64(new Uint8Array(await crypto.subtle.sign("Ed25519",key,concat(utf8(`slink/${kind}/v1\0`),raw))))};
 }
+// The eight Ed25519 points of small order, by the seven numbers a key can spell
+// their y-coordinate with: zero and one are each there twice, the second time
+// with the field's size added. Every library verifies under such a key, and for
+// the identity point one signature fits every message, so nothing is checked
+// under one. Go holds the same list in internal/identity.
+const SMALL_ORDER=new Set(["00".repeat(32),"01"+"00".repeat(31),"26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05","c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",...["ec","ed","ee"].map(first=>first+"ff".repeat(30)+"7f")]);
+function signingKey(publicKey: string): Uint8Array<ArrayBuffer>{
+ const raw=unb64(publicKey,32),y=raw.slice();y[31]&=0x7f; // the top bit carries the sign of x
+ if(SMALL_ORDER.has(Array.from(y,v=>v.toString(16).padStart(2,"0")).join("")))throw new Error("Invalid signing key");
+ return raw;
+}
 export async function verify(kind: string,s: Signed,publicKey: string): Promise<void>{
- const key=await crypto.subtle.importKey("raw",unb64(publicKey,32),"Ed25519",false,["verify"]);
+ const key=await crypto.subtle.importKey("raw",signingKey(publicKey),"Ed25519",false,["verify"]);
  if(!await crypto.subtle.verify("Ed25519",key,unb64(s.signature,64),concat(utf8(`slink/${kind}/v1\0`),unb64(s.payload))))throw new Error(`Invalid ${kind} signature`);
 }
 export async function privateKey(algorithm: "Ed25519"|"X25519",seed: Uint8Array<ArrayBuffer>):Promise<CryptoKey>{

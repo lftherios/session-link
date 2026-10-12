@@ -26,3 +26,25 @@ test("browser identity: a retired incoming-share key can never be reinstated", a
   await assert.rejects(verifyHistory((await rotate(h, a)).events, "usr_fixture"));
   assert.equal((await verifyHistory((await rotate(h, b64(random(32)))).events, "usr_fixture")).state.epoch, 3);
 });
+
+test("browser identity: a device is never named with half of a surrogate pair", async () => {
+  const bundled = await build({ stdin: { contents: 'export { nameFor } from "./browser-identity"; export { verifyHistory, deviceID } from "./identity-protocol"; export * from "./identity-crypto";', resolveDir: viewer, loader: "ts" }, bundle: true, write: false, format: "esm" });
+  const { nameFor, verifyHistory, deviceID, sign, pair, random, b64 } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
+  const half = String.fromCharCode(0xd83d), laptop = String.fromCodePoint(0x1f4bb), lost = String.fromCodePoint(0xfffd);
+  // A maxlength that cuts an emoji in two, or a paste, leaves the first half behind.
+  assert.equal(nameFor(`Mac ${half}`), `Mac ${lost}`);
+  assert.equal(nameFor(`${String.fromCharCode(0xdcbb)} Mac`), `${lost} Mac`);
+  assert.equal(nameFor(`Mac ${laptop}`), `Mac ${laptop}`);
+  assert.equal(nameFor("  "), "This browser");
+  assert.equal(new TextEncoder().encode(nameFor(laptop.repeat(30))).length, 80);
+  // The verifier refuses the name the old code would have signed, and takes the new one.
+  const root = await pair("Ed25519"), first = await pair("Ed25519");
+  const wrapper = () => b64(random(32)) + "." + b64(random(60));
+  const history = async name => {
+    const box = b64(random(32)), device = { id: await deviceID(first.public, box), name, sign: first.public, box, wrap: wrapper() };
+    const state = { account: "usr_fixture", seq: 0, prev: "", kind: "init", signer: "root", root: root.public, recovery: b64(random(32)), recovery_box: b64(random(92)), recovery_wrap: wrapper(), epoch: 1, devices: [device] };
+    return [await sign("event", state, root.private)];
+  };
+  await assert.rejects(verifyHistory(await history(`Mac ${half}`), "usr_fixture"));
+  assert.equal((await verifyHistory(await history(nameFor(`Mac ${half}`)), "usr_fixture")).state.devices[0].name, `Mac ${lost}`);
+});

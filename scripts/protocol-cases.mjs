@@ -393,46 +393,58 @@ function statementCases() {
     "refused",
     "The same point by another number: accepting it would give every statement a second signature.",
   );
-  const identity = Buffer.concat([Buffer.from([1]), Buffer.alloc(31)]);
-  const trivial = b64(Buffer.concat([identity, Buffer.alloc(32)]));
-  const weak = "Every library in use takes a public key of small order. For the identity point one signature fits every payload, so a history rooted in such a key can be continued by anyone. No client makes one.";
-  const anything = b64(JSON.stringify(value));
-  add("the identity point as a key, with the signature that fits everything", "event", b64(identity), { payload: anything, signature: trivial }, "verified", weak);
-  add(
-    "the identity point spelt with a number past the field's size",
-    "event",
-    b64(Buffer.concat([Buffer.from([0xee]), Buffer.alloc(30, 0xff), Buffer.from([0x7f])])),
-    { payload: anything, signature: trivial },
-    "verified",
-    weak,
-  );
-  add(
-    "the identity point with the sign bit set",
-    "event",
-    b64(Buffer.concat([Buffer.from([1]), Buffer.alloc(30), Buffer.from([0x80])])),
-    { payload: anything, signature: trivial },
-    "verified",
-    weak,
-  );
-  add(
-    "the signature's point spelt with a number past the field's size",
-    "event",
-    b64(identity),
-    { payload: anything, signature: b64(Buffer.concat([Buffer.from([0xee]), Buffer.alloc(30, 0xff), Buffer.from([0x7f]), Buffer.alloc(32)])) },
-    "refused",
-    "The point is compared as bytes, and the bytes computed are the canonical ones.",
-  );
-  // A key of order two fits about half of all payloads. Node's verdict picks
-  // one payload of each kind, and the three implementations must agree on both.
-  const two = Buffer.concat([Buffer.from([0xec]), Buffer.alloc(30, 0xff), Buffer.from([0x7f])]);
-  const fits = (payload) => verifyWith(null, Buffer.concat([domain("event"), payload]), publicKey("ed", two), unb64(trivial));
-  const wanted = new Map();
-  for (let i = 0; wanted.size < 2; i++) {
-    const payload = Buffer.from(JSON.stringify({ statement: "fixture", n: i }));
-    if (!wanted.has(fits(payload))) wanted.set(fits(payload), payload);
+  // A key of small order. Left to itself every Ed25519 library here verifies
+  // under one, and for the identity point one signature fits every payload,
+  // so each implementation refuses these keys before it asks its library.
+  // Each case is on a payload the library would have taken.
+  const weak = "A signing key of small order proves nothing about who signed: for the identity point one signature fits every payload. The libraries verify under such a key, so every implementation refuses it itself.";
+  const field = (1n << 255n) - 19n;
+  const bytesOf = (number) => Buffer.from(number.toString(16).padStart(64, "0"), "hex").reverse();
+  const empty = b64(Buffer.concat([bytesOf(1n), Buffer.alloc(32)]));
+  for (const [what, y] of [
+    ["the identity point", 1n],
+    ["the identity point spelt past the field's size", field + 1n],
+    ["the point of order two", field - 1n],
+    ["a point of order four", 0n],
+    ["a point of order four spelt past the field's size", field],
+    ["a point of order eight", 0x7a03ac9277fdc74ec6cc392cfa53202a0f67100d760b3cba4fd84d3d706a17c7n],
+    ["another point of order eight", 0x05fc536d880238b13933c6d305acdfd5f098eff289f4c345b027b2c28f95e826n],
+  ]) {
+    for (const sign of [0n, 1n]) {
+      const point = bytesOf(y | (sign << 255n));
+      let payload;
+      for (let n = 0; n < 400 && !payload; n++) {
+        const candidate = Buffer.from(JSON.stringify({ statement: "fixture", n }));
+        if (verifyWith(null, Buffer.concat([domain("event"), candidate]), publicKey("ed", point), unb64(empty))) payload = candidate;
+      }
+      if (!payload) throw new Error(`node:crypto takes no payload under ${what}`);
+      add(`${what}${sign ? " with the sign bit set" : ""} as a key, on a payload the empty signature fits`, "event", b64(point), { payload: b64(payload), signature: empty }, "refused", weak);
+    }
   }
-  add("a key of order two, on a payload the trivial signature fits", "event", b64(two), { payload: b64(wanted.get(true)), signature: trivial }, "verified", weak);
-  add("a key of order two, on a payload it does not fit", "event", b64(two), { payload: b64(wanted.get(false)), signature: trivial }, "refused");
+  // The point in a signature is compared as bytes. This one is made with the
+  // key: the identity as the point, spelt past the field's size, and the
+  // number that goes with it. Spelt the usual way it verifies.
+  const scalar512 = (bytes) => BigInt(`0x${Buffer.from(createHash("sha512").update(bytes).digest()).reverse().toString("hex")}`);
+  const secret = createHash("sha512").update(key.seed).digest().subarray(0, 32);
+  secret[0] &= 248;
+  secret[31] = (secret[31] & 127) | 64;
+  const secretScalar = BigInt(`0x${Buffer.from(secret).reverse().toString("hex")}`);
+  const withPoint = (point) => {
+    const message = Buffer.concat([domain("event"), unb64(good.payload)]);
+    const k = scalar512(Buffer.concat([point, unb64(key.public), message])) % order;
+    return b64(Buffer.concat([point, bytesOf((k * secretScalar) % order)]));
+  };
+  if (!verifyWith(null, Buffer.concat([domain("event"), unb64(good.payload)]), key.private, unb64(withPoint(bytesOf(1n))))) {
+    throw new Error("the signature made around the identity point does not verify");
+  }
+  add(
+    "a signature made with the key around a point spelt past the field's size",
+    "event",
+    key.public,
+    { payload: good.payload, signature: withPoint(bytesOf(field + 1n)) },
+    "refused",
+    "The same signature with the point spelt the usual way verifies. A library that compared points and not bytes would take both, and every statement would have a second signature.",
+  );
   return cases;
 }
 
@@ -936,6 +948,13 @@ function historyCases() {
     }),
     { rule: "payload", state: stateOf(lost) },
   );
+  differs(
+    "half of a surrogate pair escaped in a device name",
+    goOnly,
+    "A name holds whole characters. Go reads the half as U+FFFD and would write the device back under that name; the viewer and the service refuse the name, and serde_json refuses the escape.",
+    A.amend(lost, (s) => Buffer.from(JSON.stringify(s).replace(String.fromCodePoint(0xfffd), `${backslash}ud83d`))),
+    { rule: "payload", state: stateOf(lost) },
+  );
   // In an unknown field, because a case file that held the half itself could
   // not be read by serde_json either.
   differs(
@@ -962,22 +981,24 @@ function historyCases() {
     { rule: "signed", state: stateOf(first) },
   );
 
-  /* A history that verifies and proves nothing. */
+  /* Signing keys of small order: refused where they would sign. */
   const identity = b64(Buffer.concat([Buffer.from([1]), Buffer.alloc(31)]));
-  const open = { ...first.state, root: identity };
-  out.cases.push({
-    name: "a first event under the identity point as root key, signed by no one",
-    account: "usr_fixture",
-    events: [(() => {
-      const statement = { payload: b64(JSON.stringify(open)), signature: b64(Buffer.concat([Buffer.from([1]), Buffer.alloc(63)])) };
-      const id = createHash("sha256").update(`${statement.payload}.${statement.signature}`).digest("hex").slice(0, 12);
-      out.signed[id] = statement;
-      return id;
-    })()],
-    expect: "valid",
-    state: { ...summary(first), head: digest(JSON.stringify(open)) },
-    why: "Every Ed25519 library in use accepts a public key of small order, and for the identity point one signature fits every payload. Anyone can continue this history. No client makes such a key; the case is here so that a library that refuses it is noticed.",
-  });
+  const anyone = b64(Buffer.concat([Buffer.from([1]), Buffer.alloc(63)]));
+  invalid("a first event under the identity point as root key, signed by no one", "key", [{ payload: b64(JSON.stringify({ ...first.state, root: identity })), signature: anyone }]);
+  // Enrolling such a device is not refused: nothing is ever checked under its
+  // key, so it can do nothing, and neither can anyone in its name.
+  const weakBox = keyPair("x", "usr_fixture/weak/box").public;
+  const weakDevice = { id: digest(`${identity}.${weakBox}`), name: "Weak", sign: identity, box: weakBox, wrap: wrap(weakBox, A.vaultKey(1), A.context(1), "usr_fixture/weak/1") };
+  const enrolled = A.extend(first, { kind: "approve", devices: [...first.state.devices, weakDevice] }, laptop);
+  valid("a device whose signing key is the identity point is enrolled", enrolled);
+  const inItsName = { ...enrolled.state, seq: 2, prev: enrolled.head, signer: weakDevice.id, devices: [...enrolled.state.devices, A.entry(phone, 1)] };
+  invalid("an approval in the name of a device whose key is the identity point", "key", [...enrolled.events, { payload: b64(JSON.stringify(inItsName)), signature: anyone }]);
+  invalid(
+    "a vault in the name of a device whose key is the identity point",
+    "key",
+    enrolled.events,
+    { vault: { payload: A.vault(enrolled, laptop, 2, (v) => ({ ...v, signer: weakDevice.id })).payload, signature: anyone } },
+  );
 
   return { signed: out.signed, cases: out.cases };
 }

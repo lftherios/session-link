@@ -19,7 +19,9 @@ async function saveLocal(account:string,device:LocalDevice):Promise<void>{const 
 async function removeLocal(account:string):Promise<void>{const db=await database();try{await new Promise<void>((resolve,reject)=>{const transaction=db.transaction("devices","readwrite");transaction.objectStore("devices").delete(account);transaction.oncomplete=()=>resolve();transaction.onerror=transaction.onabort=()=>reject(new Error("Could not remove browser device keys"))})}finally{db.close()}}
 async function newDevice():Promise<LocalDevice>{try{const [s,b]=await Promise.all([pair("Ed25519"),pair("X25519")]);return {sign:s.private,box:b.private,signPublic:s.public,boxPublic:b.public,root:"",seq:-1,head:"",revision:0}}catch{throw new Error("This browser does not support private sharing. Use a current browser with Ed25519 and X25519 support.")}}
 async function publicDevice(d:LocalDevice,name:string):Promise<Device>{return {id:await deviceID(d.signPublic,d.boxPublic),name,sign:d.signPublic,box:d.boxPublic,wrap:""}}
-function nameFor(name?:string){let value=name?.trim()||"This browser";while(utf8(value).length>80)value=Array.from(value).slice(0,-1).join("");return value}
+// Half of a surrogate pair, which a cut or pasted emoji can leave behind, is
+// written as U+FFFD: every verifier refuses a name that holds one.
+export function nameFor(name?:string){let value=(name?.trim()||"This browser").replace(/\p{Cs}/gu,"\u{fffd}");while(utf8(value).length>80)value=Array.from(value).slice(0,-1).join("");return value}
 async function recoveryMatches(account:string,device:LocalDevice,state:IdentityState){const parts=(device.pendingRecovery??"").split(".");return parts.length===3&&parts[0]==="slr1"&&parts[1]===await hash(utf8(account+"\0"+state.root))}
 // A setup the server never acknowledged to this browser, while the account
 // holds an identity built without this browser's keys: another device set the

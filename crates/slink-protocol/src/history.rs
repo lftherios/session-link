@@ -127,6 +127,7 @@ fn walk(events: &[Signed], account: &str) -> Result<History, Refusal> {
                 .verify_bytes(Kind::Event, &raw, &key)
                 .map_err(|error| match error {
                     Error::Signature(_) => Refusal::Signature,
+                    Error::SigningKey => Refusal::Key,
                     _ => Refusal::Signed,
                 })
         };

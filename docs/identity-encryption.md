@@ -131,6 +131,15 @@ also signs and checks a local-only `recovery-check` to confirm the root key it
 unsealed. Verification never reserializes JSON. The SHA-256
 of decoded event bytes identifies each history head.
 
+Nothing is verified under a signing key that is one of the eight Ed25519
+points of small order, in any of their 14 spellings. The libraries accept such
+a key, and for the identity point one signature fits every message, so every
+implementation holds the list and refuses the key before asking its library.
+A device name holds whole characters: half of a surrogate pair is replaced
+with U+FFFD when a browser names a device, and a history or a device request
+whose name holds one is refused. [rust-protocol.md](rust-protocol.md) has how
+both were found and the cases that hold the four implementations to them.
+
 Each event contains account ID, sequence, previous head, operation, signer,
 fixed recovery public keys/package, the current recovery wrapper, the
 incoming-share public key once one is enrolled, key epoch and the complete

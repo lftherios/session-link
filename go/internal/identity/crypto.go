@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -119,6 +120,40 @@ func unwrap(private []byte, box, context string) ([]byte, error) {
 	return out, nil
 }
 
+// smallOrder holds the eight Ed25519 points of small order, by the seven
+// numbers a key can spell their y-coordinate with. Zero and one are each
+// there twice, the second time with the field's size added, which
+// crypto/ed25519 also reads.
+var smallOrder = func() (points [][32]byte) {
+	for _, y := range []string{
+		"0000000000000000000000000000000000000000000000000000000000000000",
+		"0100000000000000000000000000000000000000000000000000000000000000",
+		"26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+		"c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+		"ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+		"edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+		"eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+	} {
+		raw, _ := hex.DecodeString(y)
+		points = append(points, [32]byte(raw))
+	}
+	return
+}()
+
+// weakKey reports whether a signing key is a point of small order. Every
+// library verifies under one, and for the identity point one signature fits
+// every message, so such a key proves nothing about who signed.
+func weakKey(public []byte) bool {
+	y := [32]byte(public)
+	y[31] &= 0x7f // the top bit carries the sign of x
+	for _, point := range smallOrder {
+		if y == point {
+			return true
+		}
+	}
+	return false
+}
+
 type Signed struct {
 	Payload   string `json:"payload"`
 	Signature string `json:"signature"`
@@ -146,6 +181,9 @@ func (s Signed) verify(kind, public string) error {
 	pub, err := decode(public, 32)
 	if err != nil {
 		return err
+	}
+	if weakKey(pub) {
+		return errors.New("invalid signing key")
 	}
 	sig, err := decode(s.Signature, 64)
 	if err != nil {

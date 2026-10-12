@@ -20,6 +20,7 @@ the same thing, and a deliberate difference is declared here.
 | Client | `fb2da26` on `main`, released as v0.9.1 |
 | Hosted service | `2250b3b` in `session-link-server`; the [architecture review](architecture-review.md) found Fly release 58 running |
 | Viewer bundle | SHA-256 `eec340330565f26779368b73b2e226a2dabdf786572e88b5b8659c20ef22942e`, the same for the bundle the CLI embeds and the one checked into the server |
+| Changed since, on purpose | Two protocol rules of 2026-10-12, in Go, the viewer and the service together: no signing key of small order, and device names of whole characters only ([rust-protocol.md](rust-protocol.md), findings seven and eight). The bundle with them is `948b0ad37fdf05832db038c1d1b9b243ef1f6ece5acc6f2378658b5299305a3c` |
 | Packages | `@session-link/format` 0.1.1, `@session-link/viewer` 0.7.1, `@session-link/pi-extension` 0.1.0 |
 | Harness versions | The matrix in [handoff-design.md](handoff-design.md#harness-contract-and-current-verification) |
 

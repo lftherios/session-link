@@ -4,7 +4,7 @@
 //! being offered for another.
 
 use crate::Error;
-use crate::crypto::ed25519_verify;
+use crate::crypto::{ed25519_verify, small_order};
 use crate::encoding::{decode, decode_exact, digest};
 
 /// What a statement is for.
@@ -92,6 +92,9 @@ impl Signed {
         raw: &[u8],
         public: &[u8; 32],
     ) -> Result<(), Error> {
+        if small_order(public) {
+            return Err(Error::SigningKey);
+        }
         let signature: [u8; 64] = decode_exact(&self.signature)?;
         let name = kind.as_str();
         let mut message = Vec::with_capacity(name.len() + raw.len() + 10);

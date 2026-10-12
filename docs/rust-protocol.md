@@ -1,6 +1,6 @@
 # Rust envelope and signed-history verification
 
-2026-10-12 · Implemented slice of the [Rust migration](rust-migration.md), backlog item 5 · `crates/slink-protocol` opens envelopes and verifies signed statements, device histories and vault records; Go, the viewer and Rust agree on 328 shared cases with 37 recorded differences; run locally on macOS arm64, not yet in CI.
+2026-10-12 · Implemented slice of the [Rust migration](rust-migration.md), backlog item 5 · `crates/slink-protocol` opens envelopes and verifies signed statements, device histories and vault records; Go, the viewer and Rust agree on 341 shared cases with 38 recorded differences; the first version passed on all six targets and the sweep on Linux in CI, and the two rules added since have run locally.
 
 What the Rust side of the protocol is so far, how it is held to the three
 verifiers that already exist, and what comparing them found. The crate checks
@@ -10,7 +10,9 @@ end. It has no caller in the product; `slink-rs build-check` links and runs it
 so that every target proves it.
 
 [identity-encryption.md](identity-encryption.md) describes the protocol
-itself. Nothing here changes it.
+itself. Two of the findings below became rules in it, in every implementation
+at once: a signing key of small order is refused, and a device name holds
+whole characters only.
 
 ## The crate
 
@@ -35,6 +37,7 @@ there so that a case can say which rule it is about.
 | Area | Choice | Reason |
 | --- | --- | --- |
 | Cryptography | ring 0.17, named only in [crypto.rs](../crates/slink-protocol/src/crypto.rs) | TLS already links it, so the crate adds no package. On every signature the cases and the sweep try it decides as Go and OpenSSL do, and on the cases as BoringSSL does. One file to replace if the WASM build at P8 wants another library |
+| Weak keys | A list of the points of small order, checked before the library is asked | No library here refuses them; see the seventh finding |
 | Base64 | The `base64` crate's strict engine | A key, a payload and a signature each have one spelling: no padding, no second alphabet, no stray bits, no white space |
 | Payload JSON | serde_json through the crate's own reader, [payload.rs](../crates/slink-protocol/src/payload.rs) | A field is taken by its exact name and in its exact type, nothing is filled in, and no object gives a key twice. See the first, second and sixth findings |
 | Sizes | The hosted service's: 32 KiB of text for an event, 8 MiB for a vault statement | Nothing the service stores is refused, and nothing longer is ever decoded |
@@ -52,8 +55,8 @@ each run.
 | File | Cases |
 | --- | --- |
 | `envelopes.json` | 55: envelopes sealed by Web Crypto, by Go and by `node:crypto`; one bit changed in each part; cut short and lengthened; eight spellings of a key; five that authenticate under a header no reader supports |
-| `statements.json` | 45: each kind as itself and offered as another; one spelling of a payload, a signature and a key; where Ed25519 libraries are known to part ways |
-| `histories.json` | 228: 34 histories and records every implementation accepts, with the state each must report; 157 that all refuse, each naming its rule; 37 recorded differences |
+| `statements.json` | 54: each kind as itself and offered as another; one spelling of a payload, a signature and a key; the eight points of small order as keys, in all 14 spellings |
+| `histories.json` | 232: 34 histories and records every implementation accepts, with the state each must report; 160 that all refuse, each naming its rule; 38 recorded differences |
 
 A case needs signatures, so the files are written by
 [protocol-cases.mjs](../scripts/protocol-cases.mjs) and not by hand. Every key
@@ -83,17 +86,18 @@ adds the limits, which need a megabyte of history and so are not in a file:
 
 On 2026-10-12 it ran 23,503 cases in under 40 seconds. JavaScript, Go and Rust
 judged 21,521 alike, and where all three accepted they reported the same state
-at the same head. The other 1,982 are the 14 kinds of recorded difference
-below. Anything else fails the run, as does any case Rust accepts and another
-implementation refuses.
+at the same head. The other 1,982 are the kinds of recorded difference below.
+Anything else fails the run, as does any case Rust accepts and another
+implementation refuses. The `protocol` job in `rust.yml` runs it on Linux,
+where the first run, at commit `46fd4a5`, gave the same counts.
 
 With `--server` and a checkout of the hosted service it runs that verifier as
 a fourth. On the same cases the service refused nothing Rust accepted, and
-accepted 1,201 that Rust refused, all of them among the kinds below.
+accepted 1,200 that Rust refused, all of them among the kinds below.
 
 [check-protocol-browser.mjs](../scripts/check-protocol-browser.mjs) runs the
 case files through the viewer's code in a browser, because Node's Web Crypto
-is OpenSSL and a browser brings its own. Headless Chromium 149 gave all 328
+is OpenSSL and a browser brings its own. Headless Chromium 149 gave all 341
 cases the verdict recorded for the viewer.
 
 ## What the comparison found
@@ -128,18 +132,24 @@ cases the verdict recorded for the viewer.
 7. **Every library takes a public key of small order.** Go, OpenSSL in Node
    22, BoringSSL in Chromium 149 and ring all verify under one. For the
    identity point a single fixed signature fits every payload, so a history
-   whose root key is that point verifies and can be continued by anyone. No
-   client makes such a key, and one case records the behavior so that a
-   library that changes it is noticed. Refusing these keys would be a rule
-   for all four implementations at once. All four refuse a signature with the
-   group order added and a signature point spelt past the field's size.
-8. **Half an emoji in a device name stops the Go CLI.** `JSON.stringify`
-   writes an unpaired surrogate as an escape. The viewer and the service keep
+   whose root key was that point verified and could be continued by anyone. No
+   client makes such a key. Since 2026-10-12 all four implementations refuse
+   to check anything under one: each holds the same list of the eight points,
+   by the seven numbers their y-coordinate can be spelt with, and compares a
+   key against it with the sign bit cleared. The 14 spellings are cases, each
+   on a payload the library alone would have taken. A device with such a key
+   can still be enrolled; nothing it signs, and nothing signed in its name,
+   is accepted. All four libraries already refused a signature with the group
+   order added and a signature point spelt past the field's size.
+8. **Half an emoji in a device name stopped the Go CLI.** `JSON.stringify`
+   writes an unpaired surrogate as an escape. The viewer and the service kept
    it; Go reads U+FFFD and writes that into the next event, which the service
-   then refuses as a renamed device. Rust refuses to read the history at all.
-   A name typed into the viewer is the one place such a text could come from,
-   and making the name well formed before signing it would close this for
-   every reader.
+   then refused as a renamed device. Since 2026-10-12 the viewer writes such a
+   name with U+FFFD in place of the half, and the viewer and the service
+   refuse a history or a device request whose name holds one, so no name of
+   this kind can be stored. Go is unchanged, because it cannot tell the escape
+   from the character after decoding, and Rust refuses the escape anywhere in
+   a payload.
 
 ## Recorded differences
 
@@ -157,21 +167,22 @@ Go, the viewer or the service, and where all accept they read the same state.
 | An incoming-share key of `false` or `0` | no key | refused | refused |
 | A byte-order mark first | accepted by the viewer, refused by the service | refused | refused |
 | Bytes that are not UTF-8 | refused by the viewer, U+FFFD to the service | U+FFFD | refused |
+| Half a surrogate pair as an escape, in a device name | refused | U+FFFD | refused |
 | A count of `-0` | zero | zero | refused |
-| Half a surrogate pair as an escape | kept | U+FFFD | refused |
+| Half a surrogate pair as an escape, anywhere else | kept | U+FFFD | refused |
 | 128 or more levels of nesting | accepted | accepted | refused |
 | A number too large for a double, in a field no verifier reads | accepted | accepted | refused |
 | A statement past the service's size limit | accepted by the viewer, refused by the service | accepted | refused |
 
 In the second row and the last five, Rust refuses what both others read: a
 repeated key by decision, four from serde_json and one from the size limit. No
-client writes any of them except, in principle, the surrogate of the eighth
-finding.
+client writes any of them.
 
-The Go and JavaScript verifiers are unchanged. The first finding is a
-difference between the two that are in use today; Go is replaced at P5 and the
-viewer's rules at P8, and whether to tighten either before then is a decision
-this slice does not take.
+Apart from the two rules of the seventh and eighth findings, the Go and
+JavaScript verifiers are unchanged. The first finding is a difference between
+the two that are in use today; Go is replaced at P5 and the viewer's rules at
+P8, and whether to tighten either before then is a decision this slice does
+not take.
 
 ## Failing safely
 
@@ -206,6 +217,18 @@ Measured on macOS arm64 with the release profile, through `slink-rs`.
 The 16 KiB is nearly all the two envelopes and the statement cases that
 `build-check` embeds; the cryptography was already linked for TLS. The
 lockfile gained no third-party package and holds 213 with the crate itself.
+
+The CI run at `46fd4a5` built each target with the crate linked in, and every
+release binary ran `build-check` with its protocol step.
+
+| Target | Before | With the crate |
+| --- | --- | --- |
+| `aarch64-apple-darwin` | 7,013,504 | 7,030,064 |
+| `x86_64-apple-darwin` | 7,442,216 | 7,470,936 |
+| `x86_64-unknown-linux-musl` | 8,384,928 | 8,421,792 |
+| `aarch64-unknown-linux-musl` | 7,295,440 | 7,295,440 |
+| `x86_64-pc-windows-msvc` | 8,529,920 | 8,560,128 |
+| `aarch64-pc-windows-msvc` | 7,524,864 | 7,559,168 |
 
 ## Not done
 

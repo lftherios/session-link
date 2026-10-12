@@ -32,8 +32,8 @@ package versions, and the commit, with `dirty` set when anything the bundle is
 built from differs from that commit.
 
 - The Go embed under `go/internal/open/` is copied from that directory, so the
-  two implementations cannot embed different bundles. Its bytes did not change:
-  the bundle's digest is still the one the
+  two implementations cannot embed different bundles. Moving the build did
+  not change its bytes: at that commit the bundle's digest was still the one the
   [baseline](compatibility-baseline.md) pins.
 - The Rust build reads the directory in place.
   [build.rs](../crates/slink/build.rs) checks every file against the manifest

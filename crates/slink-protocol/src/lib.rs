@@ -40,6 +40,9 @@ pub enum Error {
     Encoding,
     /// A signed payload longer than its kind is allowed to be.
     TooLarge,
+    /// A signing key that is a point of small order, under which a signature
+    /// proves nothing.
+    SigningKey,
     /// The signature is not the key's over this payload as this kind.
     Signature(Kind),
     /// The device history broke the rule named.
@@ -56,6 +59,7 @@ impl fmt::Display for Error {
             Error::Decrypt => f.write_str("cannot decrypt: wrong key or changed document"),
             Error::Encoding => f.write_str("invalid key encoding"),
             Error::TooLarge => f.write_str("signed object exceeds the supported limit"),
+            Error::SigningKey => f.write_str("invalid signing key"),
             Error::Signature(kind) => write!(f, "invalid {} signature", kind.as_str()),
             Error::History(_) => f.write_str("invalid signed device history"),
             Error::Vault(_) => f.write_str("invalid signed vault"),
@@ -87,7 +91,7 @@ pub enum Refusal {
     /// No device, or more than [`MAX_DEVICES`].
     Devices,
     /// A root, recovery, incoming-share, signing or agreement key that is not
-    /// 32 bytes.
+    /// 32 bytes, or a key of small order where a signature is checked.
     Key,
     /// A key wrapper or the recovery box does not have its shape.
     Wrapper,

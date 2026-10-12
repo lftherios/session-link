@@ -19,7 +19,9 @@ export async function verifyHistory(events:Signed[],account:string):Promise<{sta
   if(next.account!==account||next.seq!==i||next.prev!==previousHead||!Number.isSafeInteger(next.epoch)||next.epoch<1||!Array.isArray(next.devices)||!next.devices.length||next.devices.length>32)bad();
   unb64(next.root,32);unb64(next.recovery,32);unb64(next.recovery_box,92);wrapper(next.recovery_wrap);if(next.inbox)unb64(next.inbox,32);
   const seen=new Set<string>();
-  for(const d of next.devices){unb64(d.sign,32);unb64(d.box,32);wrapper(d.wrap);if(d.id!==await deviceID(d.sign,d.box)||seen.has(d.id)||typeof d.name!=="string"||utf8(d.name).length>80)bad();seen.add(d.id)}
+  // A name holds whole characters only: Go reads half of a surrogate pair as
+  // U+FFFD and would write the device back under another name.
+  for(const d of next.devices){unb64(d.sign,32);unb64(d.box,32);wrapper(d.wrap);if(d.id!==await deviceID(d.sign,d.box)||seen.has(d.id)||typeof d.name!=="string"||/\p{Cs}/u.test(d.name)||utf8(d.name).length>80)bad();seen.add(d.id)}
   if(!previous){if(next.kind!=="init"||next.signer!=="root"||next.epoch!==1||next.devices.length!==1)bad();await verify("event",event,next.root)}
   else{
    if(next.root!==previous.root||next.recovery!==previous.recovery||next.recovery_box!==previous.recovery_box)bad();

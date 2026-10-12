@@ -173,6 +173,7 @@ fn rule(error: Error) -> &'static str {
     match error {
         Error::History(rule) | Error::Vault(rule) => rule.as_str(),
         Error::Signature(_) => "signature",
+        Error::SigningKey => "key",
         Error::Encoding | Error::TooLarge => "signed",
         Error::Envelope | Error::ContentKey | Error::Decrypt => "envelope",
     }
