@@ -1,0 +1,16 @@
+[package]
+name = "slink-import"
+description = "Coding agents' own session histories, read as session/v0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json = "1"
+slink-format = { path = "../slink-format" }
+
+[lints]
+workspace = true

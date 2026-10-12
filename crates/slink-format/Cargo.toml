@@ -14,7 +14,10 @@ boon = "0.6"
 # The credential patterns need ASCII matching only; boon turns the Unicode
 # tables on for the build as a whole.
 regex = { version = "1", default-features = false, features = ["std", "perf"] }
-serde_json = "1"
+serde = "1"
+# Without float_roundtrip serde_json reads some numbers one step away from
+# the nearest double, and a document would not be written back as it was read.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 
 [lints]
 workspace = true

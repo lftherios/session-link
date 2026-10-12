@@ -19,6 +19,7 @@ before the port depends on them.
 | [crates/slink](../crates/slink) | The CLI crate. Its binary is named `slink-rs` until it replaces Go |
 | [crates/slink-format](../crates/slink-format) | Reading, validating and scanning `session/v0`; [rust-format.md](rust-format.md) describes it |
 | [crates/slink-protocol](../crates/slink-protocol) | Opening envelopes and verifying signed statements, device histories and vault records; [rust-protocol.md](rust-protocol.md) describes it |
+| [crates/slink-local](../crates/slink-local), [crates/slink-import](../crates/slink-import) | The slink home and saved previews; the importers and session discovery. [rust-cli.md](rust-cli.md) describes both and the commands built on them |
 | [rust.yml](../.github/workflows/rust.yml) | Lint, then build, test and run on six native runners; compare the format validators and the protocol verifiers across languages |
 
 Crates are added when their first code lands, as the plan asks.
@@ -60,8 +61,9 @@ and the server's copy of the bundle is still written by `--hosted-output`.
 | Panics | Unwind, not abort | A panic while handling one proxied request must not stop the recorder |
 
 The lockfile held 192 packages across all targets at this slice, development
-dependencies included, 212 with the format crate and 213 with the protocol
-crate, which brought no package but itself. The plan's
+dependencies included, 212 with the format crate, 213 with the protocol
+crate, which brought no package but itself, and 217 with the first commands.
+The plan's
 dependency review has not been done.
 
 ## Targets

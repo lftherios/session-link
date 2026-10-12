@@ -6,7 +6,6 @@
 
 use std::error::Error;
 use std::fmt::Write as _;
-use std::process::ExitCode;
 
 use axum::http::header::CONTENT_TYPE;
 use base64::Engine;
@@ -14,11 +13,12 @@ use base64::engine::general_purpose::STANDARD;
 use sha2::{Digest, Sha256};
 use slink_protocol::{Kind, Signed, envelope};
 
+use crate::flags::{Exit, Run};
 use crate::{VERSION, tls, viewer};
 
 type Checked = Result<String, Box<dyn Error>>;
 
-pub fn run() -> ExitCode {
+pub fn run() -> Run {
     println!("slink-rs {VERSION} ({})", env!("SLINK_TARGET"));
     let mut failed = false;
     for (name, result) in [
@@ -37,9 +37,12 @@ pub fn run() -> ExitCode {
         }
     }
     if failed {
-        ExitCode::FAILURE
+        Err(Exit {
+            code: 1,
+            message: String::new(),
+        })
     } else {
-        ExitCode::SUCCESS
+        Ok(())
     }
 }
 

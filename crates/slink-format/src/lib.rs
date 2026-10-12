@@ -9,8 +9,12 @@
 mod datetime;
 mod parse;
 mod scan;
+mod time;
 mod validate;
+mod write;
 
 pub use parse::parse;
 pub use scan::{Hit, MAX_HITS, scan_for_secrets};
+pub use time::instant;
 pub use validate::{MAX_SCHEMA_ERRORS, SCHEMA, invariant_errors, validate};
+pub use write::{compact, encode};

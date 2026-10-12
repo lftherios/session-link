@@ -75,12 +75,13 @@ add("usage/unknown command, close to one", [{ args: ["shar"], exit: 1, stdout: "
 add("usage/unknown command", [{ args: ["zzzzzz"], exit: 1, stdout: "empty" }]);
 
 // Each command's own help goes to stdout, exits 0, and names its flags.
-// record is the exception today: without "--" it hands its arguments to the
-// flag package, which writes help to stderr. It is recorded as it behaves;
-// whether the port keeps that is a decision listed in the baseline doc.
+// record is the exception in Go: without "--" it hands its arguments to the
+// flag package, which writes help to stderr. The port writes it to stdout
+// like the rest, which the baseline doc decided, so the two sides are held
+// to different streams here.
 for (const command of inventory.commands) {
   const help = says(word(command.name), ...command.flags.map((flag) => word(`-${flag.name}`)));
-  const streams = command.name === "record" ? { stdout: "empty", stderr: help } : { stdout: help, stderr: "empty" };
+  const streams = command.name === "record" ? { stdout: "empty", stderr: help, port: { stdout: help, stderr: "empty" } } : { stdout: help, stderr: "empty" };
   for (const name of [command.name, ...command.aliases]) add(`help/${name} -h`, [{ args: [name, "-h"], exit: 0, ...streams }]);
   add(`help/help ${command.name}`, [{ args: ["help", command.name], exit: 0, ...streams }]);
 }
@@ -379,8 +380,16 @@ function compare(test, a, b) {
       if (seen.exit !== step.exit) problems.push(`${at}: the ${side} exited ${seen.exit}, the case expects ${step.exit}\n        stderr: ${clip(seen.stderr.split("\n")[0])}`);
     }
     for (const stream of ["stdout", "stderr"]) {
-      const why = disagreement(step[stream], a.steps[i][stream], b.steps[i][stream]);
-      if (why) problems.push(`${at}: ${stream} (${kind(step[stream])}): ${why}`);
+      // A step with `port` declares a difference that was decided: against a
+      // second implementation each side is held to its own expectation, and
+      // the two are not compared with each other.
+      const sides = step.port && candidate !== reference
+        ? [[step[stream], a.steps[i][stream], a.steps[i][stream]], [step.port[stream], b.steps[i][stream], b.steps[i][stream]]]
+        : [[step[stream], a.steps[i][stream], b.steps[i][stream]]];
+      for (const [spec, x, y] of sides) {
+        const why = disagreement(spec, x, y);
+        if (why) problems.push(`${at}: ${stream} (${kind(spec)}): ${why}`);
+      }
     }
   });
   const listing = (side) => side.files.map((f) => `${f.mode} ${f.path}`).join("\n");

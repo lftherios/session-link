@@ -9,7 +9,8 @@ proves it, and the first command to use it is the importer in backlog item 6.
 
 ## The crate
 
-[crates/slink-format](../crates/slink-format) has four functions and no state.
+[crates/slink-format](../crates/slink-format) has seven functions and no
+state.
 
 | Function | What it does |
 | --- | --- |
@@ -17,6 +18,9 @@ proves it, and the first command to use it is the importer in backlog item 6.
 | `validate` | Schema errors, at most 20, as `<JSON pointer> <message>`; on a document the schema accepts, the invariants |
 | `invariant_errors` | Span ids are unique and no span is its own ancestor, in the words the JavaScript and Go validators use |
 | `scan_for_secrets` | The credential scan: pattern name and masked preview, at most 10 findings |
+| `encode` | A document's text as Go's `encoding/json` writes it: keys sorted, no white space, `<`, `>` and `&` escaped. Added with the first importer |
+| `compact` | A JSON text without the white space between its tokens, and otherwise untouched |
+| `instant` | The moment an RFC 3339 time names, to the nanosecond |
 
 The schema and the pattern list are embedded straight from
 [packages/format](../packages/format), where they are authoritative. Go embeds
@@ -145,8 +149,10 @@ ours to keep correct; the sweep is what would make that safe to try.
 
 - Reading a file. Decoding bytes that are not UTF-8 belongs with the first
   command that opens a document.
-- Writing documents. Key order and how a number is written back matter to
-  the importers and the exporter, and are settled there.
+- Writing documents was settled with the first importer: `encode` writes
+  Go's bytes, and serde_json reads numbers with `float_roundtrip`, because
+  its default reads some of them one step off. [rust-cli.md](rust-cli.md)
+  has both.
 - Nesting past 127 levels, if a real transcript needs it when the importers
   and the recorder read provider payloads.
 - `run/v0` is still accepted, because the schema still lists it.

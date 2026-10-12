@@ -88,9 +88,12 @@ different exit code, a changed JSON field, a looser file mode) was caught in
 every one of those ways.
 
 The first real candidate is `slink-rs`, the binary of the
-[Rust workspace](rust-build.md). It has `version` and nothing else: the four
-version cases agree, and every other case fails with its "not ported yet"
-message, which is the runner reporting the port's progress as intended.
+[Rust workspace](rust-build.md). On 2026-10-12, with its first commands, 63 of
+the 104 cases agree: usage, help, flags, completion, and every Claude Code
+import with the bytes and mode of the capture it leaves. The rest fail with a
+"not ported yet" message or a refusal to publish, which is the runner
+reporting the port's progress as intended. [rust-cli.md](rust-cli.md) has the
+count by group.
 
 Nothing in a run reaches the network or the real `~/.slink`. `HOME` and
 `SLINK_HOME` point into the throwaway root, `PATH` is an empty directory so
@@ -136,7 +139,9 @@ changes to declare the difference when the Rust code for it lands.
 1. `slink record -h`, `slink dev -h` and `slink help record` write their help
    to stderr. Every other command writes it to stdout. Without `--`, `record`
    hands its arguments to the flag package directly. The port writes this help
-   to stdout like the rest.
+   to stdout like the rest, and since `slink-rs` has help for every command
+   the three cases declare it: a step with `port` holds each binary to its own
+   stream and does not compare the two.
 2. Captures list by file name, and the stamp in the name has one-second
    resolution, so two captures made within a second list in the order of their
    random IDs. `push` and `share` with no argument take the first as the
