@@ -119,6 +119,7 @@ loopback.
 | Listings | `list --json` as JSON, `list` rows as bytes | The JSON is the scripting surface; the rows carry the ID every command accepts |
 | Error messages | Bytes | Strict until a case states otherwise |
 | Help text | Behavior | The plan lets incidental spacing differ |
+| `testdata/format` | Verdict, where the error is and the scan's findings, in the JavaScript, Go and Rust tests | The validators and scanners are libraries, so each language's tests read the cases; [rust-format.md](rust-format.md) has the differences they record |
 | `testdata/spool` | Not in the runner; Go tests in process | Needs spools placed in a home and a reader run over them |
 | `testdata/encryption` | Not in the runner; byte-exact vectors in the Go and JS tests | Becomes a shared vector set when the Rust envelope code lands |
 | `testdata/share/research` | Not in the runner; Go tests and the browser checks | The export is driven through the local server |

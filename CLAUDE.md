@@ -61,6 +61,7 @@ files among them are gitignored, so build order matters in a fresh checkout:
 | Compatibility inventory matches the Go source | `node scripts/compat-inventory.mjs --check` |
 | Differential runner against a built CLI | `SLINK_BINARY=go/slink node scripts/compat.mjs` |
 | The same, with the Rust binary as the candidate | add `SLINK_CANDIDATE=target/release/slink-rs` and a name filter for the cases it has, such as `version` |
+| JS, Go and Rust validators and scanners agree | `node scripts/format-diff.mjs`; it builds the Go and Rust helpers itself |
 | Rust format, lint and tests | `cargo fmt --all --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked` |
 | Build the Rust binary | `cargo build --release --locked`, which writes `target/release/slink-rs` |
 
@@ -70,8 +71,9 @@ CI (`.github/workflows/ci.yml`) has two jobs. `test` runs `node --check` over
 `node scripts/compat-inventory.mjs --check`. `go` runs
 `npm run build:viewer`, the golden check, `go vet` and `go test`, the npm smoke
 build and `npm run validate`. A second workflow, `rust.yml`, lints the Cargo
-workspace and then builds, tests and runs the release binary on a native runner
-for each of the six targets; it also runs on `feature/rust-**` branches.
+workspace, builds, tests and runs the release binary on a native runner for
+each of the six targets, and runs the format cases and `format-diff.mjs`
+across the three languages; it also runs on `feature/rust-**` branches.
 `docs/rust-build.md` has the choices behind it. Run the parts your change
 touches before finishing.
 
@@ -119,6 +121,11 @@ touches before finishing.
   parts and fields must validate and round-trip. The canonical schema is
   `packages/format/session.schema.json`; the Go copy is generated.
 - Secret patterns have one source, `packages/format/secret-patterns.mjs`.
+- `testdata/format` holds the cases the JavaScript, Go and Rust validators and
+  scanners must all agree on. A change to a schema rule or a pattern adds its
+  case there in the same change; the README there has the fields, and
+  `docs/rust-format.md` the differences that are recorded on purpose. Go
+  caches test results across fixture edits, so use `go test -count=1`.
 - The `slink help` text in `go/cmd/slink/help.go` is the CLI spec. Keep its
   `commands` list in sync with the switch in `dispatch()` in `main.go`.
 - `testdata/compat/cli.json` is the command, flag and environment-variable

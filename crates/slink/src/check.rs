@@ -1,6 +1,6 @@
 //! `slink-rs build-check` exercises what the build links in (bundled SQLite,
-//! the embedded viewer, the HTTP server and client, TLS) so that a release
-//! binary can be proven on each target. It is scaffolding for the build spike
+//! the embedded viewer, the HTTP server and client, TLS, the format crate) so
+//! that a release binary can be proven on each target. It is scaffolding for the build spike
 //! and goes when real commands reach the same code.
 
 use std::error::Error;
@@ -21,6 +21,7 @@ pub fn run() -> ExitCode {
         ("sqlite", sqlite()),
         ("viewer", embedded()),
         ("http", http()),
+        ("format", format()),
     ] {
         match result {
             Ok(detail) => println!("ok    {name:<7} {detail}"),
@@ -111,6 +112,29 @@ async fn round_trip(bundle: &'static [u8]) -> Checked {
         return Err(format!("fetched {} bytes that are not the bundle", body.len()).into());
     }
     Ok("served and fetched viewer.js over loopback; TLS client built".into())
+}
+
+/// The schema compiles and decides, and the credential patterns compile and
+/// find, in this binary on this target.
+fn format() -> Checked {
+    const DOCUMENT: &str = r#"{"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}]}"#;
+    let document = slink_format::parse(DOCUMENT)?;
+    let errors = slink_format::validate(&document);
+    if !errors.is_empty() {
+        return Err(format!("a valid document was refused: {}", errors[0]).into());
+    }
+    let undated = slink_format::parse(&DOCUMENT.replace("T10:00:00Z", ""))?;
+    let errors = slink_format::validate(&undated);
+    if !errors.iter().any(|error| error.starts_with("/created_at ")) {
+        return Err(format!("a date for created_at was not refused there: {errors:?}").into());
+    }
+    // Assembled here so that no source file holds text shaped like a key.
+    let key = format!("sk-{}", "a".repeat(16));
+    let hits = slink_format::scan_for_secrets(&format!("é{key}"));
+    if hits.len() != 1 || hits[0].pattern != "provider_api_key" {
+        return Err(format!("the scan found {hits:?} where one provider key was").into());
+    }
+    Ok("schema compiled and applied; credential patterns compiled and applied".into())
 }
 
 fn hex(bytes: &[u8]) -> String {

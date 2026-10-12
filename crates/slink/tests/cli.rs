@@ -56,7 +56,7 @@ fn the_build_check_passes_on_this_target() {
     let output = run("build-check", &["build-check"]);
     let stdout = text(&output.stdout);
     assert!(output.status.success(), "{stdout}{}", text(&output.stderr));
-    for part in ["sqlite", "viewer", "http"] {
+    for part in ["sqlite", "viewer", "http", "format"] {
         assert!(stdout.contains(&format!("ok    {part}")), "{stdout}");
     }
 }

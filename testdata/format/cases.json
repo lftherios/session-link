@@ -1,0 +1,1034 @@
+[
+  {
+    "name": "the smallest document",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "the pre-rebrand schema name",
+    "doc": {"schema":"run/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "every optional field of a document",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"id":"client-key-1","name":"A fictional session","source":{"kind":"import","label":"example@1.0","fidelity":"reconstructed"},"group":{"id":"eval-1","name":"An eval","item":"case-7"},"tags":["fictional","example"],"metadata":{"branch":"main"},"extensions":{"example.notes.v1":{"text":"kept as written"}},"scores":[{"name":"passed","value":true,"scorer":"code","comment":"ok"},{"name":"grade","value":"B"},{"name":"accuracy","value":0.5}],"metrics":{"input_tokens":10,"output_tokens":20,"cost_usd":0.01,"latency_ms":1200.5},"attachments":{"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":{"mime":"image/png","name":"plot.png","size":1024}}},
+    "expect": "valid"
+  },
+  {
+    "name": "every optional field of a span",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","parent_id":null,"type":"agent","name":"plan","started_at":"2026-07-19T10:00:00Z","ended_at":"2026-07-19T10:00:05Z","status":"error","fidelity":"partial","error":{"message":"timed out","type":"Timeout"},"params":{"temperature":0},"input":"anything","output":["anything"],"usage":{"input_tokens":1,"output_tokens":2,"cache_read_tokens":3,"cost_usd":0},"metadata":{"attempt":2},"raw":{"request":{"stream":true}},"raw_ref":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "an llm_call with messages",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"text","text":"Hi"}]}]}}]},
+    "expect": "valid"
+  },
+  {
+    "name": "an llm_call that references its messages",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages_ref":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","system_ref":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","tools_ref":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"output":{"messages":[{"role":"assistant","content":[{"type":"text","text":"Hi"}]}]}}]},
+    "expect": "valid"
+  },
+  {
+    "name": "an llm_call with a system prompt and tools",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"system":"Be brief.","messages":[],"tools":[{"name":"read","description":"Read a file","input_schema":{"type":"object"}}]},"output":{"messages":[{"role":"assistant","content":[{"type":"text","text":"Hi"}]}]}}]},
+    "expect": "valid"
+  },
+  {
+    "name": "a tool_call span",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"t","type":"tool_call","input":{"name":"read","arguments":{"path":"notes.txt"},"tool_call_id":"c1"},"output":{"result":"text","is_error":false}}]},
+    "expect": "valid"
+  },
+  {
+    "name": "a tool_call span with a referenced result",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"t","type":"tool_call","input":{"name":"read"},"output":{"result_ref":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}]},
+    "expect": "valid"
+  },
+  {
+    "name": "a retrieval span",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"r","type":"retrieval","input":{"query":"notes"},"output":{"documents":[{"text":"a","score":0.5,"ref":"doc-1"}]}}]},
+    "expect": "valid"
+  },
+  {
+    "name": "every known content part",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","name":"helper","content":[{"type":"text","text":"Hi"},{"type":"thinking","text":"Considering"},{"type":"image","url":"https://example.invalid/a.png"},{"type":"image","attachment":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","mime":"image/png"},{"type":"tool_call","id":"c1","name":"read","arguments":{"path":"notes.txt"}},{"type":"tool_result","tool_call_id":"c1","content":[{"type":"text","text":"contents"}],"is_error":false},{"type":"data","data":{"any":["thing"]}},{"type":"blob","attachment":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","mime":"text/plain","name":"big.txt"}]}]}}]},
+    "expect": "valid"
+  },
+  {
+    "name": "an unknown field on a document",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"x_origin":{"tool":"example","n":1}},
+    "expect": "valid"
+  },
+  {
+    "name": "an unknown span type with fields of its own",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"handoff","x_reason":"shift change","x_list":[1,null]}]},
+    "expect": "valid"
+  },
+  {
+    "name": "an unknown field on a known span type",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"text","text":"Hi"}]}]},"x_cache":"warm"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "an unknown message role",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"developer","content":[{"type":"text","text":"Rules"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"text","text":"Hi"}]}]}}]},
+    "expect": "valid"
+  },
+  {
+    "name": "an unknown content part type with any fields",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"audio","clip":{"seconds":3}}]}]}}]},
+    "expect": "valid"
+  },
+  {
+    "name": "an unknown field on a known content part",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"text","text":"Hi","x_citations":[]}]}]}}]},
+    "expect": "valid"
+  },
+  {
+    "name": "an unknown source kind, scorer and usage counter",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"text","text":"Hi"}]}]},"usage":{"reasoning_tokens":7}}],"source":{"kind":"carrier-pigeon"},"scores":[{"name":"s","value":1,"scorer":"committee"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "a span type that only resembles a known one",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"LLM_CALL"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "a parent that names no span",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"a","type":"custom","parent_id":"missing"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "an empty parent",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"a","type":"custom","parent_id":""}]},
+    "expect": "valid"
+  },
+  {
+    "name": "children listed before their parent",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"leaf","type":"custom","parent_id":"mid"},{"id":"mid","type":"custom","parent_id":"root"},{"id":"root","type":"agent","parent_id":null}]},
+    "expect": "valid"
+  },
+  {
+    "name": "a span id of 64 characters from the whole alphabet",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"Az09._-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","type":"agent"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "a name of 256 characters outside the basic plane",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"name":"\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"},
+    "expect": "valid"
+  },
+  {
+    "name": "a tag of 64 two-byte characters, and 32 tags",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"tags":["\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9","t0","t1","t2","t3","t4","t5","t6","t7","t8","t9","t10","t11","t12","t13","t14","t15","t16","t17","t18","t19","t20","t21","t22","t23","t24","t25","t26","t27","t28","t29","t30"]},
+    "expect": "valid"
+  },
+  {
+    "name": "an id of 128 characters",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"id":"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"},
+    "expect": "valid"
+  },
+  {
+    "name": "whole numbers written with a fraction or an exponent",
+    "text": "{\"metrics\":{\"input_tokens\":1.0,\"output_tokens\":1e2},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "valid"
+  },
+  {
+    "name": "negative zero where the minimum is zero",
+    "text": "{\"metrics\":{\"input_tokens\":-0,\"cost_usd\":-0.0},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "valid"
+  },
+  {
+    "name": "a number too small for a double, in a free-form field",
+    "text": "{\"metadata\":{\"n\":1E-400},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "valid"
+  },
+  {
+    "name": "an integer of thirty digits, in a free-form field",
+    "text": "{\"metadata\":{\"n\":123456789012345678901234567890},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "valid"
+  },
+  {
+    "name": "arrays nested 125 deep in a free-form field, 127 levels in all",
+    "text": "{\"metadata\":{\"n\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "valid"
+  },
+  {
+    "name": "a time with lowercase t and z",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19t10:00:00z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "a time with a long fraction",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00.000000000000000000001Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "a time with an offset",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00.5-23:59","spans":[{"id":"root","type":"agent"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "a leap day",
+    "doc": {"schema":"session/v0","created_at":"2028-02-29T10:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "a leap day in the year 0000",
+    "doc": {"schema":"session/v0","created_at":"0000-02-29T00:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "a leap second at the end of a UTC day",
+    "doc": {"schema":"session/v0","created_at":"2026-12-31T23:59:60Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "a leap second written in another zone",
+    "doc": {"schema":"session/v0","created_at":"2026-07-20T01:59:60+02:00","spans":[{"id":"root","type":"agent"}]},
+    "expect": "valid"
+  },
+  {
+    "name": "whitespace around the document",
+    "text": " \t\r\n{\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]} \t\r\n",
+    "expect": "valid"
+  },
+  {
+    "name": "a key given twice, the valid one last",
+    "text": "{\"schema\":7,\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "valid"
+  },
+  {
+    "name": "an escaped surrogate pair",
+    "text": "{\"name\":\"\\ud83d\\ude00\",\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "valid"
+  },
+  {
+    "name": "an unpaired high surrogate escape",
+    "text": "{\"name\":\"cut \\ud83d\",\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "valid"
+  },
+  {
+    "name": "an unpaired low surrogate escape",
+    "text": "{\"name\":\"\\ude00 cut\",\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "valid"
+  },
+  {
+    "name": "an escaped null character",
+    "text": "{\"name\":\"\\u0000\",\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "valid"
+  },
+  {
+    "name": "a raw line separator in a string",
+    "text": "{\"name\":\"\u2028\",\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "valid"
+  },
+  {
+    "name": "an array for a document",
+    "text": "[]",
+    "expect": "invalid",
+    "at": "/"
+  },
+  {
+    "name": "null for a document",
+    "text": "null",
+    "expect": "invalid",
+    "at": "/"
+  },
+  {
+    "name": "a string for a document",
+    "text": "\"session/v0\"",
+    "expect": "invalid",
+    "at": "/"
+  },
+  {
+    "name": "a number for a document",
+    "text": "1",
+    "expect": "invalid",
+    "at": "/"
+  },
+  {
+    "name": "an empty object for a document",
+    "text": "{}",
+    "expect": "invalid",
+    "at": "/"
+  },
+  {
+    "name": "no schema",
+    "doc": {"created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/"
+  },
+  {
+    "name": "no created_at",
+    "doc": {"schema":"session/v0","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/"
+  },
+  {
+    "name": "no spans",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z"},
+    "expect": "invalid",
+    "at": "/"
+  },
+  {
+    "name": "a later schema version",
+    "doc": {"schema":"session/v1","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/schema"
+  },
+  {
+    "name": "a schema name in another case",
+    "doc": {"schema":"Session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/schema"
+  },
+  {
+    "name": "a number for the schema name",
+    "doc": {"schema":0,"created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/schema"
+  },
+  {
+    "name": "a key given twice, the invalid one last",
+    "text": "{\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}],\"schema\":7}",
+    "expect": "invalid",
+    "at": "/schema"
+  },
+  {
+    "name": "a name of 257 characters",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"name":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+    "expect": "invalid",
+    "at": "/name"
+  },
+  {
+    "name": "a name of 257 characters outside the basic plane",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"name":"\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"},
+    "expect": "invalid",
+    "at": "/name"
+  },
+  {
+    "name": "an id of 129 characters",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"id":"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"},
+    "expect": "invalid",
+    "at": "/id"
+  },
+  {
+    "name": "33 tags",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"tags":["t0","t1","t2","t3","t4","t5","t6","t7","t8","t9","t10","t11","t12","t13","t14","t15","t16","t17","t18","t19","t20","t21","t22","t23","t24","t25","t26","t27","t28","t29","t30","t31","t32"]},
+    "expect": "invalid",
+    "at": "/tags"
+  },
+  {
+    "name": "a tag of 65 two-byte characters",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"tags":["\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"]},
+    "expect": "invalid",
+    "at": "/tags/0"
+  },
+  {
+    "name": "a tag that is not a string",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"tags":[7]},
+    "expect": "invalid",
+    "at": "/tags/0"
+  },
+  {
+    "name": "metadata that is a list",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"metadata":[]},
+    "expect": "invalid",
+    "at": "/metadata"
+  },
+  {
+    "name": "extensions that are a string",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"extensions":"notes"},
+    "expect": "invalid",
+    "at": "/extensions"
+  },
+  {
+    "name": "a source without a kind",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"source":{"label":"x"}},
+    "expect": "invalid",
+    "at": "/source"
+  },
+  {
+    "name": "a fidelity outside the vocabulary",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"source":{"kind":"import","fidelity":"guessed"}},
+    "expect": "invalid",
+    "at": "/source/fidelity"
+  },
+  {
+    "name": "a group without an id",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"group":{"name":"x"}},
+    "expect": "invalid",
+    "at": "/group"
+  },
+  {
+    "name": "a score without a value",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"scores":[{"name":"s"}]},
+    "expect": "invalid",
+    "at": "/scores/0"
+  },
+  {
+    "name": "a score whose value is null",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"scores":[{"name":"s","value":null}]},
+    "expect": "invalid",
+    "at": "/scores/0/value"
+  },
+  {
+    "name": "a negative token count",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"metrics":{"input_tokens":-1}},
+    "expect": "invalid",
+    "at": "/metrics/input_tokens"
+  },
+  {
+    "name": "a fractional token count",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"metrics":{"input_tokens":1.5}},
+    "expect": "invalid",
+    "at": "/metrics/input_tokens"
+  },
+  {
+    "name": "a token count in a string",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"metrics":{"output_tokens":"12"}},
+    "expect": "invalid",
+    "at": "/metrics/output_tokens"
+  },
+  {
+    "name": "an attachment key that is not a hash",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"attachments":{"plot.png":{"mime":"image/png"}}},
+    "expect": "invalid",
+    "at": "/attachments"
+  },
+  {
+    "name": "an attachment key in uppercase hex",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"attachments":{"sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA":{"mime":"image/png"}}},
+    "expect": "invalid",
+    "at": "/attachments"
+  },
+  {
+    "name": "an attachment key one digit short",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"attachments":{"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":{"mime":"image/png"}}},
+    "expect": "invalid",
+    "at": "/attachments"
+  },
+  {
+    "name": "an attachment key with a newline after it",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"attachments":{"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n":{"mime":"image/png"}}},
+    "expect": "invalid",
+    "at": "/attachments"
+  },
+  {
+    "name": "an attachment without a mime",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"attachments":{"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":{"name":"plot.png"}}},
+    "expect": "invalid",
+    "at": "/attachments/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+    "name": "an attachment with a negative size",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}],"attachments":{"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":{"mime":"image/png","size":-1}}},
+    "expect": "invalid",
+    "at": "/attachments/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/size"
+  },
+  {
+    "name": "created_at: a date without a time",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: a time without a zone",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: a time without seconds",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: a day that does not exist",
+    "doc": {"schema":"session/v0","created_at":"2026-02-30T10:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: a leap day in a common year",
+    "doc": {"schema":"session/v0","created_at":"2100-02-29T10:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: a thirteenth month",
+    "doc": {"schema":"session/v0","created_at":"2026-13-01T10:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: hour 24",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T24:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: second 61",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:61Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: a leap second in the middle of a day",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:59:60Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: a leap second that is not the end of a UTC day",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T23:59:60+02:00","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: an offset of 24 hours",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00+24:00","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: a year of five digits",
+    "doc": {"schema":"session/v0","created_at":"10000-01-01T00:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: a fraction with no digits",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00.Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: a comma for the fraction",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00,5Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: a space after the time",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z ","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: a newline after the time",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z\n","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: full-width digits",
+    "doc": {"schema":"session/v0","created_at":"\uff12\uff10\uff12\uff16-07-19T10:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: a minus sign that is not a hyphen",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00\u221202:00","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: words",
+    "doc": {"schema":"session/v0","created_at":"not-a-date-time","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at: an empty time",
+    "doc": {"schema":"session/v0","created_at":"","spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "created_at that is a number",
+    "doc": {"schema":"session/v0","created_at":1784455200,"spans":[{"id":"root","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/created_at"
+  },
+  {
+    "name": "a span that ends at a malformed time",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent","ended_at":"yesterday"}]},
+    "expect": "invalid",
+    "at": "/spans/0/ended_at"
+  },
+  {
+    "name": "no spans in the list",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[]},
+    "expect": "invalid",
+    "at": "/spans"
+  },
+  {
+    "name": "spans that are not a list",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":{"root":{}}},
+    "expect": "invalid",
+    "at": "/spans"
+  },
+  {
+    "name": "a span that is not an object",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":["root"]},
+    "expect": "invalid",
+    "at": "/spans/0"
+  },
+  {
+    "name": "a span without an id",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"type":"agent"}]},
+    "expect": "invalid",
+    "at": "/spans/0"
+  },
+  {
+    "name": "a span without a type",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root"}]},
+    "expect": "invalid",
+    "at": "/spans/0"
+  },
+  {
+    "name": "a span id with a space",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"a b","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/spans/0/id"
+  },
+  {
+    "name": "a span id of 65 characters",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/spans/0/id"
+  },
+  {
+    "name": "a span id that is empty",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/spans/0/id"
+  },
+  {
+    "name": "a span id with a newline after it",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"a\n","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/spans/0/id"
+  },
+  {
+    "name": "a span id with an accented letter",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"\u00e9","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/spans/0/id"
+  },
+  {
+    "name": "a span id with a slash",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"a/b","type":"agent"}]},
+    "expect": "invalid",
+    "at": "/spans/0/id"
+  },
+  {
+    "name": "a number for a parent",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent","parent_id":42}]},
+    "expect": "invalid",
+    "at": "/spans/0/parent_id"
+  },
+  {
+    "name": "a status outside the vocabulary",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent","status":"running"}]},
+    "expect": "invalid",
+    "at": "/spans/0/status"
+  },
+  {
+    "name": "a span fidelity outside the vocabulary",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent","fidelity":"lossless"}]},
+    "expect": "invalid",
+    "at": "/spans/0/fidelity"
+  },
+  {
+    "name": "an error without a message",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent","error":{"type":"Timeout"}}]},
+    "expect": "invalid",
+    "at": "/spans/0/error"
+  },
+  {
+    "name": "raw that is a string",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent","raw":"{}"}]},
+    "expect": "invalid",
+    "at": "/spans/0/raw"
+  },
+  {
+    "name": "a malformed raw_ref",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent","raw_ref":"sha256:XYZ"}]},
+    "expect": "invalid",
+    "at": "/spans/0/raw_ref"
+  },
+  {
+    "name": "a negative usage counter",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"agent","usage":{"cache_read_tokens":-1}}]},
+    "expect": "invalid",
+    "at": "/spans/0/usage/cache_read_tokens"
+  },
+  {
+    "name": "forty spans without an id, reported up to the limit",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"},{"type":"agent"}]},
+    "expect": "invalid",
+    "at": "/spans/0",
+    "count": 20
+  },
+  {
+    "name": "an llm_call with nothing else",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call"}]},
+    "expect": "invalid",
+    "at": "/spans/0"
+  },
+  {
+    "name": "a model without an id",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"provider":"example"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"text","text":"Hi"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/model"
+  },
+  {
+    "name": "an llm_call input with neither messages nor a reference",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"system":"Be brief."},"output":{"messages":[{"role":"assistant","content":[{"type":"text","text":"Hi"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/input"
+  },
+  {
+    "name": "an llm_call output without messages",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output"
+  },
+  {
+    "name": "a message without a role",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"content":[]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"text","text":"Hi"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/input/messages/0"
+  },
+  {
+    "name": "message content that is a bare string",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":"Hello"}]},"output":{"messages":[{"role":"assistant","content":[{"type":"text","text":"Hi"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/input/messages/0/content"
+  },
+  {
+    "name": "a tool definition without a name",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[],"tools":[{"description":"x"}]},"output":{"messages":[{"role":"assistant","content":[{"type":"text","text":"Hi"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/input/tools/0"
+  },
+  {
+    "name": "a tool_call span without input",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"t","type":"tool_call"}]},
+    "expect": "invalid",
+    "at": "/spans/0"
+  },
+  {
+    "name": "a tool_call span whose input has no name",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"t","type":"tool_call","input":{"arguments":{}}}]},
+    "expect": "invalid",
+    "at": "/spans/0/input"
+  },
+  {
+    "name": "a tool result flag that is not a boolean",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"t","type":"tool_call","input":{"name":"read"},"output":{"is_error":"no"}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/is_error"
+  },
+  {
+    "name": "a retrieval span without a query",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"r","type":"retrieval","input":{}}]},
+    "expect": "invalid",
+    "at": "/spans/0/input"
+  },
+  {
+    "name": "a retrieved document with a score in a string",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"r","type":"retrieval","input":{"query":"q"},"output":{"documents":[{"score":"high"}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/documents/0/score"
+  },
+  {
+    "name": "a part without a type",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"text":"Hi"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/messages/0/content/0"
+  },
+  {
+    "name": "a part that is a string",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":["Hi"]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/messages/0/content/0"
+  },
+  {
+    "name": "a text part without text",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"text"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/messages/0/content/0"
+  },
+  {
+    "name": "a text part whose text is a number",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"text","text":7}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/messages/0/content/0/text"
+  },
+  {
+    "name": "a thinking part without text",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"thinking"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/messages/0/content/0"
+  },
+  {
+    "name": "an image part with neither a url nor an attachment",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"image","mime":"image/png"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/messages/0/content/0"
+  },
+  {
+    "name": "an image part with a malformed attachment",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"image","attachment":"plot.png"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/messages/0/content/0/attachment"
+  },
+  {
+    "name": "a tool_call part without an id",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"tool_call","name":"read"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/messages/0/content/0"
+  },
+  {
+    "name": "a tool_result part without content",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"tool_result","tool_call_id":"c1"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/messages/0/content/0"
+  },
+  {
+    "name": "a part nested in a tool_result without its text",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"tool_result","tool_call_id":"c1","content":[{"type":"text"}]}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/messages/0/content/0/content/0"
+  },
+  {
+    "name": "a data part without data",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"data"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/messages/0/content/0"
+  },
+  {
+    "name": "a blob part without an attachment",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"call","type":"llm_call","model":{"id":"example-model"},"input":{"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]},"output":{"messages":[{"role":"assistant","content":[{"type":"blob","name":"big.txt"}]}]}}]},
+    "expect": "invalid",
+    "at": "/spans/0/output/messages/0/content/0"
+  },
+  {
+    "name": "the same span id twice",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"a","type":"custom"},{"id":"a","type":"custom"}]},
+    "expect": "invalid",
+    "error": "duplicate span id \"a\""
+  },
+  {
+    "name": "a repeated span id after others",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"a","type":"custom"},{"id":"b","type":"custom"},{"id":"c","type":"custom"},{"id":"b","type":"custom"}]},
+    "expect": "invalid",
+    "error": "duplicate span id \"b\""
+  },
+  {
+    "name": "a span that is its own parent",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"a","type":"custom","parent_id":"a"}]},
+    "expect": "invalid",
+    "error": "parent_id cycle involving span \"a\""
+  },
+  {
+    "name": "two spans that are each other's parent",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"a","type":"custom","parent_id":"b"},{"id":"b","type":"custom","parent_id":"a"}]},
+    "expect": "invalid",
+    "error": "parent_id cycle involving span \"a\""
+  },
+  {
+    "name": "three spans in a ring",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"a","type":"custom","parent_id":"b"},{"id":"b","type":"custom","parent_id":"c"},{"id":"c","type":"custom","parent_id":"a"}]},
+    "expect": "invalid",
+    "error": "parent_id cycle involving span \"a\""
+  },
+  {
+    "name": "a ring beside a sound root",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"root","type":"custom"},{"id":"a","type":"custom","parent_id":"b"},{"id":"b","type":"custom","parent_id":"a"}]},
+    "expect": "invalid",
+    "error": "parent_id cycle involving span \"a\""
+  },
+  {
+    "name": "a chain that leads into a ring",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"x","type":"custom","parent_id":"a"},{"id":"a","type":"custom","parent_id":"b"},{"id":"b","type":"custom","parent_id":"a"}]},
+    "expect": "invalid",
+    "error": "parent_id cycle involving span \"a\""
+  },
+  {
+    "name": "a repeated id inside a ring, reported as the repeat",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00Z","spans":[{"id":"a","type":"custom","parent_id":"b"},{"id":"b","type":"custom","parent_id":"a"},{"id":"a","type":"custom","parent_id":"b"}]},
+    "expect": "invalid",
+    "error": "duplicate span id \"a\""
+  },
+  {
+    "name": "empty text",
+    "text": "",
+    "expect": "unreadable"
+  },
+  {
+    "name": "only whitespace",
+    "text": " \n",
+    "expect": "unreadable"
+  },
+  {
+    "name": "an unclosed object",
+    "text": "{",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a trailing comma in a list",
+    "text": "{\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"},]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a trailing comma in an object",
+    "text": "{\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}],}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "text after the document",
+    "text": "{\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}x",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a second document after the first",
+    "text": "{\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}{}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a comment",
+    "text": "// fictional\n{\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "single quotes",
+    "text": "{'schema':'session/v0','created_at':'2026-07-19T10:00:00Z','spans':[{'id':'root','type':'agent'}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "an unquoted key",
+    "text": "{schema:\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a byte order mark first",
+    "text": "\ufeff{\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "NaN",
+    "text": "{\"metadata\":{\"n\":NaN},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "Infinity",
+    "text": "{\"metadata\":{\"n\":Infinity},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a number with a leading zero",
+    "text": "{\"metadata\":{\"n\":01},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a number ending in a point",
+    "text": "{\"metadata\":{\"n\":1.},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a number with a plus sign",
+    "text": "{\"metadata\":{\"n\":+1},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a hexadecimal number",
+    "text": "{\"metadata\":{\"n\":0x10},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a raw newline in a string",
+    "text": "{\"name\":\"\n\",\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a raw tab in a string",
+    "text": "{\"name\":\"\t\",\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a raw null character in a string",
+    "text": "{\"name\":\"\u0000\",\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "an unknown escape",
+    "text": "{\"name\":\"\\x41\",\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a unicode escape of two digits",
+    "text": "{\"name\":\"\\u12\",\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": "unreadable"
+  },
+  {
+    "name": "a number too large for a double, in a free-form field",
+    "text": "{\"metadata\":{\"n\":1E400},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": {"js":"valid","go":"unreadable","rust":"unreadable"},
+    "why": "A number too large for a double. JavaScript reads it as Infinity; Go and Rust refuse the text."
+  },
+  {
+    "name": "a number too large for a double, where a count belongs",
+    "text": "{\"metrics\":{\"input_tokens\":1E400},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": {"js":"invalid","go":"unreadable","rust":"unreadable"},
+    "why": "A number too large for a double. JavaScript reads it as Infinity; Go and Rust refuse the text."
+  },
+  {
+    "name": "a time with a space for the T",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19 10:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": {"js":"valid","go":"invalid","rust":"invalid"},
+    "why": "ajv-formats takes white space for the T and an offset without its colon. RFC 3339 has neither, and Go and Rust refuse them."
+  },
+  {
+    "name": "a time with a tab for the T",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19\t10:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": {"js":"valid","go":"invalid","rust":"invalid"},
+    "why": "ajv-formats takes white space for the T and an offset without its colon. RFC 3339 has neither, and Go and Rust refuse them."
+  },
+  {
+    "name": "an offset without its colon",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00+0200","spans":[{"id":"root","type":"agent"}]},
+    "expect": {"js":"valid","go":"invalid","rust":"invalid"},
+    "why": "ajv-formats takes white space for the T and an offset without its colon. RFC 3339 has neither, and Go and Rust refuse them."
+  },
+  {
+    "name": "an offset of hours only",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00+02","spans":[{"id":"root","type":"agent"}]},
+    "expect": {"js":"valid","go":"invalid","rust":"invalid"},
+    "why": "ajv-formats takes white space for the T and an offset without its colon. RFC 3339 has neither, and Go and Rust refuse them."
+  },
+  {
+    "name": "an hour written with a sign",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T+1:00:00Z","spans":[{"id":"root","type":"agent"}]},
+    "expect": {"js":"invalid","go":"valid","rust":"invalid"},
+    "why": "The Go library reads each number of a time with a parser that takes a sign. JavaScript and Rust want two digits."
+  },
+  {
+    "name": "an offset written with two signs",
+    "doc": {"schema":"session/v0","created_at":"2026-07-19T10:00:00++2:00","spans":[{"id":"root","type":"agent"}]},
+    "expect": {"js":"invalid","go":"valid","rust":"invalid"},
+    "why": "The Go library reads each number of a time with a parser that takes a sign. JavaScript and Rust want two digits."
+  },
+  {
+    "name": "arrays nested 126 deep in a free-form field, 128 levels in all",
+    "text": "{\"metadata\":{\"n\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]},\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}]}",
+    "expect": {"js":"valid","go":"valid","rust":"unreadable"},
+    "why": "serde_json stops at 128 levels of nesting so that a parsed value can be walked without overflowing the stack. Go reads 10,000 levels and JSON.parse has no limit of its own."
+  }
+]

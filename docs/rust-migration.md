@@ -206,7 +206,7 @@ are in P7, where they apply to the new store.
 
 - [x] Add the workspace, pinned toolchain, lockfile, formatting/linting and native
   test jobs. Build a minimal executable for all six distribution targets.
-- [ ] Implement format validation, invariant checks and generated secret-pattern
+- [x] Implement format validation, invariant checks and generated secret-pattern
   consumption against the current JS/Go validators.
 - [ ] Implement envelope and signed-history verification, then wrapping,
   recovery and named statement codecs against Go/Web Crypto vectors.

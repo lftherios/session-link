@@ -17,10 +17,10 @@ before the port depends on them.
 | [.cargo/config.toml](../.cargo/config.toml) | Static C runtime on Windows and the macOS deployment target |
 | [Cargo.lock](../Cargo.lock) | Committed; every command in CI passes `--locked` |
 | [crates/slink](../crates/slink) | The CLI crate. Its binary is named `slink-rs` until it replaces Go |
-| [rust.yml](../.github/workflows/rust.yml) | Lint, then build, test and run on six native runners |
+| [crates/slink-format](../crates/slink-format) | Reading, validating and scanning `session/v0`; [rust-format.md](rust-format.md) describes it |
+| [rust.yml](../.github/workflows/rust.yml) | Lint, then build, test and run on six native runners; compare the format validators across languages |
 
-Crates are added when their first code lands, as the plan asks; `slink-format`
-is next.
+Crates are added when their first code lands, as the plan asks.
 
 ## Viewer artifact
 
@@ -58,8 +58,9 @@ and the server's copy of the bundle is still written by `--hosted-output`.
 | macOS | Deployment target 12.0 on both architectures | A floor had to be stated; confirm it is the one wanted |
 | Panics | Unwind, not abort | A panic while handling one proxied request must not stop the recorder |
 
-The lockfile holds 192 packages across all targets, development dependencies
-included. The plan's dependency review has not been done.
+The lockfile held 192 packages across all targets at this slice, development
+dependencies included, and holds 212 with the format crate. The plan's
+dependency review has not been done.
 
 ## Targets
 
@@ -87,7 +88,8 @@ Linux.
 
 What this does not show is installation: the binaries ran where they were
 built, on machines with a development toolchain. Running them on a clean
-machine belongs with packaging in P5.
+machine belongs with packaging in P5. The sizes are those of that commit; the
+format crate has since added about 1.5 MiB on macOS arm64.
 
 ## What is checked
 
@@ -95,9 +97,10 @@ machine belongs with packaging in P5.
   candidate, the [differential runner](../scripts/compat.mjs) agrees on the
   version cases.
 - `slink-rs build-check` runs what the binary links: a round trip through the
-  bundled SQLite, the embedded files against their manifest digests, and the
-  bundle served by axum on loopback and fetched by the publishing client. It is
-  scaffolding and goes when real commands reach the same code.
+  bundled SQLite, the embedded files against their manifest digests, the
+  bundle served by axum on loopback and fetched by the publishing client, and
+  the format crate's schema and credential patterns compiled and applied. It
+  is scaffolding and goes when real commands reach the same code.
 - [tests/cli.rs](../crates/slink/tests/cli.rs) runs the built binary with an
   empty environment and a home of its own, and fails if the home is not empty
   afterwards. That is the plan's rule that no Rust executable writes to a real

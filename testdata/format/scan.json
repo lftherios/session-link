@@ -1,0 +1,157 @@
+[
+  {
+    "name": "ordinary prose",
+    "text": "The task list, a hash sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa and the word sketch.",
+    "hits": []
+  },
+  {
+    "name": "provider_api_key at its shortest",
+    "text": "before sk-aaaaaaaaaaaaaaaa after",
+    "hits": [{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"}]
+  },
+  {
+    "name": "stripe_key at its shortest",
+    "text": "before sk_live_aaaaaaaaaaaaaaaa after",
+    "hits": [{"pattern":"stripe_key","preview":"sk_live_\u2026(24 chars)"}]
+  },
+  {
+    "name": "github_token at its shortest",
+    "text": "before ghp_aaaaaaaaaaaaaaaaaaaa after",
+    "hits": [{"pattern":"github_token","preview":"ghp_aaaa\u2026(24 chars)"}]
+  },
+  {
+    "name": "github_fine_grained_pat at its shortest",
+    "text": "before github_pat_aaaaaaaaaaaaaaaaaaaa after",
+    "hits": [{"pattern":"github_fine_grained_pat","preview":"github_p\u2026(31 chars)"}]
+  },
+  {
+    "name": "aws_access_key_id at its shortest",
+    "text": "before AKIAAAAAAAAAAAAAAAAA after",
+    "hits": [{"pattern":"aws_access_key_id","preview":"AKIAAAAA\u2026(20 chars)"}]
+  },
+  {
+    "name": "slack_token at its shortest",
+    "text": "before xoxb-aaaaaaaaaa after",
+    "hits": [{"pattern":"slack_token","preview":"xoxb-aaa\u2026(15 chars)"}]
+  },
+  {
+    "name": "google_api_key at its shortest",
+    "text": "before AIzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa after",
+    "hits": [{"pattern":"google_api_key","preview":"AIzaaaaa\u2026(34 chars)"}]
+  },
+  {
+    "name": "private_key_block at its shortest",
+    "text": "before -----BEGIN PRIVATE KEY----- after",
+    "hits": [{"pattern":"private_key_block","preview":"-----BEG\u2026(27 chars)"}]
+  },
+  {
+    "name": "a provider key one character short",
+    "text": "sk-aaaaaaaaaaaaaaa",
+    "hits": []
+  },
+  {
+    "name": "a GitHub token one character short",
+    "text": "ghp_aaaaaaaaaaaaaaaaaaa",
+    "hits": []
+  },
+  {
+    "name": "an access key id one character long",
+    "text": "AKIAAAAAAAAAAAAAAAAAA",
+    "hits": []
+  },
+  {
+    "name": "an access key id in lowercase",
+    "text": "AKIAaaaaaaaaaaaaaaaa",
+    "hits": []
+  },
+  {
+    "name": "a provider prefix in uppercase",
+    "text": "SK-aaaaaaaaaaaaaaaa",
+    "hits": []
+  },
+  {
+    "name": "a Stripe key for an unknown mode",
+    "text": "sk_prod_aaaaaaaaaaaaaaaa",
+    "hits": []
+  },
+  {
+    "name": "a restricted Stripe test key",
+    "text": "rk_test_A1A1A1A1A1A1A1A1",
+    "hits": [{"pattern":"stripe_key","preview":"rk_test_\u2026(24 chars)"}]
+  },
+  {
+    "name": "each GitHub token prefix",
+    "text": "ghp_aaaaaaaaaaaaaaaaaaaa gho_aaaaaaaaaaaaaaaaaaaa ghu_aaaaaaaaaaaaaaaaaaaa ghs_aaaaaaaaaaaaaaaaaaaa ghr_aaaaaaaaaaaaaaaaaaaa ghx_aaaaaaaaaaaaaaaaaaaa",
+    "hits": [{"pattern":"github_token","preview":"ghp_aaaa\u2026(24 chars)"},{"pattern":"github_token","preview":"gho_aaaa\u2026(24 chars)"},{"pattern":"github_token","preview":"ghu_aaaa\u2026(24 chars)"},{"pattern":"github_token","preview":"ghs_aaaa\u2026(24 chars)"},{"pattern":"github_token","preview":"ghr_aaaa\u2026(24 chars)"}]
+  },
+  {
+    "name": "named private key blocks",
+    "text": "-----BEGIN RSA PRIVATE KEY----- -----BEGIN OPENSSH PRIVATE KEY----- -----BEGIN PUBLIC KEY----- -----BEGIN rsa PRIVATE KEY-----",
+    "hits": [{"pattern":"private_key_block","preview":"-----BEG\u2026(31 chars)"},{"pattern":"private_key_block","preview":"-----BEG\u2026(35 chars)"}]
+  },
+  {
+    "name": "a key straight after an accented letter",
+    "text": "\u00e9sk-aaaaaaaaaaaaaaaa",
+    "hits": [{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"}]
+  },
+  {
+    "name": "a key straight after a character outside the basic plane",
+    "text": "\ud83d\ude00sk-aaaaaaaaaaaaaaaa\u65e5",
+    "hits": [{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"}]
+  },
+  {
+    "name": "a key straight after a letter",
+    "text": "xsk-aaaaaaaaaaaaaaaa",
+    "hits": []
+  },
+  {
+    "name": "a key straight after an underscore",
+    "text": "_sk-aaaaaaaaaaaaaaaa",
+    "hits": []
+  },
+  {
+    "name": "a key straight after a hyphen",
+    "text": "-sk-aaaaaaaaaaaaaaaa",
+    "hits": [{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"}]
+  },
+  {
+    "name": "a key that ends in a hyphen, found without it",
+    "text": "sk-aaaaaaaaaaaaaaaa- ",
+    "hits": [{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"}]
+  },
+  {
+    "name": "a key that runs on into an accented letter",
+    "text": "sk-aaaaaaaaaaaaaaaa\u00e9",
+    "hits": [{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"}]
+  },
+  {
+    "name": "a key inside a document",
+    "text": "{\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}],\"name\":\"sk-aaaaaaaaaaaaaaaa\"}",
+    "hits": [{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"}]
+  },
+  {
+    "name": "a key broken by an escape in the document's text",
+    "text": "{\"schema\":\"session/v0\",\"created_at\":\"2026-07-19T10:00:00Z\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\"}],\"name\":\"sk-aaaaaaaa\\naaaaaaaa\"}",
+    "hits": []
+  },
+  {
+    "name": "findings in the order of the pattern list, not of the text",
+    "text": "-----BEGIN PRIVATE KEY----- ghp_aaaaaaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa",
+    "hits": [{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"},{"pattern":"github_token","preview":"ghp_aaaa\u2026(24 chars)"},{"pattern":"private_key_block","preview":"-----BEG\u2026(27 chars)"}]
+  },
+  {
+    "name": "fifty keys, reported up to the limit",
+    "text": "sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa ",
+    "hits": [{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"},{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"},{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"},{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"},{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"},{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"},{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"},{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"},{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"},{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"}]
+  },
+  {
+    "name": "the limit reached across two patterns",
+    "text": "ghp_aaaaaaaaaaaaaaaaaaaa ghp_aaaaaaaaaaaaaaaaaaaa ghp_aaaaaaaaaaaaaaaaaaaa ghp_aaaaaaaaaaaaaaaaaaaa ghp_aaaaaaaaaaaaaaaaaaaa ghp_aaaaaaaaaaaaaaaaaaaa ghp_aaaaaaaaaaaaaaaaaaaa ghp_aaaaaaaaaaaaaaaaaaaa ghp_aaaaaaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa sk-aaaaaaaaaaaaaaaa ",
+    "hits": [{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"},{"pattern":"provider_api_key","preview":"sk-aaaaa\u2026(19 chars)"},{"pattern":"github_token","preview":"ghp_aaaa\u2026(24 chars)"},{"pattern":"github_token","preview":"ghp_aaaa\u2026(24 chars)"},{"pattern":"github_token","preview":"ghp_aaaa\u2026(24 chars)"},{"pattern":"github_token","preview":"ghp_aaaa\u2026(24 chars)"},{"pattern":"github_token","preview":"ghp_aaaa\u2026(24 chars)"},{"pattern":"github_token","preview":"ghp_aaaa\u2026(24 chars)"},{"pattern":"github_token","preview":"ghp_aaaa\u2026(24 chars)"},{"pattern":"github_token","preview":"ghp_aaaa\u2026(24 chars)"}]
+  },
+  {
+    "name": "a long key, previewed by its first eight characters",
+    "text": "sk-aB3_-aB3_-aB3_-aB3_-aB3_-aB3_-aB3_-aB3_-",
+    "hits": [{"pattern":"provider_api_key","preview":"sk-aB3_-\u2026(42 chars)"}]
+  }
+]

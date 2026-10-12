@@ -1,0 +1,20 @@
+[package]
+name = "slink-format"
+description = "session/v0 validation and the credential scan"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Draft 2020-12 validation, from the author of the library the Go CLI uses.
+boon = "0.6"
+# The credential patterns need ASCII matching only; boon turns the Unicode
+# tables on for the build as a whole.
+regex = { version = "1", default-features = false, features = ["std", "perf"] }
+serde_json = "1"
+
+[lints]
+workspace = true

@@ -1,8 +1,9 @@
 name: rust
 
 # The Rust port (docs/rust-build.md): lint once, then build, test and run the
-# release binary natively on each of the six distribution targets. It also
-# runs on the port's own branches, which reach main without a pull request.
+# release binary natively on each of the six distribution targets, and compare
+# the format validators across languages. It also runs on the port's own
+# branches, which reach main without a pull request.
 on:
   push:
     branches: [main, "feature/rust-**"]
@@ -47,6 +48,30 @@ jobs:
           rustflags: ""
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets --locked -- -D warnings
+
+  # The JavaScript, Go and Rust validators and credential scanners on the same
+  # texts (docs/rust-format.md): the shared cases in each language's tests,
+  # then the sweep for differences no case names.
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: go/go.sum
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - run: npm ci
+      - run: node --test test/format-cases.test.mjs
+      - run: cd go && go test ./internal/format ./internal/scan
+      - run: cargo test --locked -p slink-format
+      - run: node scripts/format-diff.mjs
 
   build:
     needs: viewer
