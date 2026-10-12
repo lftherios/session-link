@@ -39,6 +39,7 @@ or an implemented slice.
 | [compatibility-baseline.md](compatibility-baseline.md) | P0 reference for the Rust port: pinned revisions, CLI and hosted inventories, the differential runner, what it covers, findings and gaps |
 | [rust-build.md](rust-build.md) | The Rust workspace as built: pinned toolchain, viewer artifact, TLS and SQLite choices, the six targets and their state, first measurements |
 | [rust-format.md](rust-format.md) | `crates/slink-format`: reading, validating and scanning `session/v0`, the shared cases, the sweep across JS, Go and Rust, recorded differences |
+| [rust-protocol.md](rust-protocol.md) | `crates/slink-protocol`: envelopes, signed statements, device histories and vault records verified; shared cases, the sweep, eight findings |
 
 ## Viewer and sharing experience
 
@@ -74,5 +75,6 @@ or an implemented slice.
 | [assets/product/README.md](../assets/product/README.md) | Product screenshots from fictional sessions and the README's How it works recording: sizes, what each shows, how to regenerate |
 | [assets/logos/README.md](../assets/logos/README.md) | Provenance and license of the Hermes Agent logo; the other four harness logos have no note yet |
 | [testdata/format/README.md](../testdata/format/README.md) | Format and scan cases every validator and scanner must agree on: the fields of the two files and how to change them |
+| [testdata/protocol/README.md](../testdata/protocol/README.md) | Envelope, statement, history and vault cases every verifier must agree on: the fields, the generator that signs them, how to change them |
 | [testdata/viewer/arrival/README.md](../testdata/viewer/arrival/README.md) | Fictional arrival fixture: eight exchanges, a recovered failure, Markdown, reasoning parts, standalone tool evidence, a child-agent result |
 | [testdata/share/research/README.md](../testdata/share/research/README.md) | Synthetic research handoff fixture; the `OMITTED_INTERNAL_STRATEGY` marker must be absent from every exported channel |

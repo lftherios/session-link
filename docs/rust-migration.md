@@ -208,8 +208,10 @@ are in P7, where they apply to the new store.
   test jobs. Build a minimal executable for all six distribution targets.
 - [x] Implement format validation, invariant checks and generated secret-pattern
   consumption against the current JS/Go validators.
-- [ ] Implement envelope and signed-history verification, then wrapping,
-  recovery and named statement codecs against Go/Web Crypto vectors.
+- [x] Implement envelope and signed-history verification against Go/Web
+  Crypto vectors.
+- [ ] Then wrapping, recovery and named statement codecs against the same
+  vectors.
 - [ ] Add injectable clocks/randomness for deterministic tests; production uses
   operating-system randomness. Inject crashes/I/O failures at persistence seams.
 - [ ] Build the viewer into a neutral artifact directory with an asset manifest

@@ -1349,6 +1349,7 @@ name = "slink"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "rcgen",
  "reqwest",
  "rusqlite",
@@ -1356,6 +1357,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "slink-format",
+ "slink-protocol",
  "tokio",
  "tokio-rustls",
 ]
@@ -1366,6 +1368,16 @@ version = "0.0.0"
 dependencies = [
  "boon",
  "regex",
+ "serde_json",
+]
+
+[[package]]
+name = "slink-protocol"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "ring",
+ "serde",
  "serde_json",
 ]
 

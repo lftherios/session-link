@@ -1,0 +1,5 @@
+{
+  "envelope": "U0xJTktFAAEAAAAAFjfnhZq38gK27W/uFGWBdTT8eCdlldvZwflfV7HJ6yWOhFvscz4qdmB6Z+wrdjBCoYiqCLub2jy34/sYxegl486yO0L55U3hNeW6bkO/FQdZPF90K8okc965tASNwmLqUnq0DMHX6i579NI+UA9mBK8fO17InM58w69IY3coOIU8X8sb0sAlgQTf7K2ejNba3RKm+NP1ow7lC2+340XcmWmAmaGOG2rVQhjTdkSJweLKZYiHAPiU3oXNFG8q0MEo0P1PQbTIzK3/kYTppFDyPeun6M6TDe2vj8fynTAtOCHIaxFk83OFlQ9lmAAyy301Tw==",
+  "key": "dGNwk-LoNZCtQ-ybHoW3tkGWOnT2M92bZstH8IB73mc",
+  "plaintext": "{\"schema\":\"session/v0\",\"created_at\":\"2026-10-12T00:00:00Z\",\"name\":\"PRIVATE_GO_FIXTURE\",\"spans\":[{\"id\":\"root\",\"type\":\"agent\",\"name\":\"fixture\",\"start_time\":\"2026-10-12T00:00:00Z\",\"end_time\":\"2026-10-12T00:00:01Z\"}]}"
+}

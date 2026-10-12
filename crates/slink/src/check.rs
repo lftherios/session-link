@@ -1,14 +1,18 @@
 //! `slink-rs build-check` exercises what the build links in (bundled SQLite,
-//! the embedded viewer, the HTTP server and client, TLS, the format crate) so
-//! that a release binary can be proven on each target. It is scaffolding for the build spike
-//! and goes when real commands reach the same code.
+//! the embedded viewer, the HTTP server and client, TLS, the format crate and
+//! the protocol crate) so that a release binary can be proven on each target.
+//! It is scaffolding for the build spike and goes when real commands reach
+//! the same code.
 
 use std::error::Error;
 use std::fmt::Write as _;
 use std::process::ExitCode;
 
 use axum::http::header::CONTENT_TYPE;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use sha2::{Digest, Sha256};
+use slink_protocol::{Kind, Signed, envelope};
 
 use crate::{VERSION, tls, viewer};
 
@@ -22,12 +26,13 @@ pub fn run() -> ExitCode {
         ("viewer", embedded()),
         ("http", http()),
         ("format", format()),
+        ("protocol", protocol()),
     ] {
         match result {
-            Ok(detail) => println!("ok    {name:<7} {detail}"),
+            Ok(detail) => println!("ok    {name:<8} {detail}"),
             Err(err) => {
                 failed = true;
-                println!("FAIL  {name:<7} {err}");
+                println!("FAIL  {name:<8} {err}");
             }
         }
     }
@@ -135,6 +140,56 @@ fn format() -> Checked {
         return Err(format!("the scan found {hits:?} where one provider key was").into());
     }
     Ok("schema compiled and applied; credential patterns compiled and applied".into())
+}
+
+/// Envelopes sealed by Web Crypto and by Go open, and the shared signed
+/// statements get their verdicts, in this binary on this target. AES-GCM and
+/// Ed25519 are ring's, with assembly chosen for each target.
+fn protocol() -> Checked {
+    const ENVELOPES: [(&str, &str); 2] = [
+        (
+            "Web Crypto",
+            include_str!("../../../testdata/encryption/webcrypto.json"),
+        ),
+        ("Go", include_str!("../../../testdata/encryption/go.json")),
+    ];
+    const STATEMENTS: &str = include_str!("../../../testdata/protocol/statements.json");
+
+    for (source, fixture) in ENVELOPES {
+        let fixture: serde_json::Value = serde_json::from_str(fixture)?;
+        let text = |field: &str| fixture[field].as_str().unwrap_or_default();
+        let mut data = STANDARD.decode(text("envelope"))?;
+        if envelope::decrypt(&data, text("key"))? != text("plaintext").as_bytes() {
+            return Err(format!("the {source} envelope opened to another document").into());
+        }
+        let last = data.len() - 1;
+        data[last] ^= 1;
+        if envelope::decrypt(&data, text("key")).is_ok() {
+            return Err(format!("the {source} envelope opened with its tag changed").into());
+        }
+    }
+
+    let statements: Vec<serde_json::Value> = serde_json::from_str(STATEMENTS)?;
+    for case in &statements {
+        let text = |field: &str| case[field].as_str().unwrap_or_default();
+        let kind = Kind::ALL
+            .into_iter()
+            .find(|kind| kind.as_str() == text("kind"))
+            .ok_or("a statement of a kind this build does not know")?;
+        let signed = Signed {
+            payload: text("payload").to_owned(),
+            signature: text("signature").to_owned(),
+        };
+        let verified = signed.verify(kind, text("public")).is_ok();
+        if verified != (text("expect") == "verified") {
+            return Err(format!("{}: verified is {verified}", text("name")).into());
+        }
+    }
+    Ok(format!(
+        "{} envelopes opened and refused once changed; {} signed statements judged",
+        ENVELOPES.len(),
+        statements.len()
+    ))
 }
 
 fn hex(bytes: &[u8]) -> String {

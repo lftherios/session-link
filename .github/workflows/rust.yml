@@ -2,8 +2,8 @@ name: rust
 
 # The Rust port (docs/rust-build.md): lint once, then build, test and run the
 # release binary natively on each of the six distribution targets, and compare
-# the format validators across languages. It also runs on the port's own
-# branches, which reach main without a pull request.
+# the format validators and the protocol verifiers across languages. It also
+# runs on the port's own branches, which reach main without a pull request.
 on:
   push:
     branches: [main, "feature/rust-**"]
@@ -72,6 +72,32 @@ jobs:
       - run: cd go && go test ./internal/format ./internal/scan
       - run: cargo test --locked -p slink-format
       - run: node scripts/format-diff.mjs
+
+  # The Go CLI, the viewer and the Rust crate on the same envelopes, signed
+  # statements, device histories and vault records (docs/rust-protocol.md):
+  # the case files are what their generator writes, each language's tests
+  # read them, then the sweep looks for differences no case names.
+  protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: go/go.sum
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - run: npm ci
+      - run: node scripts/protocol-cases.mjs --check
+      - run: node --test test/protocol-cases.test.mjs
+      - run: cd go && go test -count=1 ./internal/sealed ./internal/identity
+      - run: cargo test --locked -p slink-protocol
+      - run: node scripts/protocol-diff.mjs
 
   build:
     needs: viewer

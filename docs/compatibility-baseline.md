@@ -121,7 +121,8 @@ loopback.
 | Help text | Behavior | The plan lets incidental spacing differ |
 | `testdata/format` | Verdict, where the error is and the scan's findings, in the JavaScript, Go and Rust tests | The validators and scanners are libraries, so each language's tests read the cases; [rust-format.md](rust-format.md) has the differences they record |
 | `testdata/spool` | Not in the runner; Go tests in process | Needs spools placed in a home and a reader run over them |
-| `testdata/encryption` | Not in the runner; byte-exact vectors in the Go and JS tests | Becomes a shared vector set when the Rust envelope code lands |
+| `testdata/encryption` | Not in the runner; envelopes sealed by Web Crypto and by Go, opened in the Go, JS and Rust tests | The two recorded vectors the envelope cases in `testdata/protocol` are derived from |
+| `testdata/protocol` | Verdict, and the state read where a history is accepted, in the JavaScript, Go and Rust tests | The verifiers are libraries, so each language's tests read the cases; [rust-protocol.md](rust-protocol.md) has the differences they record |
 | `testdata/share/research` | Not in the runner; Go tests and the browser checks | The export is driven through the local server |
 | `testdata/viewer/arrival` | Behavior, through the browser check scripts | The viewer is not being ported |
 

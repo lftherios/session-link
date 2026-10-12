@@ -1,0 +1,20 @@
+[package]
+name = "slink-protocol"
+description = "session.link envelopes, signed statements and device histories"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Strict base64url: no padding, no stray bits, nothing outside the alphabet.
+base64 = "0.22"
+# The provider TLS already links; src/crypto.rs is the only file that names it.
+ring = "0.17"
+serde = "1"
+serde_json = "1"
+
+[lints]
+workspace = true

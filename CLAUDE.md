@@ -62,6 +62,8 @@ files among them are gitignored, so build order matters in a fresh checkout:
 | Differential runner against a built CLI | `SLINK_BINARY=go/slink node scripts/compat.mjs` |
 | The same, with the Rust binary as the candidate | add `SLINK_CANDIDATE=target/release/slink-rs` and a name filter for the cases it has, such as `version` |
 | JS, Go and Rust validators and scanners agree | `node scripts/format-diff.mjs`; it builds the Go and Rust helpers itself |
+| Protocol case files are what their generator writes | `node scripts/protocol-cases.mjs --check` |
+| The viewer, Go and Rust verifiers agree | `node scripts/protocol-diff.mjs`; add `--server ../session-link-server` to run the hosted verifier too |
 | Rust format, lint and tests | `cargo fmt --all --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked` |
 | Build the Rust binary | `cargo build --release --locked`, which writes `target/release/slink-rs` |
 
@@ -72,8 +74,9 @@ CI (`.github/workflows/ci.yml`) has two jobs. `test` runs `node --check` over
 `npm run build:viewer`, the golden check, `go vet` and `go test`, the npm smoke
 build and `npm run validate`. A second workflow, `rust.yml`, lints the Cargo
 workspace, builds, tests and runs the release binary on a native runner for
-each of the six targets, and runs the format cases and `format-diff.mjs`
-across the three languages; it also runs on `feature/rust-**` branches.
+each of the six targets, and runs the format and protocol cases and their
+two sweeps, `format-diff.mjs` and `protocol-diff.mjs`, across the three
+languages; it also runs on `feature/rust-**` branches.
 `docs/rust-build.md` has the choices behind it. Run the parts your change
 touches before finishing.
 
@@ -90,6 +93,9 @@ touches before finishing.
 - `node scripts/check-viewer-browser.mjs` drives the built binary in a headless
   Chromium-family browser. It and the security check read `SLINK_BINARY`
   (default `/tmp/session-link-slink`) and `BROWSER_BINARY`.
+- `node scripts/check-protocol-browser.mjs` runs the protocol cases through the
+  viewer's code in a browser, whose Web Crypto is not Node's. It needs no
+  binary and no server, and reads `BROWSER_BINARY`.
 - The encrypted, identity and named checks in `scripts/` need the server repo's
   smoke server. Run them from the server checkout with
   `SLINK_BROWSER_SCRIPT=<path to the check> npm run smoke:encrypted`; the smoke
@@ -126,6 +132,12 @@ touches before finishing.
   case there in the same change; the README there has the fields, and
   `docs/rust-format.md` the differences that are recorded on purpose. Go
   caches test results across fixture edits, so use `go test -count=1`.
+- `testdata/protocol` holds the envelopes, signed statements, device histories
+  and vault records that the viewer, Go and Rust verifiers must all judge
+  alike. The files are generated, because a case needs signatures: a change to
+  a rule in any of the three adds its case to `scripts/protocol-cases.mjs`,
+  which is then run with `--update`. `docs/rust-protocol.md` has the
+  differences that are recorded on purpose; in each of them Rust refuses.
 - The `slink help` text in `go/cmd/slink/help.go` is the CLI spec. Keep its
   `commands` list in sync with the switch in `dispatch()` in `main.go`.
 - `testdata/compat/cli.json` is the command, flag and environment-variable
