@@ -23,10 +23,19 @@ or an implemented slice.
 
 | File | Summary |
 |------|---------|
-| [product-plan.md](product-plan.md) | Product promise and thesis, the three handoff use cases, six milestones in dependency order, and the integration TODO; draft updated 2026-10-09 |
+| [product-plan.md](product-plan.md) | Product promise and thesis, the three handoff use cases, six milestones in dependency order, and the integration TODO; draft updated 2026-10-12 |
 | [success-criteria.md](success-criteria.md) | The nine agreed requirements: install, daemon, integrations, viewer, data control, sharing, trustworthy record, no disruption, recipient value |
 | [kpis.md](kpis.md) | Proposed measurable targets and measurement definitions per criterion plus a week-two retention goal; proposed targets, not measured baselines |
 | [project-review.md](project-review.md) | Review of the 2026-09-11 checkout: CLI, format, viewer and test state, fixes made during the review, and the next viewer priorities |
+
+## System architecture
+
+| File | Summary |
+|------|---------|
+| [architecture-overview.md](architecture-overview.md) | One-page map of the CLI, shared viewer, hosted service, encrypted sharing, trust boundaries and current deployment |
+| [architecture-review.md](architecture-review.md) | Whole-system review with code evidence, nine architectural findings, live topology and verification results |
+| [architecture-alternatives.md](architecture-alternatives.md) | Two alternatives: a transactional monolith and a stateless hosted platform, with trade-offs, migration paths and a recommendation |
+| [rust-migration.md](rust-migration.md) | Agreed Rust direction: replace Go CLI and hosted runtime, share protocol code, migrate nothing while there are no users, milestones with exit gates |
 
 ## Viewer and sharing experience
 

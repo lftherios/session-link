@@ -1,6 +1,6 @@
 # session.link product plan
 
-Working draft · updated 2026-10-09 · based on the planning conversation.
+Working draft · updated 2026-10-12 · based on the planning conversation.
 
 The [success criteria](success-criteria.md) record the nine agreed requirements:
 easy installation anywhere, a tiny and efficient daemon, current and dependable
@@ -27,6 +27,16 @@ The [viewer arrival slice](viewer-arrival.md) adds the latest-exchange landing,
 local titles, compact navigation, prominent scoped search, sharing a selected
 passage, annotation, local saved views and Markdown document rendering. Saved diffs and
 real handoff pilots remain open.
+
+Architecture decision, 2026-10-11: invest in a shared Rust foundation and replace
+both the Go CLI/recorder and the hosted Next.js runtime, while retaining React
+for the viewer. The [Rust migration plan](rust-migration.md) defines the
+product contracts and ordered milestones. Nobody uses the software yet, so
+nothing is migrated (decided 2026-10-12): the Rust CLI and service start from
+empty state. P0 is recorded in the
+[compatibility baseline](compatibility-baseline.md) and the first Rust build in
+[rust-build.md](rust-build.md). The CLI and the hosted service are separate
+releases.
 
 Integration TODO:
 
