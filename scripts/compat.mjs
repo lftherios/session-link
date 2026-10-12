@@ -48,8 +48,10 @@ import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const reference = process.env.SLINK_BINARY || "/tmp/session-link-slink";
-const candidate = process.env.SLINK_CANDIDATE || reference;
+// Resolved here: each case runs in its own directory, where a path relative
+// to this one would name nothing.
+const reference = path.resolve(process.env.SLINK_BINARY || "/tmp/session-link-slink");
+const candidate = process.env.SLINK_CANDIDATE ? path.resolve(process.env.SLINK_CANDIDATE) : reference;
 const inventory = JSON.parse(readFileSync(path.join(root, "testdata", "compat", "cli.json"), "utf8"));
 
 /* ------------------------------------------------------------------ cases */
