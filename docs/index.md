@@ -39,7 +39,7 @@ or an implemented slice.
 | [compatibility-baseline.md](compatibility-baseline.md) | P0 reference for the Rust port: pinned revisions, CLI and hosted inventories, the differential runner, what it covers, findings and gaps |
 | [rust-build.md](rust-build.md) | The Rust workspace as built: pinned toolchain, viewer artifact, TLS and SQLite choices, the six targets and their state, first measurements |
 | [rust-format.md](rust-format.md) | `crates/slink-format`: reading, validating and scanning `session/v0`, the shared cases, the sweep across JS, Go and Rust, recorded differences |
-| [rust-cli.md](rust-cli.md) | `slink-rs` so far: every command known, Claude Code import, listing and the local viewer in one journey; what agrees with Go, what is refused |
+| [rust-cli.md](rust-cli.md) | `slink-rs` so far: eight importers, the local viewer and sessions page, drafts and excerpt export; what agrees with Go and what was found in it |
 | [rust-protocol.md](rust-protocol.md) | `crates/slink-protocol`: envelopes, signed statements, device histories and vault records verified; shared cases, the sweep, eight findings |
 
 ## Viewer and sharing experience

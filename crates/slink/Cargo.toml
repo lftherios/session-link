@@ -16,8 +16,11 @@ path = "src/main.rs"
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 base64 = "0.22"
+# Local days and clock times on the sessions page.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 # rustls with the operating system's trust store, as Go's client used; the
 # crypto provider is ring, installed in src/tls.rs.
+regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["http2", "rustls-no-provider"] }
 # Operating-system randomness, from the provider TLS already links.
 ring = "0.17"

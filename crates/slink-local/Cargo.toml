@@ -9,6 +9,9 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# Reference-style Markdown is found as the Go exporter finds it. boon already
+# builds this crate with its Unicode tables.
+regex = "1"
 serde_json = "1"
 sha2 = "0.11"
 slink-format = { path = "../slink-format" }

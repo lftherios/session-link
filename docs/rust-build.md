@@ -55,6 +55,8 @@ and the server's copy of the bundle is still written by `--hosted-output`.
 | Trust store | The operating system's, through `rustls-platform-verifier` | What Go's client used; a machine behind an inspecting proxy keeps working |
 | Crypto provider | ring, installed in [tls.rs](../crates/slink/src/tls.rs) | Needs only a C compiler, and clang on Windows ARM64, which the runner has. reqwest's default, aws-lc-rs, was not tried |
 | SQLite | rusqlite with the bundled library, 3.53.2 | Readers behave the same on every machine; costs a C compiler at build time, which pure-Go builds never needed |
+| Local time | chrono, with only its clock | Aider writes local times with no zone and the sessions page groups by local day; finding the system's zone is different work on each platform |
+| Zstandard | ruzstd, a decoder in Rust | DeepSeek Harness compresses its logs. Reading is all that is needed, and the C library would be a second thing to compile on six targets |
 | Linux | musl targets, fully static | One binary for glibc distributions and Alpine, as the `.apk` package needs |
 | Windows | MSVC targets with the C runtime linked in | No redistributable to install |
 | macOS | Deployment target 12.0 on both architectures | A floor had to be stated; confirm it is the one wanted |
@@ -62,7 +64,8 @@ and the server's copy of the bundle is still written by `--hosted-output`.
 
 The lockfile held 192 packages across all targets at this slice, development
 dependencies included, 212 with the format crate, 213 with the protocol
-crate, which brought no package but itself, and 217 with the first commands.
+crate, which brought no package but itself, 217 with the first commands, and
+228 with all eight importers: chrono and ruzstd and what they bring.
 The plan's
 dependency review has not been done.
 

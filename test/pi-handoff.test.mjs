@@ -59,6 +59,54 @@ console.log(process.argv[2]==='view'?'http://127.0.0.1:4400/p/saved':'https://ex
   assert.match(notices.at(-1).text, /preview failed.*selected session cannot be read/);
 });
 
+// The same contract with a built binary where the test above has a stand-in:
+// `SLINK_HANDOFF_BINARY=target/release/slink-rs node --test test/pi-handoff.test.mjs`.
+// The extension does not pass --no-browser, so the binary is run as a remote
+// shell runs it, where it opens none.
+test("pi /slink view gets its local preview from a built binary", { skip: !process.env.SLINK_HANDOFF_BINARY && "set SLINK_HANDOFF_BINARY to a built slink" }, async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "slink-pi-handoff-"));
+  const names = ["SLINK_BIN", "SLINK_HOME", "HOME", "USERPROFILE", "SSH_CONNECTION"];
+  const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  let stop = async () => {};
+  t.after(async () => {
+    await stop();
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    await rm(dir, { recursive: true, force: true });
+  });
+  const compiled = path.join(dir, "extension.mjs");
+  await build({ entryPoints: ["packages/pi-extension/index.ts"], outfile: compiled, bundle: true, platform: "node", format: "esm", logLevel: "silent" });
+  const sessionFile = path.join(dir, "resumed-session.jsonl");
+  await writeFile(sessionFile, await readFile("testdata/import/pi/basic/input.session.jsonl"));
+  process.env.SLINK_BIN = path.resolve(process.env.SLINK_HANDOFF_BINARY);
+  process.env.SLINK_HOME = path.join(dir, "slink");
+  process.env.HOME = process.env.USERPROFILE = dir;
+  process.env.SSH_CONNECTION = "192.0.2.1 50000 192.0.2.2 22";
+  const register = (await import(pathToFileURL(compiled).href)).default;
+  const events = new Map(), commands = new Map(), notices = [];
+  register({ on: (name, handler) => events.set(name, handler), registerCommand: (name, command) => commands.set(name, command) });
+  const ctx = { cwd: dir, ui: { notify: (text, level) => notices.push({ text, level }) },
+    sessionManager: { getSessionFile: () => sessionFile, getSessionId: () => "session-1", getSessionName: () => "Research" } };
+  events.get("session_start")({}, ctx);
+  await commands.get("slink").handler("view", ctx);
+  const said = notices.at(-1);
+  assert.equal(said.level, "info", said.text);
+  const shown = said.text.match(/local preview → (http:\/\/127\.0\.0\.1:\d+\/p\/([0-9a-f]+)#access=([\w-]{43})) \(nothing uploaded\)$/);
+  assert.ok(shown, said.text);
+  const [, address, id, key] = shown, origin = new URL(address).origin, local = { "x-slink-access": key, "x-slink": "1" };
+  stop = async () => { await fetch(origin + "/api/stop", { method: "POST", headers: local }).catch(() => {}); };
+  // The preview is the session pi named, and it is only on this machine.
+  const document = await (await fetch(`${origin}/api/document/${id}`, { headers: local })).json();
+  assert.equal(document.source.harness, "pi");
+  assert.equal((await fetch(`${origin}/api/document/${id}`)).status, 403);
+
+  await rm(sessionFile);
+  await commands.get("slink").handler("view", ctx);
+  assert.equal(notices.at(-1).level, "error");
+  assert.match(notices.at(-1).text, /preview failed — .*no session/s);
+});
+
 async function loadExtension(t, cliSource) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "slink-pi-handoff-"));
   const previous = { SLINK_BIN: process.env.SLINK_BIN, SLINK_HOME: process.env.SLINK_HOME };

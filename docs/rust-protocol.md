@@ -1,6 +1,6 @@
 # Rust envelope and signed-history verification
 
-2026-10-12 · Implemented slice of the [Rust migration](rust-migration.md), backlog item 5 · `crates/slink-protocol` opens envelopes and verifies signed statements, device histories and vault records; Go, the viewer and Rust agree on 341 shared cases with 38 recorded differences; the first version passed on all six targets and the sweep on Linux in CI, and the two rules added since have run locally.
+2026-10-12 · Implemented slice of the [Rust migration](rust-migration.md), backlog item 5 · `crates/slink-protocol` opens envelopes and verifies signed statements, device histories and vault records; Go, the viewer and Rust agree on 341 shared cases with 38 recorded differences; the crate's tests pass on all six targets and the sweep on Linux in CI, the two rules of 2026-10-12 included.
 
 What the Rust side of the protocol is so far, how it is held to the three
 verifiers that already exist, and what comparing them found. The crate checks

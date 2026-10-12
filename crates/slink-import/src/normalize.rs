@@ -4,11 +4,7 @@
 
 use serde_json::{Map, Value, json};
 
-use crate::value::{field, text};
-
-fn data_part(data: &Value) -> Value {
-    json!({"type": "data", "data": data})
-}
+use crate::value::{data_part, field, text};
 
 /// Anthropic message content as parts, with an image recorded inline kept in
 /// its part as a data URL: a transcript has no raw request to find it in.

@@ -224,20 +224,27 @@ SQLite build on every target. No Rust executable writes to a user's real home.
 
 ### P2 Complete local reading and composition
 
-- [ ] Port discovery and every importer: Claude Code, Codex, opencode, pi, omp,
+- [x] Port discovery and every importer: Claude Code, Codex, opencode, pi, omp,
   DeepSeek Harness, Aider and Hermes, preserving Hermes's experimental status.
-- [ ] Implement `import`, `list`/`ls`, session resolution and immutable preview
-  reuse. Read live captures without taking over an active recorder's spool.
-- [ ] Port the loopback server and `view`/`open`, including background processes,
+- [x] Implement `import`, `list`/`ls`, session resolution and immutable preview
+  reuse.
+- [ ] Read live captures without taking over an active recorder's spool. Left
+  to the recorder in P4, where the spool's reader and writer are ported
+  together; [rust-cli.md](rust-cli.md#not-done) has the reason.
+- [x] Port the loopback server and `view`/`open`, including background processes,
   fixed-port failures, browser launch, SSH guidance and stop behavior.
-- [ ] Port catalogs, UTF-16 selection, revisioned drafts, saved views, source
+- [x] Port catalogs, UTF-16 selection, revisioned drafts, saved views, source
   reference checks and allowlist export. Retain the existing React components.
-- [ ] Run the pi handoff tests against the Rust executable.
+- [x] Run the pi handoff tests against the Rust executable.
 
 **Exit:** all eight adapters match the fixture contract; the existing real-browser
 viewer/security scripts pass against Rust. The omitted-content marker is absent
 from the entire excerpt, including raw and download channels. An opt-in
 `slink-rs` binary can perform local workflows in an isolated home.
+
+On 2026-10-12 the exit holds on macOS arm64, with reading a capture that is
+still being recorded left to P4. [rust-cli.md](rust-cli.md) has the evidence
+and what the six targets have yet to run.
 
 ### P3 Complete publication and private identity
 

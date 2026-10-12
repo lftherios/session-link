@@ -13,6 +13,8 @@ mod commands;
 mod flags;
 mod import;
 mod list;
+mod picker;
+mod server;
 mod text;
 mod tls;
 mod view;
@@ -93,7 +95,7 @@ fn dispatch(command: &Command, args: &[String]) -> Run {
     match command.name {
         "list" => list::run(&parsed),
         "import" => import::run(&parsed),
-        "view" => view::run(&parsed),
+        "view" => view::run(&parsed, args),
         "completion" => match commands::completion(parsed.arg(0)) {
             Some(script) => {
                 print!("{script}");

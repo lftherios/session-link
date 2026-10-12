@@ -9,6 +9,14 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The local clock, which Aider writes its times in without saying so.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# opencode and Hermes keep sessions in SQLite. The same bundled library the
+# binary already links.
+rusqlite = { version = "0.40", features = ["bundled"] }
+# dsh compresses its logs. A decoder only, in Rust, so no target needs
+# another C library.
+ruzstd = "0.9"
 serde_json = "1"
 slink-format = { path = "../slink-format" }
 

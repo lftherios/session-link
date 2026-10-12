@@ -1,64 +1,101 @@
 //! `slink view`: a session as a saved local preview, read in the same viewer
-//! the hosted service uses, served from this machine and nowhere else.
-//!
-//! The server listens on loopback only. A page is given only to a request
-//! that carries the access key, which is made for each run and travels in
-//! the URL's fragment, where no server log, proxy or other local port sees
-//! it. Publishing is not in this binary yet, so nothing here uploads.
+//! the hosted service uses, served from this machine and nowhere else. This
+//! is the command: which sessions it offers and how it starts the server in
+//! `server.rs`.
 
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use axum::body::Body;
-use axum::extract::{Request, State};
-use axum::http::{HeaderValue, Method, StatusCode, header};
-use axum::response::Response;
 use base64::Engine;
-use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use ring::rand::{SecureRandom, SystemRandom};
-use serde_json::{Value, json};
 use slink_local::{
-    READING_SUFFIX, capture_dir, capture_id, display_path, list_captures, preview_dir, save_preview,
+    Drafts, capture_dir, capture_id, display_path, list_captures, preview_dir, remember_preview,
+    reusable_preview, save_preview, source_stamp, unix_now,
 };
 use tokio::sync::Notify;
 
 use crate::flags::{Exit, Parsed, Run};
 use crate::import::{check_harness, document};
+use crate::picker::Row;
+use crate::server::{Viewer, handle};
 use crate::text::quoted;
-use crate::viewer;
 
-const CSS: &str = include_str!("assets/page.css");
-const ACCESS_SHELL: &str = include_str!("assets/access-shell.html");
-/// The script that carries the access key from the fragment to each request.
-/// It is the Go CLI's, read from where that keeps it.
-const LOCAL_ACCESS_JS: &str = include_str!("../../../go/internal/open/local-access.js");
-const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'none'";
-/// The name an excerpt carries its selection under.
-const EXCERPT: &str = "session_link.share.v1";
-
-/// A session this run can show: a capture or a transcript on disk.
-struct Source {
-    file: PathBuf,
-    /// The harness to read a transcript as; empty to recognize it.
-    harness: String,
-    title: String,
-    detail: String,
+/// A session this run can show.
+pub struct Source {
+    from: From,
+    /// What the sessions page shows of it.
+    pub row: Row,
     /// Whether it was found for this project and not named outright.
     of_project: bool,
-    updated: u128,
 }
 
-struct Viewer {
-    access: String,
-    previews: PathBuf,
-    project: PathBuf,
-    sources: Vec<Source>,
-    stop: Notify,
+/// Where a source's document comes from.
+enum From {
+    /// A capture or a transcript on disk, and the harness to read a
+    /// transcript as; empty to recognize it.
+    File(PathBuf, String),
+    /// A session found in a harness's own history.
+    Native(Box<slink_import::Candidate>),
 }
 
-pub fn run(parsed: &Parsed) -> Run {
+impl Source {
+    /// Saves a preview of the session and returns its id. A session found in
+    /// a harness's files is not imported again while those files, and this
+    /// binary, are what they were when its preview was made.
+    pub fn preview(&self, previews: &Path) -> Result<String, String> {
+        let From::Native(candidate) = &self.from else {
+            return save_preview(previews, &self.document()?);
+        };
+        // The harness and the session's id name the source. The files alone
+        // do not: every run in an Aider history is in the same file.
+        let session = format!("{}\n{}", candidate.found.harness, candidate.id);
+        let files: Vec<PathBuf> = candidate
+            .file
+            .iter()
+            .chain(&candidate.related)
+            .cloned()
+            .collect();
+        // Stamped before reading: a file that changes during the import
+        // costs another import later, never a stale preview.
+        let stamp = source_stamp(&build_stamp(), &session, &files);
+        if let Some(stamp) = &stamp
+            && let Some(id) = reusable_preview(previews, &session, &files, stamp)
+        {
+            return Ok(id);
+        }
+        let id = save_preview(previews, &self.document()?)?;
+        if let Some(stamp) = &stamp {
+            remember_preview(previews, &session, &files, stamp, &id);
+        }
+        Ok(id)
+    }
+
+    /// The session as a document's text.
+    fn document(&self) -> Result<String, String> {
+        match &self.from {
+            From::File(file, harness) => document(file, harness),
+            From::Native(candidate) => {
+                let harness = candidate.found.harness;
+                let input = candidate.found.load()?;
+                match slink_import::import(harness, &input).map_err(|error| error.to_string())? {
+                    Some(run)
+                        if run["spans"]
+                            .as_array()
+                            .is_some_and(|spans| !spans.is_empty()) =>
+                    {
+                        Ok(slink_format::encode(&run))
+                    }
+                    _ => Err(format!("this {harness} session has no messages yet")),
+                }
+            }
+        }
+    }
+}
+
+pub fn run(parsed: &Parsed, args: &[String]) -> Run {
     let (session, span, from) = (
         parsed.text("session"),
         parsed.text("span"),
@@ -86,22 +123,34 @@ pub fn run(parsed: &Parsed) -> Run {
             "--span must be a span ID (1–64 letters, digits, dots, underscores, or hyphens)",
         ));
     }
-    if parsed.bool("background") {
-        return Err(Exit::failure(
-            "slink-rs: `view --background` is not ported yet",
-        ));
+    // The viewer that stays is a second run of this command, marked as the
+    // child; this one waits for its URL and returns.
+    let child = env::var_os("SLINK_VIEW_CHILD").is_some_and(|value| value == "1");
+    if parsed.bool("background") && !child {
+        let url = background(args)?;
+        println!("{url}");
+        let port = url
+            .strip_prefix("http://127.0.0.1:")
+            .and_then(|rest| rest.split(['/', '#']).next())
+            .and_then(|port| port.parse().ok());
+        open_browser(&url, port.unwrap_or(0), parsed.bool("no-browser"));
+        return Ok(());
     }
     check_harness(from)?;
     let cwd = env::current_dir().map_err(|error| Exit::failure(error.to_string()))?;
-    let sources = sources(&cwd, from, reference, !session.is_empty()).map_err(Exit::failure)?;
+    let (sources, warning) =
+        sources(&cwd, from, reference, !session.is_empty()).map_err(Exit::failure)?;
+    if !warning.is_empty() {
+        eprintln!("Some sessions could not be listed: {warning}");
+    }
     let previews = preview_dir();
     let mut focus = String::new();
-    let only = sources.len() == 1 && sources[0].of_project && !parsed.bool("pick");
+    let only =
+        sources.len() == 1 && sources[0].of_project && !parsed.bool("pick") && warning.is_empty();
     if !reference.is_empty() || only {
-        let text = document(&sources[0].file, &sources[0].harness).map_err(Exit::failure)?;
         focus = format!(
             "/p/{}",
-            save_preview(&previews, &text).map_err(Exit::failure)?
+            sources[0].preview(&previews).map_err(Exit::failure)?
         );
     }
     if !span.is_empty() && focus.is_empty() {
@@ -117,10 +166,13 @@ pub fn run(parsed: &Parsed) -> Run {
     })?;
     let viewer = Arc::new(Viewer {
         access: URL_SAFE_NO_PAD.encode(key),
+        drafts: Drafts::beside(&previews),
         previews: previews.clone(),
         project: cwd,
         sources,
+        warning,
         stop: Notify::new(),
+        saving: std::sync::Mutex::new(()),
     });
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -129,7 +181,7 @@ pub fn run(parsed: &Parsed) -> Run {
     runtime.block_on(async {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.map_err(|error| {
             Exit::failure(format!(
-                "cannot start the local viewer: {error}\n  try slink view --port 0 to use a free port"
+                "cannot start the local viewer: 127.0.0.1:{port}: {error}\n  try slink view --port 0 to use a free port"
             ))
         })?;
         let address = listener.local_addr().map_err(|error| Exit::failure(error.to_string()))?;
@@ -144,10 +196,17 @@ pub fn run(parsed: &Parsed) -> Run {
         // a person and goes to stderr.
         println!("{url}");
         eprintln!(
-            "Local preview ready · nothing uploaded\n  {url}\n  Saved previews: {}\nCtrl-C to stop the viewer.",
-            display_path(&previews)
+            "Local preview ready · nothing uploaded\n  {url}\n  Saved previews: {}\n{}",
+            display_path(&previews),
+            if child {
+                "Stop the viewer from the sessions page."
+            } else {
+                "Ctrl-C to stop the viewer."
+            }
         );
-        open_browser(&url, address.port(), parsed.bool("no-browser"));
+        if !child {
+            open_browser(&url, address.port(), parsed.bool("no-browser"));
+        }
         let app = axum::Router::new().fallback(handle).with_state(viewer.clone());
         let stopped = viewer.clone();
         axum::serve(listener, app)
@@ -160,6 +219,86 @@ pub fn run(parsed: &Parsed) -> Run {
             .await
             .map_err(|error| Exit::failure(error.to_string()))
     })
+}
+
+/// Starts the viewer as a process of its own and returns the URL it prints,
+/// once it is really listening. Its diagnostics go to a log in the slink
+/// home, so whatever started this command can wait for it and move on.
+fn background(args: &[String]) -> Result<String, Exit> {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    let failed = |error: std::io::Error| Exit::failure(error.to_string());
+    let home = slink_local::home();
+    let log = home.join(format!("viewer-{}-{}.log", std::process::id(), unix_now()));
+    slink_local::write_private(&log, b"").map_err(failed)?;
+    let errors = fs::OpenOptions::new()
+        .append(true)
+        .open(&log)
+        .map_err(failed)?;
+    let mut command = Command::new(env::current_exe().map_err(failed)?);
+    command
+        .arg("view")
+        .args(args)
+        .env("SLINK_VIEW_CHILD", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(errors);
+    // In a group of its own, so a Ctrl-C in this terminal is not also its.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // DETACHED_PROCESS and CREATE_NEW_PROCESS_GROUP.
+        command.creation_flags(0x0000_0008 | 0x0000_0200);
+    }
+    let mut viewer = command.spawn().map_err(failed)?;
+    let output = viewer.stdout.take().expect("the viewer's stdout is piped");
+    let (ready, first_line) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut line = String::new();
+        let _ = BufReader::new(output).read_line(&mut line);
+        let _ = ready.send(line.trim().to_owned());
+    });
+    let url = first_line
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .unwrap_or_default();
+    if !url.starts_with("http://127.0.0.1:") {
+        let _ = viewer.kill();
+        let _ = viewer.wait();
+        return Err(Exit::failure(format!(
+            "could not start the background viewer: {}\n  details: {}",
+            fs::read_to_string(&log).unwrap_or_default().trim(),
+            log.display()
+        )));
+    }
+    eprintln!(
+        "Local viewer running (PID {}). Stop it from the sessions page.\nLog: {}",
+        viewer.id(),
+        display_path(&log)
+    );
+    Ok(url)
+}
+
+/// What names this build: a preview an older importer made is not used
+/// after the binary changes.
+fn build_stamp() -> String {
+    let Ok(exe) = env::current_exe() else {
+        return String::new();
+    };
+    match fs::metadata(&exe).and_then(|found| Ok((found.len(), found.modified()?))) {
+        Ok((size, modified)) => format!(
+            "{} {size} {}",
+            exe.display(),
+            modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_nanos())
+        ),
+        Err(_) => String::new(),
+    }
 }
 
 /// Ctrl-C, or the signal a service manager or a parent sends to end it.
@@ -220,12 +359,13 @@ fn open_browser(url: &str, port: u16, disabled: bool) {
     }
 }
 
-fn modified(file: &Path) -> u128 {
+fn modified(file: &Path) -> i64 {
     fs::metadata(file)
         .and_then(|found| found.modified())
         .ok()
         .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(0, |since| since.as_nanos())
+        .and_then(|since| i64::try_from(since.as_nanos()).ok())
+        .unwrap_or(0)
 }
 
 fn named(file: &Path, harness: &str) -> Source {
@@ -234,24 +374,50 @@ fn named(file: &Path, harness: &str) -> Source {
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
     Source {
-        file: file.to_owned(),
-        harness: harness.to_owned(),
-        title: name,
-        detail: String::new(),
+        from: From::File(file.to_owned(), harness.to_owned()),
+        row: Row {
+            id: name,
+            harness: harness.to_owned(),
+            updated: modified(file),
+            ..Row::default()
+        },
         of_project: false,
-        updated: modified(file),
+    }
+}
+
+fn native(candidate: slink_import::Candidate) -> Source {
+    Source {
+        row: Row {
+            id: candidate.id.clone(),
+            harness: candidate.found.harness.to_owned(),
+            dir: candidate.dir.to_string_lossy().into_owned(),
+            name: candidate.name.clone(),
+            prompt: candidate.prompt.clone(),
+            updated: candidate.found.recency,
+            started: candidate.started.map_or(0, |(seconds, nanos)| {
+                seconds * 1_000_000_000 + i64::from(nanos)
+            }),
+        },
+        of_project: !candidate.dir.as_os_str().is_empty(),
+        from: From::Native(Box::new(candidate)),
     }
 }
 
 /// The sessions this run offers: the one referred to, or what is found for
-/// the project in the agent's own history and among the captures.
-fn sources(cwd: &Path, from: &str, reference: &str, explicit: bool) -> Result<Vec<Source>, String> {
-    let dirs = slink_import::project_dirs(cwd);
+/// the project in the agents' own histories and among the captures. The
+/// second value is what could not be listed.
+fn sources(
+    cwd: &Path,
+    from: &str,
+    reference: &str,
+    explicit: bool,
+) -> Result<(Vec<Source>, String), String> {
+    let locations = slink_import::Locations::default();
     if !reference.is_empty() {
         let path = Path::new(reference);
         if path.is_file() {
             let whole = fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
-            return Ok(vec![named(&whole, from)]);
+            return Ok((vec![named(&whole, from)], String::new()));
         }
         if !explicit && from.is_empty() {
             let matches: Vec<PathBuf> = list_captures(&capture_dir())
@@ -260,7 +426,7 @@ fn sources(cwd: &Path, from: &str, reference: &str, explicit: bool) -> Result<Ve
                 .map(|capture| capture.file)
                 .collect();
             match matches.as_slice() {
-                [only] => return Ok(vec![named(only, "")]),
+                [only] => return Ok((vec![named(only, "")], String::new())),
                 [] => {}
                 _ => {
                     return Err(format!(
@@ -270,413 +436,73 @@ fn sources(cwd: &Path, from: &str, reference: &str, explicit: bool) -> Result<Ve
                 }
             }
         }
-        if (from.is_empty() || from == "claude-code")
-            && let Some(transcript) = dirs
-                .iter()
-                .find_map(|dir| slink_import::claude_transcript(dir, reference))
-        {
-            return Ok(vec![named(&transcript, "claude-code")]);
+        let (mut candidates, problems) = slink_import::recent(&locations, from, cwd, reference, 30);
+        if !problems.is_empty() {
+            return Err(problems.join("\n"));
         }
-        return Err(format!(
-            "no session {} for this project; pass its transcript path, or use slink view --pick",
-            quoted(reference)
-        ));
+        return match candidates.len() {
+            0 => Err(format!(
+                "no session {} for this project; pass its transcript path, or use slink view --pick",
+                quoted(reference)
+            )),
+            1 => Ok((vec![native(candidates.remove(0))], String::new())),
+            _ => Err(format!(
+                "session ID {} is ambiguous; add --from or pass a transcript path",
+                quoted(reference)
+            )),
+        };
     }
-    if !from.is_empty() && !slink_import::ported(from) {
-        return Err(slink_import::Error::NotPorted(from.to_owned()).to_string());
-    }
-    let mut found = Vec::new();
-    if let Some(latest) = dirs.iter().find_map(|dir| slink_import::latest(from, dir)) {
-        found.push(Source {
-            title: latest
-                .file
-                .file_stem()
-                .map(|stem| stem.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            detail: "Claude Code".into(),
-            file: latest.file,
-            harness: latest.harness.to_owned(),
-            of_project: true,
-            updated: latest.recency,
-        });
-    }
-    if from.is_empty() {
-        for capture in list_captures(&capture_dir()) {
-            // A capture belongs here when it was recorded in one of the
-            // project's directories, or says nowhere at all.
-            let recorded = fs::read_to_string(&capture.file)
-                .ok()
-                .and_then(|text| slink_format::parse(&text).ok())
-                .and_then(|document| document["metadata"]["cwd"].as_str().map(str::to_owned))
-                .unwrap_or_default();
-            if !recorded.is_empty()
-                && recorded != "/"
-                && !dirs.iter().any(|dir| dir == Path::new(&recorded))
-            {
-                continue;
-            }
-            found.push(Source {
-                title: if capture.name.is_empty() {
-                    capture_id(&capture.file)
-                } else {
-                    capture.name.clone()
-                },
-                detail: format!("capture {}", capture_id(&capture.file)),
-                updated: modified(&capture.file),
-                file: capture.file,
-                harness: String::new(),
-                of_project: !recorded.is_empty(),
-            });
+    // A view an agent opens from its own shell tool is of the session that
+    // is running it, when that session is one of this project's.
+    if let Some((harness, id)) = slink_import::active_session()
+        && (from.is_empty() || from == harness)
+    {
+        let (mut active, problems) = slink_import::recent(&locations, harness, cwd, &id, 30);
+        if problems.is_empty() && active.len() == 1 {
+            return Ok((vec![native(active.remove(0))], String::new()));
         }
     }
-    found.sort_by_key(|source| std::cmp::Reverse(source.updated));
-    Ok(found)
-}
-
-/* ------------------------------------------------------------- the server */
-
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&#34;")
-        .replace('\'', "&#39;")
-}
-
-fn asset(name: &str) -> &'static str {
-    viewer::file(name)
-        .and_then(|file| str::from_utf8(file.bytes).ok())
-        .unwrap_or_default()
-}
-
-/// The chrome every page shares: the access script first, then the brand.
-fn page(title: &str, body: &str) -> String {
-    let favicon = STANDARD.encode(asset("favicon.svg"));
-    format!(
-        "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<script src=\"/assets/local-access.js\"></script><title>{}</title><link rel=\"icon\" type=\"image/svg+xml\" href=\"data:image/svg+xml;base64,{favicon}\"><style>{CSS}{}</style><div class=\"wrap\"><header class=\"viewer-brand\"><a class=\"slink-brand slink-brand--compact\" href=\"/\" aria-label=\"session.link home\">{}<span class=\"slink-brand-name\">session<span class=\"slink-brand-dot\">.</span>link</span></a></header>{body}</div>",
-        escape(title),
-        asset("brand.css"),
-        asset("mark.svg"),
-    )
-}
-
-fn error_page(title: &str, headline: &str, detail: &str) -> String {
-    page(
-        title,
-        &format!(
-            "<p class=\"eyebrow\" style=\"margin:0 0 18px\"><a href=\"/\">← sessions</a> · local preview</p>\n     <h1 style=\"font-family:var(--serif);font-weight:500\">{headline}</h1>\n     {detail}"
-        ),
-    )
-}
-
-impl Viewer {
-    /// The page for a saved preview, or `None` when there is no such file.
-    fn preview_page(&self, id: &str) -> Option<Result<String, &'static str>> {
-        let file = self.previews.join(format!("{id}.json"));
-        let whole = fs::read_to_string(&file).ok()?;
-        // The reading copy leaves out recorded tool output, which the reader
-        // only shows once a step is opened; the whole document follows.
-        let light = fs::read_to_string(self.previews.join(format!("{id}{READING_SUFFIX}")))
+    let (candidates, problems) = slink_import::recent(&locations, from, cwd, "", 30);
+    if !problems.is_empty() && !from.is_empty() {
+        return Err(problems.join("\n"));
+    }
+    let mut found: Vec<Source> = candidates.into_iter().map(native).collect();
+    if !from.is_empty() {
+        return Ok((found, String::new()));
+    }
+    let dirs = slink_import::project_dirs(cwd);
+    for capture in list_captures(&capture_dir()) {
+        // A capture belongs here when it was recorded in one of the
+        // project's directories. The always-on recorder serves every shell
+        // and records none, so a capture that says nowhere is offered
+        // everywhere.
+        let recorded = fs::read_to_string(&capture.file)
             .ok()
-            .filter(|light| !light.is_empty());
-        let full_url = light.is_some().then(|| format!("/api/document/{id}"));
-        let text = light.unwrap_or(whole);
-        let Ok(document) = slink_format::parse(&text) else {
-            return Some(Err("the file on disk is not valid JSON"));
-        };
-        if !matches!(document["schema"].as_str(), Some("session/v0" | "run/v0")) {
-            return Some(Err("the file on disk is not valid JSON"));
-        }
-        let name = document["name"]
-            .as_str()
-            .filter(|name| !name.is_empty())
-            .unwrap_or(id);
-        let excerpt = !document["extensions"][EXCERPT].is_null();
-        // Escaping `<` keeps a trace's own text inert inside the tag.
-        let embedded = text.replace('<', "\\u003c");
-        let publish = slink_format::encode(&json!({
-            "hasKey": false,
-            "file": display_path(&file),
-            "endpoint": format!("/api/publish-preview/{id}"),
-            "title": name,
-        }));
-        let full = full_url.map_or(String::new(), |url| {
-            format!(
-                "<script>window.__FULL__={}</script>",
-                slink_format::encode(&Value::String(url))
-            )
-        });
-        let (top, local) = if excerpt {
-            (
-                format!(
-                    "<div class=\"top\">\n       <p class=\"eyebrow\" style=\"margin:0\"><a href=\"/\">← sessions</a></p>\n       <div class=\"pub\">\n         <button class=\"btn\" id=\"copy\" title=\"Copy this page's address on this computer. Publish to share with a colleague.\">Copy local URL</button>\n         <button class=\"btn\" id=\"dl\" title=\"save the run document as {id}.json\">Download excerpt</button>\n       </div>\n     </div>\n     <div class=\"result-row\"><span class=\"result\" id=\"out\"></span></div><p class=\"note\">Excerpt preview · only the selected material and the author note are included.</p>"
-                ),
-                String::new(),
-            )
-        } else {
-            // The reading view owns its header: the way back, the title and
-            // its one action.
-            let config = slink_format::encode(&json!({
-                "source": id,
-                "project": self.project.to_string_lossy(),
-                "title": "",
-            }));
-            (
-                String::new(),
-                format!("<script>window.__LOCAL__={config}</script>"),
-            )
-        };
-        Some(Ok(page(
-            name,
-            &format!(
-                "{top}<div id=\"root\"></div>\n     <script type=\"application/json\" id=\"run-data\">{embedded}</script><script>window.__RUN__=JSON.parse(document.getElementById(\"run-data\").textContent)</script>{full}{local}\n     <script>window.__PUB__={publish}</script>\n     <script src=\"/assets/viewer.js\"></script>\n     <script>\n       const copy=document.getElementById(\"copy\"),dl=document.getElementById(\"dl\");\n       if(copy)copy.onclick=async()=>{{\n         try{{await navigator.clipboard.writeText(location.href);copy.textContent=\"Copied\"}}\n         catch{{copy.textContent=\"Copy failed\"}}\n         setTimeout(()=>{{copy.textContent=\"Copy local URL\"}},1200);\n       }};\n       if(dl)dl.onclick=()=>{{\n         const u=URL.createObjectURL(new Blob([JSON.stringify(window.__RUN__)],{{type:\"application/json\"}}));\n         const a=document.createElement(\"a\");\n         a.href=u;a.download=\"{id}.json\";a.click();\n         setTimeout(()=>URL.revokeObjectURL(u),1000);\n       }};\n     </script>"
-            ),
-        )))
-    }
-
-    /// The sessions this run offers, each a button that saves a preview of
-    /// it and goes there. The Go CLI's page groups and searches them; this
-    /// one only lists them.
-    fn index_page(&self) -> String {
-        let name = self
-            .project
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
+            .and_then(|text| slink_format::parse(&text).ok())
+            .and_then(|document| document["metadata"]["cwd"].as_str().map(str::to_owned))
             .unwrap_or_default();
-        let rows: String = self
-            .sources
-            .iter()
-            .enumerate()
-            .map(|(index, source)| {
-                format!(
-                    "<button class=\"card\" style=\"width:100%;text-align:left;cursor:pointer\" data-source=\"{index}\"><div class=\"t\">{}</div><div class=\"m\">{}</div></button>",
-                    escape(&source.title),
-                    escape(&source.detail)
-                )
-            })
-            .collect();
-        let list = if rows.is_empty() {
-            "<p class=\"note\"><strong>No sessions for this project yet.</strong> Open a transcript with <code>slink view --session &lt;path&gt;</code>.</p>".to_owned()
-        } else {
-            rows
-        };
-        page(
-            &format!("{name} · session.link"),
-            &format!(
-                "<div class=\"top\" style=\"margin-bottom:18px\"><h1 style=\"font-family:var(--serif);font-weight:500;margin:0\" title=\"{}\">{}</h1><button class=\"btn\" id=\"stop\">Stop viewer</button></div>\n    <p id=\"result\" class=\"note\" role=\"status\"></p>{list}\n    <script>\n      const result=document.getElementById('result');\n      document.querySelectorAll('[data-source]').forEach(row=>{{\n        row.onclick=async()=>{{\n          result.textContent='Opening…';\n          try{{const r=await fetch('/api/preview/'+row.dataset.source,{{method:'POST',headers:{{'x-slink':'1'}}}});const d=await r.json();if(!r.ok)throw new Error(d.error?.message||'Could not open this session.');location.assign(d.url);}}\n          catch(e){{result.textContent=e.message;}}\n        }};\n      }});\n      document.getElementById('stop').onclick=async()=>{{\n        try{{const r=await fetch('/api/stop',{{method:'POST',headers:{{'x-slink':'1'}}}});if(!r.ok)throw new Error();\n          document.querySelector('.wrap').innerHTML='<p class=\"note\"><strong>Viewer stopped.</strong> Your saved previews are still on disk. Run <code>slink view</code> to open it again.</p>';\n        }}catch{{result.textContent='Could not stop the viewer. Press Ctrl-C in the terminal that started it.';}}\n      }};\n    </script>",
-                escape(&display_path(&self.project)),
-                escape(&name),
-            ),
-        )
-    }
-}
-
-fn send(status: StatusCode, kind: &'static str, body: impl Into<Body>) -> Response {
-    let mut response = Response::new(body.into());
-    *response.status_mut() = status;
-    let headers = response.headers_mut();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(kind));
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    headers.insert(
-        header::REFERRER_POLICY,
-        HeaderValue::from_static("no-referrer"),
-    );
-    headers.insert(
-        header::X_CONTENT_TYPE_OPTIONS,
-        HeaderValue::from_static("nosniff"),
-    );
-    headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
-    headers.insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static(CONTENT_SECURITY_POLICY),
-    );
-    response
-}
-
-fn json_error(status: StatusCode, message: &str) -> Response {
-    send(
-        status,
-        "application/json",
-        slink_format::encode(&json!({"error": {"message": message}})),
-    )
-}
-
-/// The same bytes, compared without stopping at the first that differs.
-fn same(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len()
-        && a.iter()
-            .zip(b)
-            .fold(0, |differing, (x, y)| differing | (x ^ y))
-            == 0
-}
-
-async fn handle(State(viewer): State<Arc<Viewer>>, request: Request) -> Response {
-    let headers = request.headers();
-    let header_text = |name: &str| {
-        headers
-            .get(name)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or_default()
-    };
-    // A loopback bind alone does not stop a hostname that rebinds to it from
-    // reading local sessions: the browser must use the host that was printed.
-    let host = header_text("host");
-    let name = host.rsplit_once(':').map_or(host, |(name, _)| name);
-    if name != "127.0.0.1" && name != "localhost" {
-        return send(
-            StatusCode::FORBIDDEN,
-            "text/plain; charset=utf-8",
-            "use the local URL printed by slink view\n",
-        );
-    }
-    let (get, post) = (
-        request.method() == Method::GET,
-        request.method() == Method::POST,
-    );
-    let path = request.uri().path();
-    if get && path == "/assets/local-access.js" {
-        return send(StatusCode::OK, "text/javascript", LOCAL_ACCESS_JS);
-    }
-    // The bundle is public code, with no session in it and no secret.
-    if get && path == "/assets/viewer.js" {
-        return send(
-            StatusCode::OK,
-            "text/javascript",
-            viewer::file("viewer.js").map_or(&[][..], |file| file.bytes),
-        );
-    }
-    if !same(
-        header_text("x-slink-access").as_bytes(),
-        viewer.access.as_bytes(),
-    ) {
-        // An ordinary navigation gets a public shell, which fetches the page
-        // itself with the key from the fragment. Without the key, nothing
-        // of a session or the list of them is ever sent.
-        let page = path == "/" || path.starts_with("/p/");
-        return if get && header_text("sec-fetch-mode") == "navigate" && page {
-            send(StatusCode::OK, "text/html", ACCESS_SHELL)
-        } else {
-            send(
-                StatusCode::FORBIDDEN,
-                "text/plain; charset=utf-8",
-                "local viewer access required\n",
-            )
-        };
-    }
-    // A custom header forces a preflight no page elsewhere gets answered,
-    // and the origin must be this server.
-    let origin = header_text("origin");
-    let local_action =
-        header_text("x-slink") == "1" && (origin.is_empty() || origin == format!("http://{host}"));
-    let blocked = || json_error(StatusCode::FORBIDDEN, "cross-origin request blocked");
-    let id_of = |prefix: &str| {
-        path.strip_prefix(prefix).filter(|id| {
-            !id.is_empty()
-                && id
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-        })
-    };
-    if path == "/" && get {
-        return send(StatusCode::OK, "text/html", viewer.index_page());
-    }
-    if path == "/api/stop" && post {
-        if !local_action {
-            return blocked();
-        }
-        viewer.stop.notify_one();
-        return send(StatusCode::OK, "application/json", "{\"ok\":true}");
-    }
-    if let Some(index) = id_of("/api/preview/").filter(|_| post) {
-        if !local_action {
-            return blocked();
-        }
-        let Some(source) = index
-            .parse::<usize>()
-            .ok()
-            .and_then(|index| viewer.sources.get(index))
-        else {
-            return json_error(
-                StatusCode::NOT_FOUND,
-                "This session is not in the current list. Restart slink view to refresh it.",
-            );
-        };
-        return match document(&source.file, &source.harness)
-            .and_then(|text| save_preview(&viewer.previews, &text))
+        if !recorded.is_empty()
+            && recorded != "/"
+            && !dirs.iter().any(|dir| dir == Path::new(&recorded))
         {
-            Ok(id) => send(
-                StatusCode::OK,
-                "application/json",
-                slink_format::encode(&json!({"url": format!("/p/{id}")})),
-            ),
-            Err(error) => json_error(StatusCode::UNPROCESSABLE_ENTITY, &error),
-        };
+            continue;
+        }
+        found.push(Source {
+            row: Row {
+                id: capture
+                    .file
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                dir: recorded.clone(),
+                name: capture.name.clone(),
+                updated: modified(&capture.file),
+                ..Row::default()
+            },
+            from: From::File(capture.file, String::new()),
+            of_project: !recorded.is_empty(),
+        });
     }
-    if let Some(id) = id_of("/api/document/").filter(|_| get) {
-        return match fs::read(viewer.previews.join(format!("{id}.json"))) {
-            Ok(raw) => send(StatusCode::OK, "application/json", raw),
-            Err(_) => json_error(
-                StatusCode::NOT_FOUND,
-                "this session is no longer saved locally",
-            ),
-        };
-    }
-    if let Some(id) = id_of("/p/").filter(|_| get) {
-        return match viewer.preview_page(id) {
-            Some(Ok(body)) => send(StatusCode::OK, "text/html", body),
-            Some(Err(why)) => send(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "text/html",
-                error_page(
-                    &format!("session {id} can't render"),
-                    &format!(
-                        "session <span class=\"hid\">{}</span> can't render",
-                        escape(id)
-                    ),
-                    &format!(
-                        "<p class=\"note\">{}</p>\n     <p class=\"note\"><a href=\"/\">back to the sessions</a></p>",
-                        escape(why)
-                    ),
-                ),
-            ),
-            None => send(
-                StatusCode::NOT_FOUND,
-                "text/html",
-                error_page(
-                    &format!("no session {id} here"),
-                    &format!("no session <span class=\"hid\">{}</span> here", escape(id)),
-                    &format!(
-                        "<p class=\"note\">nothing by that id in {}</p>\n     <p class=\"note\"><a href=\"/\">back to the sessions</a></p>",
-                        escape(&display_path(&viewer.previews))
-                    ),
-                ),
-            ),
-        };
-    }
-    // Everything the Go viewer does through an account or the service.
-    let hosted = [
-        "/api/publish",
-        "/api/login/",
-        "/api/identity",
-        "/api/named",
-        "/api/compose/",
-        "/api/title/",
-        "/api/draft/",
-        "/api/export/",
-    ];
-    if hosted.iter().any(|prefix| path.starts_with(prefix)) {
-        return json_error(
-            StatusCode::NOT_IMPLEMENTED,
-            "slink-rs cannot publish or compose yet — nothing was uploaded. The Go slink does both.",
-        );
-    }
-    send(
-        StatusCode::NOT_FOUND,
-        "text/html",
-        error_page(
-            "no such page",
-            "no such page",
-            "<p class=\"note\">everything here starts at <a href=\"/\">the sessions</a></p>",
-        ),
-    )
+    found.sort_by_key(|source| std::cmp::Reverse(source.row.updated));
+    Ok((found, problems.join("\n")))
 }

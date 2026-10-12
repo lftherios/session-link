@@ -10,10 +10,17 @@
 //! rate limit, becomes a failed custom span and not an agent response.
 
 use std::collections::HashMap;
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
 
 use crate::agents::adopt_agents;
+use crate::discover::{
+    Candidate, Elsewhere, Found, blobs_beside, newest_file, newest_of, peek, read_lines,
+    sorted_entries, stem, transcripts_in, user_home,
+};
 use crate::normalize::{anthropic_content, anthropic_usage};
 use crate::value::{field, or_null, put, text, truthy};
 use crate::{Agent, Input};
@@ -21,7 +28,7 @@ use crate::{Agent, Input};
 const LABEL: &str = "session-import@0.1.0";
 
 pub(crate) fn import(input: &Input) -> Option<Value> {
-    let (mut run, calls) = transcript(&input.lines, &input.fallback, input.sub_agent)?;
+    let (mut run, calls) = to_run(&input.lines, &input.fallback, input.sub_agent)?;
     adopt_agents(&mut run, &input.agents, &calls, |agent: &Agent| {
         let mut input = agent.input.clone();
         input.sub_agent = true;
@@ -106,7 +113,7 @@ fn model_id(model: &Value) -> String {
 /// the tool call that started it. A sub-agent's own transcript is all
 /// sidechain entries, which a session's transcript does not replay;
 /// `sub_agent` reads them.
-fn transcript(
+fn to_run(
     lines: &[String],
     session_name: &str,
     sub_agent: bool,
@@ -141,7 +148,7 @@ fn transcript(
     }
     if entries.is_empty() && skipped_sidechain > 0 {
         // Nothing but sidechain entries: this is a sub-agent's own transcript.
-        return transcript(lines, session_name, true);
+        return to_run(lines, session_name, true);
     }
     let (first, last) = (entries.first()?, entries.last()?);
     // No title in the transcript? The first thing the person asked beats the
@@ -336,4 +343,213 @@ fn transcript(
     put(&mut run, "created_at", first, "timestamp");
     run.insert("spans".into(), Value::Array(spans));
     Some((Value::Object(run), agent_calls))
+}
+
+/* ------------------------------------------------ where its sessions are */
+
+/// Where Claude Code keeps one directory of transcripts for each project.
+/// `CLAUDE_CONFIG_DIR` moves its whole configuration directory.
+pub(crate) fn store() -> PathBuf {
+    match env::var_os("CLAUDE_CONFIG_DIR").filter(|dir| !dir.is_empty()) {
+        Some(dir) => PathBuf::from(dir).join("projects"),
+        None => user_home().join(".claude").join("projects"),
+    }
+}
+
+/// The longest directory name Claude Code derives from a path alone. A longer
+/// one is cut here and ends in a hash of the whole path.
+const SLUG_LIMIT: usize = 200;
+
+/// A project directory's name as Claude Code writes it: every UTF-16 code
+/// unit other than an ASCII letter or digit becomes `-`.
+fn slug(cwd: &Path) -> String {
+    cwd.to_string_lossy()
+        .encode_utf16()
+        .map(|unit| match u8::try_from(unit) {
+            Ok(byte) if byte.is_ascii_alphanumeric() => byte as char,
+            _ => '-',
+        })
+        .collect()
+}
+
+/// The transcripts Claude Code keeps under `base` for one working directory.
+/// A long path is found by its cut name, since the hash that follows depends
+/// on the runtime Claude Code was built for; projects can share that name,
+/// so each transcript must also record `cwd` as its directory.
+fn transcripts(base: &Path, cwd: &Path) -> Vec<PathBuf> {
+    let slug = slug(cwd);
+    if slug.len() <= SLUG_LIMIT {
+        return transcripts_in(&base.join(slug));
+    }
+    let prefix = format!("{}-", &slug[..SLUG_LIMIT]);
+    let mut files = Vec::new();
+    for dir in sorted_entries(base) {
+        let named = dir
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with(&prefix));
+        if !dir.is_dir() || !named {
+            continue;
+        }
+        for file in transcripts_in(&dir) {
+            if Path::new(&peek(&file, 40).cwd) == cwd {
+                files.push(file);
+            }
+        }
+    }
+    files
+}
+
+/// The transcript of a pasted session id, for one working directory. Claude
+/// Code names a transcript `<uuid>.jsonl`.
+pub(crate) fn transcript(cwd: &Path, id: &str) -> Option<PathBuf> {
+    let name = format!("{id}.jsonl");
+    transcripts(&store(), cwd).into_iter().find(|file| {
+        file.file_name()
+            .is_some_and(|found| found.to_string_lossy() == name)
+    })
+}
+
+pub(crate) fn latest(cwd: &Path) -> Option<Found> {
+    newest_of(transcripts(&store(), cwd), "claude-code")
+}
+
+pub(crate) fn anywhere() -> Option<Elsewhere> {
+    let mut best: Option<(PathBuf, i64)> = None;
+    for project in sorted_entries(&store()) {
+        if project.is_dir()
+            && let Some(found) = newest_file(&project)
+            && best.as_ref().is_none_or(|best| found.1 > best.1)
+        {
+            best = Some(found);
+        }
+    }
+    let (file, recency) = best?;
+    let head = peek(&file, 40);
+    Some(Elsewhere {
+        harness: "claude-code",
+        dir: head.cwd,
+        title: if head.name.is_empty() {
+            head.prompt
+        } else {
+            head.name
+        },
+        file: Some(file),
+        recency,
+    })
+}
+
+/// The sessions under `store` for each of `dirs`; one named by `id` only,
+/// when an id is given.
+pub(crate) fn candidates(
+    store: &Path,
+    dirs: &[PathBuf],
+    id: &str,
+) -> Result<Vec<Candidate>, String> {
+    let mut found = Vec::new();
+    for dir in dirs {
+        for file in transcripts(store, dir) {
+            let session = stem(&file);
+            if id.is_empty() || session == id {
+                found.extend(Candidate::file("claude-code", &file, dir, session));
+            }
+        }
+    }
+    Ok(found)
+}
+
+pub(crate) fn describe(candidate: &mut Candidate) {
+    let related = candidate
+        .file
+        .as_deref()
+        .map(agent_files)
+        .unwrap_or_default();
+    candidate.describe_file(related);
+    candidate.title = if candidate.name.is_empty() {
+        candidate.prompt.clone()
+    } else {
+        candidate.name.clone()
+    };
+}
+
+/// A transcript's lines with the sessions of its sub-agents.
+pub(crate) fn input(file: &Path, lines: Vec<String>) -> Input {
+    Input {
+        lines,
+        fallback: stem(file),
+        blobs: blobs_beside(file),
+        agents: agents(file),
+        ..Input::default()
+    }
+}
+
+pub(crate) fn recognizes(head: &[Value]) -> bool {
+    head.iter()
+        .any(|entry| matches!(text(entry, "type"), "user" | "assistant"))
+}
+
+/// The directory Claude Code keeps a session's sub-agents in.
+fn agents_dir(transcript: &Path) -> Option<PathBuf> {
+    let session = transcript.to_str()?.strip_suffix(".jsonl")?;
+    Some(Path::new(session).join("subagents"))
+}
+
+/// The transcripts of a session's sub-agents.
+fn agent_files(transcript: &Path) -> Vec<PathBuf> {
+    agents_dir(transcript)
+        .map(|dir| transcripts_in(&dir))
+        .unwrap_or_default()
+}
+
+/// A session's sub-agents. Claude Code writes each one's transcript to
+/// `subagents/agent-<id>.jsonl`, in a directory named after the session,
+/// with a `.meta.json` that names the tool call that started it. A
+/// sub-agent's own sub-agents are in the same directory, one spawn deeper,
+/// so the shallower ones come first.
+fn agents(transcript: &Path) -> Vec<Agent> {
+    let mut agents: Vec<(f64, Agent)> = Vec::new();
+    for file in agent_files(transcript) {
+        let Ok(lines) = read_lines(&file) else {
+            continue;
+        };
+        let name = stem(&file);
+        let id = name.strip_prefix("agent-").unwrap_or(&name).to_owned();
+        let meta = file
+            .to_str()
+            .and_then(|path| path.strip_suffix(".jsonl"))
+            .and_then(|path| fs::read_to_string(format!("{path}.meta.json")).ok())
+            .and_then(|raw| slink_format::parse(&raw).ok())
+            .unwrap_or(Value::Null);
+        let described = match text(&meta, "description") {
+            "" => text(&meta, "agentType"),
+            description => description,
+        };
+        let agent = Agent {
+            call: text(&meta, "toolUseId").to_owned(),
+            name: described.to_owned(),
+            input: Input {
+                lines,
+                fallback: id.clone(),
+                ..Input::default()
+            },
+            id,
+        };
+        agents.push((meta["spawnDepth"].as_f64().unwrap_or(1.0), agent));
+    }
+    agents.sort_by(|a, b| a.0.total_cmp(&b.0));
+    agents.into_iter().map(|(_, agent)| agent).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_project_is_named_as_claude_code_names_it() {
+        assert_eq!(
+            slug(Path::new("/work/dev/my project_1")),
+            "-work-dev-my-project-1"
+        );
+        // One code unit each for a letter outside ASCII, two for an emoji.
+        assert_eq!(slug(Path::new("/a/\u{e9}/\u{1f600}")), "-a-----");
+    }
 }

@@ -17,6 +17,53 @@ pub fn encode(value: &Value) -> String {
     out
 }
 
+/// The same document over several lines, two spaces to a level, as Go's
+/// `json.MarshalIndent` writes it: what a person is shown when a value that
+/// is not text has to be read as text.
+pub fn encode_pretty(value: &Value) -> String {
+    let mut out = String::new();
+    write_pretty(&mut out, value, 0);
+    out
+}
+
+fn write_pretty(out: &mut String, value: &Value, depth: usize) {
+    let indent = |out: &mut String, depth: usize| {
+        out.push('\n');
+        out.push_str(&"  ".repeat(depth));
+    };
+    match value {
+        Value::Array(items) if !items.is_empty() => {
+            out.push('[');
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                indent(out, depth + 1);
+                write_pretty(out, item, depth + 1);
+            }
+            indent(out, depth);
+            out.push(']');
+        }
+        Value::Object(fields) if !fields.is_empty() => {
+            out.push('{');
+            for (index, (key, field)) in fields.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                indent(out, depth + 1);
+                write_string(out, key);
+                out.push_str(": ");
+                write_pretty(out, field, depth + 1);
+            }
+            indent(out, depth);
+            out.push('}');
+        }
+        // A scalar, and an empty list or object, are written as they are on
+        // one line.
+        other => write_value(out, other),
+    }
+}
+
 fn write_value(out: &mut String, value: &Value) {
     match value {
         Value::Null => out.push_str("null"),
@@ -143,6 +190,17 @@ mod tests {
             encode(&value),
             r#"{"a":{},"b":[1,null,true,{"a":false,"z":""}]}"#
         );
+    }
+
+    #[test]
+    fn a_document_over_several_lines_is_indented_as_go_indents() {
+        let value = json!({"b": [1, {"z": [], "a": {}}, "<x>"], "a": null});
+        assert_eq!(
+            encode_pretty(&value),
+            "{\n  \"a\": null,\n  \"b\": [\n    1,\n    {\n      \"a\": {},\n      \"z\": []\n    },\n    \"\\u003cx\\u003e\"\n  ]\n}"
+        );
+        assert_eq!(encode_pretty(&json!([])), "[]");
+        assert_eq!(encode_pretty(&json!("text")), "\"text\"");
     }
 
     #[test]

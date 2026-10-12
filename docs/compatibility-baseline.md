@@ -88,8 +88,8 @@ different exit code, a changed JSON field, a looser file mode) was caught in
 every one of those ways.
 
 The first real candidate is `slink-rs`, the binary of the
-[Rust workspace](rust-build.md). On 2026-10-12, with its first commands, 63 of
-the 104 cases agree: usage, help, flags, completion, and every Claude Code
+[Rust workspace](rust-build.md). On 2026-10-12, with every importer ported,
+86 of the 104 cases agree: usage, help, flags, completion, and every
 import with the bytes and mode of the capture it leaves. The rest fail with a
 "not ported yet" message or a refusal to publish, which is the runner
 reporting the port's progress as intended. [rust-cli.md](rust-cli.md) has the
@@ -127,7 +127,7 @@ loopback.
 | `testdata/spool` | Not in the runner; Go tests in process | Needs spools placed in a home and a reader run over them |
 | `testdata/encryption` | Not in the runner; envelopes sealed by Web Crypto and by Go, opened in the Go, JS and Rust tests | The two recorded vectors the envelope cases in `testdata/protocol` are derived from |
 | `testdata/protocol` | Verdict, and the state read where a history is accepted, in the JavaScript, Go and Rust tests | The verifiers are libraries, so each language's tests read the cases; [rust-protocol.md](rust-protocol.md) has the differences they record |
-| `testdata/share/research` | Not in the runner; Go tests and the browser checks | The export is driven through the local server |
+| `testdata/share/research` | Not in the runner; Go and Rust tests and the browser checks | The export is driven through the local server. Each language's test exports the fixture to the bytes of its example and looks for the marker in every channel |
 | `testdata/viewer/arrival` | Behavior, through the browser check scripts | The viewer is not being ported |
 
 ## Found while building it
@@ -162,11 +162,14 @@ changes to declare the difference when the Rust code for it lands.
 
 - opencode and Hermes imports. Their fixtures are rows, so the runner needs
   SQLite stores built from them; until then two of the eight harnesses are held
-  only by Go's in-process golden tests.
+  by in-process tests only: Go's goldens, and Rust's, which also write the
+  rows to a database and read it back through the command's own loader.
 - Discovery for the harnesses other than Claude Code, resumed branches,
-  ambiguous sessions, and `view` with its picker.
+  ambiguous sessions, and `view` with its picker. Each language's tests cover
+  discovery in process.
 - The local server: the `view` routes and access capability, background mode,
-  drafts, saved views and the excerpt export.
+  drafts, saved views and the excerpt export. The browser check scripts and
+  each binary's own tests cover them; the runner compares none of it.
 - Publication, login, identity, recovery and named sharing, which need the
   server's smoke environment.
 - The always-on recorder: `tap`, `on` starting it, `setup`, `status`, `doctor`,
@@ -181,7 +184,10 @@ changes to declare the difference when the Rust code for it lands.
 ## Baseline measurements
 
 Measured on the pinned client revision, on an Apple M1 Max with macOS 26.6.2
-and Go 1.27.1. CI builds with Go 1.26.
+and Go 1.27.1. CI builds with Go 1.26, and the two write one thing
+differently: a byte that is not UTF-8 leaves Go 1.27 as a raw U+FFFD and Go
+1.26 as its six-character escape. A reference built locally and one built in
+CI therefore disagree on a transcript that is not UTF-8; no fixture is one.
 
 | Measurement | Result |
 | --- | --- |

@@ -58,16 +58,59 @@ struct Resolved {
 fn resolve(from: &str, session: &str, arg: &str) -> Result<Resolved, Exit> {
     let target = if arg.is_empty() { session } else { arg };
     let cwd = env::current_dir().unwrap_or_default();
+    let dirs = slink_import::project_dirs(&cwd);
+    if !from.is_empty() && !slink_import::ported(from) {
+        return Err(Exit::failure(
+            slink_import::Error::NotPorted(from.to_owned()).to_string(),
+        ));
+    }
     if !target.is_empty() {
+        // A harness with a database has no file to name: --session is the id
+        // it gave the session.
+        if let Some(found) = slink_import::latest_by_id(from, target) {
+            let slink_import::Loader::Database { path, .. } = &found.loader else {
+                unreachable!("a database session is loaded from its database");
+            };
+            if !path.is_file() {
+                // The agent's database is not there: say that, not what
+                // opening it failed with.
+                return Err(Exit::failure(format!(
+                    "✗ no {from} database found on this machine\n\n  is {from} installed here? its sessions can only be imported where it runs"
+                )));
+            }
+            let input = found.load().map_err(Exit::failure)?;
+            return Ok(Resolved {
+                harness: from.to_owned(),
+                input,
+                found: Some(found),
+                matched: None,
+            });
+        }
         let mut file = PathBuf::from(target);
         if !file.is_file() {
-            // Not a file on disk? A pasted session id is worth trying
-            // before giving up: Claude Code names a transcript by it.
+            // An Aider run has no file of its own: its id is the time it
+            // started, in the project's chat history.
+            let run = (from.is_empty() || from == "aider")
+                .then(|| {
+                    dirs.iter()
+                        .find_map(|dir| slink_import::aider_run(dir, target))
+                })
+                .flatten();
+            if let Some(found) = run {
+                let input = found.load().map_err(Exit::failure)?;
+                return Ok(Resolved {
+                    harness: "aider".to_owned(),
+                    input,
+                    found: Some(found),
+                    matched: None,
+                });
+            }
+            // A pasted session id is worth trying before giving up: Claude
+            // Code and dsh name a session's file or directory by it.
             let by_id = (!target.contains(['/', '\\', '.']))
                 .then(|| {
-                    slink_import::project_dirs(&cwd)
-                        .iter()
-                        .find_map(|dir| slink_import::claude_transcript(dir, target))
+                    dirs.iter()
+                        .find_map(|dir| slink_import::transcript_by_id(dir, target))
                 })
                 .flatten();
             file = by_id.ok_or_else(|| {
@@ -76,13 +119,11 @@ fn resolve(from: &str, session: &str, arg: &str) -> Result<Resolved, Exit> {
                 ))
             })?;
         }
-        let (input, detected) =
-            slink_import::load_file(&file).map_err(|error| Exit::failure(error.to_string()))?;
+        let (input, detected) = slink_import::load_file(&file).map_err(Exit::failure)?;
         let harness = if from.is_empty() { detected } else { from };
         if harness.is_empty() {
             return Err(Exit::failure(format!(
-                "could not detect the agent for {} — pass --from",
-                file.display()
+                "could not detect the agent for {target} — pass --from"
             )));
         }
         return Ok(Resolved {
@@ -92,18 +133,11 @@ fn resolve(from: &str, session: &str, arg: &str) -> Result<Resolved, Exit> {
             matched: None,
         });
     }
-    if !from.is_empty() && !slink_import::ported(from) {
-        return Err(Exit::failure(
-            slink_import::Error::NotPorted(from.to_owned()).to_string(),
-        ));
-    }
     // Running from a subdirectory of the project is the common case, and the
     // agents' histories are keyed on the project's root.
-    for dir in slink_import::project_dirs(&cwd) {
+    for dir in dirs {
         if let Some(found) = slink_import::latest(from, &dir) {
-            let input = found
-                .load()
-                .map_err(|error| Exit::failure(error.to_string()))?;
+            let input = found.load().map_err(Exit::failure)?;
             return Ok(Resolved {
                 harness: found.harness.to_owned(),
                 input,
@@ -136,17 +170,20 @@ fn no_session_hint(from: &str, cwd: &Path) -> String {
                 elsewhere.harness
             )
         };
-        let when = format!(
-            " · {}",
-            ago(
-                &rfc3339((elsewhere.recency / 1_000_000_000) as i64),
-                unix_now()
+        let when = if elsewhere.recency > 0 {
+            format!(
+                " · {}",
+                ago(&rfc3339(elsewhere.recency / 1_000_000_000), unix_now())
             )
-        );
+        } else {
+            String::new()
+        };
         let (place, next) = if elsewhere.dir.is_empty() {
             (
                 String::new(),
-                format!("    → slink import {}", shell_path(&elsewhere.file)),
+                elsewhere.file.as_deref().map_or(String::new(), |file| {
+                    format!("    → slink import {}", shell_path(file))
+                }),
             )
         } else {
             let flag = if from.is_empty() {
@@ -211,6 +248,9 @@ pub fn import_to_file(from: &str, session: &str, arg: &str) -> Result<Imported, 
     check_harness(from)?;
     let resolved = resolve(from, session, arg)?;
     let harness = resolved.harness.as_str();
+    if harness == "hermes" {
+        eprintln!("note: hermes import is experimental — its mapping is inferred, not dogfooded");
+    }
     let run = slink_import::import(harness, &resolved.input)
         .map_err(|error| Exit::failure(error.to_string()))?;
     let spans = run
@@ -250,12 +290,14 @@ pub fn import_to_file(from: &str, session: &str, arg: &str) -> Result<Imported, 
         .map_err(|error| Exit::failure(format!("write: {error}")))?;
 
     let age = match &resolved.found {
-        Some(found) => format!(
-            " · last active {}",
-            ago(&rfc3339((found.recency / 1_000_000_000) as i64), now)
-        ),
-        None if !created.is_empty() => format!(" · started {}", ago(created, now)),
-        None => String::new(),
+        Some(found) if found.recency > 0 => {
+            format!(
+                " · last active {}",
+                ago(&rfc3339(found.recency / 1_000_000_000), now)
+            )
+        }
+        _ if !created.is_empty() => format!(" · started {}", ago(created, now)),
+        _ => String::new(),
     };
     let cwd = env::current_dir().unwrap_or_default();
     let place = match &resolved.matched {
@@ -297,7 +339,7 @@ pub fn document(file: &Path, from: &str) -> Result<String, String> {
     {
         return Ok(text);
     }
-    let (input, detected) = slink_import::load_file(file).map_err(|error| error.to_string())?;
+    let (input, detected) = slink_import::load_file(file)?;
     let harness = if from.is_empty() { detected } else { from };
     if harness.is_empty() {
         return Err(format!(

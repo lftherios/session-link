@@ -1,0 +1,16 @@
+<script>
+  (()=>{
+    const rows=[...document.querySelectorAll('.row[data-search]')],groups=[...document.querySelectorAll('.group')],search=document.getElementById('search'),noMatch=document.getElementById('no-match');
+    const focusable=()=>rows.filter(r=>!r.hidden&&r.matches('a,button'));
+    if(search){
+      search.oninput=()=>{const q=search.value.trim().toLowerCase();rows.forEach(r=>r.hidden=!r.dataset.search.includes(q));
+        groups.forEach(g=>g.hidden=![...g.querySelectorAll('.row')].some(r=>!r.hidden));if(noMatch)noMatch.hidden=rows.some(r=>!r.hidden);};
+      search.onkeydown=e=>{if(e.key==='ArrowDown'){e.preventDefault();focusable()[0]?.focus();}};
+    }
+    rows.forEach(row=>row.addEventListener('keydown',e=>{
+      if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;e.preventDefault();
+      const visible=focusable(),next=visible[visible.indexOf(row)+(e.key==='ArrowDown'?1:-1)];
+      if(next)next.focus();else if(e.key==='ArrowUp')search?.focus();
+    }));
+  })();
+</script>

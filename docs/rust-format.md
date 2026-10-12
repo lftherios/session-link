@@ -9,7 +9,7 @@ proves it, and the first command to use it is the importer in backlog item 6.
 
 ## The crate
 
-[crates/slink-format](../crates/slink-format) has seven functions and no
+[crates/slink-format](../crates/slink-format) has eight functions and no
 state.
 
 | Function | What it does |
@@ -19,6 +19,7 @@ state.
 | `invariant_errors` | Span ids are unique and no span is its own ancestor, in the words the JavaScript and Go validators use |
 | `scan_for_secrets` | The credential scan: pattern name and masked preview, at most 10 findings |
 | `encode` | A document's text as Go's `encoding/json` writes it: keys sorted, no white space, `<`, `>` and `&` escaped. Added with the first importer |
+| `encode_pretty` | The same, indented by two spaces as Go's `MarshalIndent` writes it: the form an excerpt is stored in. Added with the exporter |
 | `compact` | A JSON text without the white space between its tokens, and otherwise untouched |
 | `instant` | The moment an RFC 3339 time names, to the nanosecond |
 

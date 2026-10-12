@@ -11,9 +11,10 @@ that repository's smoke server.
 A Rust port of the CLI is under way in `crates/`, following
 `docs/rust-migration.md`. Its binary, `slink-rs`, is not the product yet, and
 Go remains the reference until the plan's P5. It knows every command, imports
-Claude Code sessions, lists captures and serves the local viewer, and refuses
-to publish; `docs/rust-cli.md` has what is ported. Nobody uses the software
-yet, so the port migrates nothing and need not read state Go wrote.
+from all eight harnesses, lists captures, serves the local viewer and exports
+excerpts, and refuses to publish; `docs/rust-cli.md` has what is ported.
+Nobody uses the software yet, so the port migrates nothing and need not read
+state Go wrote.
 
 ## Before starting
 
@@ -62,7 +63,7 @@ files among them are gitignored, so build order matters in a fresh checkout:
 | npm binary channel smoke build | `node scripts/build-npm.mjs 0.0.0-ci` |
 | Compatibility inventory matches the Go source | `node scripts/compat-inventory.mjs --check` |
 | Differential runner against a built CLI | `SLINK_BINARY=go/slink node scripts/compat.mjs` |
-| The same, with the Rust binary as the candidate | add `SLINK_CANDIDATE=target/release/slink-rs`; a name filter such as `help/` or `import/claude-code` runs the groups it has. `docs/rust-cli.md` has the count that agrees |
+| The same, with the Rust binary as the candidate | add `SLINK_CANDIDATE=target/release/slink-rs`; a name filter such as `help/` or `import/` runs the groups it has. `docs/rust-cli.md` has the count that agrees |
 | JS, Go and Rust validators and scanners agree | `node scripts/format-diff.mjs`; it builds the Go and Rust helpers itself |
 | Protocol case files are what their generator writes | `node scripts/protocol-cases.mjs --check` |
 | The viewer, Go and Rust verifiers agree | `node scripts/protocol-diff.mjs`; add `--server ../session-link-server` to run the hosted verifier too |
@@ -95,8 +96,11 @@ touches before finishing.
   local viewer access, framing restrictions and external-image privacy.
 - `node scripts/check-viewer-browser.mjs` drives the built binary in a headless
   Chromium-family browser. It and the security check read `SLINK_BINARY`
-  (default `/tmp/session-link-slink`) and `BROWSER_BINARY`. Given `slink-rs`
-  it passes as far as reading goes and stops where composing a view begins.
+  (default `/tmp/session-link-slink`) and `BROWSER_BINARY`. Both pass against
+  `slink-rs` as well; give either binary a `HOME` of its own too.
+- `SLINK_HANDOFF_BINARY=<a built slink> node --test test/pi-handoff.test.mjs`
+  runs the pi extension's `/slink view` against that binary. Without the
+  variable that case is skipped and the others use a stand-in.
 - `node scripts/check-protocol-browser.mjs` runs the protocol cases through the
   viewer's code in a browser, whose Web Crypto is not Node's. It needs no
   binary and no server, and reads `BROWSER_BINARY`.
