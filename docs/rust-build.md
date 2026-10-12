@@ -1,6 +1,6 @@
 # Rust workspace and build
 
-2026-10-12 · Implemented slice of the [Rust migration](rust-migration.md), backlog item 2 · the workspace, viewer artifact and a build-check binary work on both macOS targets; the Linux and Windows targets have a workflow that has not run yet.
+2026-10-12 · Implemented slice of the [Rust migration](rust-migration.md), backlog item 2 · the workspace, viewer artifact and a build-check binary build, pass their tests and run natively on all six targets in CI.
 
 How the Rust side of the repository is built, which choices the first build
 fixed, and what it measured. The binary it produces is not the product yet: it
@@ -51,7 +51,7 @@ and the server's copy of the bundle is still written by `--hosted-output`.
 | HTTP server | axum on Tokio, HTTP/1 only, default features off | The plan's default; the loopback server needs nothing more yet |
 | HTTP client | reqwest with rustls | No OpenSSL to find or ship on any target |
 | Trust store | The operating system's, through `rustls-platform-verifier` | What Go's client used; a machine behind an inspecting proxy keeps working |
-| Crypto provider | ring, installed in [tls.rs](../crates/slink/src/tls.rs) | Needs only a C compiler. reqwest's default, aws-lc-rs, was not tried |
+| Crypto provider | ring, installed in [tls.rs](../crates/slink/src/tls.rs) | Needs only a C compiler, and clang on Windows ARM64, which the runner has. reqwest's default, aws-lc-rs, was not tried |
 | SQLite | rusqlite with the bundled library, 3.53.2 | Readers behave the same on every machine; costs a C compiler at build time, which pure-Go builds never needed |
 | Linux | musl targets, fully static | One binary for glibc distributions and Alpine, as the `.apk` package needs |
 | Windows | MSVC targets with the C runtime linked in | No redistributable to install |
@@ -66,19 +66,28 @@ included. The plan's dependency review has not been done.
 Each target is built on a runner of its own architecture, so tests and the
 release binary run natively and nothing depends on a cross toolchain.
 
-| Target | Runner | State |
+| Target | Runner | Release binary |
 | --- | --- | --- |
-| `aarch64-apple-darwin` | `macos-15` | Built, tested and run locally |
-| `x86_64-apple-darwin` | `macos-15-intel` | Built locally; tests and binary run under Rosetta, which is not a native result |
-| `x86_64-unknown-linux-musl` | `ubuntu-24.04` | Not built yet |
-| `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` | Not built yet |
-| `x86_64-pc-windows-msvc` | `windows-2025` | Not built yet |
-| `aarch64-pc-windows-msvc` | `windows-11-arm` | Not built yet. ring needs clang here, and whether the runner has rustup and clang is unknown |
+| `aarch64-apple-darwin` | `macos-15` | 5.2 MiB |
+| `x86_64-apple-darwin` | `macos-15-intel` | 5.4 MiB |
+| `x86_64-unknown-linux-musl` | `ubuntu-24.04` | 6.1 MiB |
+| `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` | 5.5 MiB |
+| `x86_64-pc-windows-msvc` | `windows-2025` | 6.2 MiB |
+| `aarch64-pc-windows-msvc` | `windows-11-arm` | 5.5 MiB |
 
-The workflow has never run. It triggers on `main` and on `feature/rust-**`
-branches, because this repository merges without pull requests and the
-existing CI would not see the branch. Until it passes, "six targets" is a
-workflow file and two local builds.
+All six passed on the workflow's first run, on 2026-10-12 at commit `f4298dd`:
+the tests, the trust-store test against the hosted service, and `build-check`
+from the release binary, each on its own architecture. The run took five and a
+half minutes with empty caches, the Intel macOS job being the slowest.
+
+The workflow triggers on `main` and on `feature/rust-**` branches, because this
+repository merges without pull requests and the existing CI would not see the
+branch. Beyond the Rust toolchain, the runners needed only `musl-tools` on
+Linux.
+
+What this does not show is installation: the binaries ran where they were
+built, on machines with a development toolchain. Running them on a clean
+machine belongs with packaging in P5.
 
 ## What is checked
 
@@ -96,8 +105,8 @@ workflow file and two local builds.
 - [tests/tls.rs](../crates/slink/tests/tls.rs) completes a handshake with a
   certificate the client was told to trust and is refused with one it was not.
   A third test, ignored by default because it reaches the network, has the
-  system trust store verify `https://session.link/api/health`; it passed on
-  macOS and CI runs it on every target.
+  system trust store verify `https://session.link/api/health`; CI runs it on
+  every target, and it passed on all six.
 
 ## First measurements
 
@@ -106,7 +115,6 @@ On an Apple M1 Max with macOS 26.6.2, release profile.
 | Measurement | Go `slink` | `slink-rs` |
 | --- | --- | --- |
 | Binary, darwin/arm64 | 13.2 MiB | 5.2 MiB |
-| Binary, darwin/amd64 | not measured | 5.4 MiB |
 | `version`, median of 20 runs including process start, quietest run | 18.1 ms | 6.5 ms |
 
 The machine was busy with unrelated work during the timing, so the absolute
@@ -121,7 +129,6 @@ recorder, the envelope code or the CLI itself.
 
 ## Not done
 
-- A first run of the workflow, which needs the branch pushed.
 - Packaging. Archives, checksums, the npm platform packages, Homebrew and the
   Linux packages still come from the Go build; replacing them is P5.
 - The differential runner in CI, which waits for a Linux run of it.

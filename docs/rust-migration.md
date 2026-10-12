@@ -204,7 +204,7 @@ are in P7, where they apply to the new store.
 
 ### P1 Establish the Rust core and build pipeline
 
-- [ ] Add the workspace, pinned toolchain, lockfile, formatting/linting and native
+- [x] Add the workspace, pinned toolchain, lockfile, formatting/linting and native
   test jobs. Build a minimal executable for all six distribution targets.
 - [ ] Implement format validation, invariant checks and generated secret-pattern
   consumption against the current JS/Go validators.
