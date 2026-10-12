@@ -1,0 +1,523 @@
+{
+  "commands": [
+    {
+      "name": "share",
+      "aliases": [],
+      "local_data": true,
+      "synopsis": "slink share [flags] [session-id | transcript]",
+      "flags": [
+        {
+          "name": "from",
+          "type": "string",
+          "default": ""
+        },
+        {
+          "name": "session",
+          "type": "string",
+          "default": ""
+        },
+        {
+          "name": "pick",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "name": "yes",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "name": "server",
+          "type": "string",
+          "default": ""
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "name": "record",
+      "aliases": [
+        "dev"
+      ],
+      "local_data": true,
+      "synopsis": "slink record [flags] -- <command …>   (alias: dev)",
+      "flags": [
+        {
+          "name": "port",
+          "type": "int",
+          "default": -1
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "name": "view",
+      "aliases": [
+        "open"
+      ],
+      "local_data": true,
+      "synopsis": "slink view [flags] [session-id | transcript | session.json]",
+      "flags": [
+        {
+          "name": "port",
+          "type": "int",
+          "default": 0
+        },
+        {
+          "name": "no-browser",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "name": "background",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "default": ""
+        },
+        {
+          "name": "session",
+          "type": "string",
+          "default": ""
+        },
+        {
+          "name": "span",
+          "type": "string",
+          "default": ""
+        },
+        {
+          "name": "pick",
+          "type": "bool",
+          "default": false
+        }
+      ]
+    },
+    {
+      "name": "list",
+      "aliases": [
+        "ls"
+      ],
+      "local_data": true,
+      "synopsis": "slink list [flags]",
+      "flags": [
+        {
+          "name": "limit",
+          "type": "int",
+          "default": 10
+        },
+        {
+          "name": "json",
+          "type": "bool",
+          "default": false
+        }
+      ]
+    },
+    {
+      "name": "import",
+      "aliases": [],
+      "local_data": true,
+      "synopsis": "slink import [flags] [transcript]",
+      "flags": [
+        {
+          "name": "from",
+          "type": "string",
+          "default": ""
+        },
+        {
+          "name": "session",
+          "type": "string",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "name": "tap",
+      "aliases": [],
+      "local_data": true,
+      "synopsis": "slink tap [flags]",
+      "flags": [
+        {
+          "name": "port",
+          "type": "int",
+          "default": 4141
+        },
+        {
+          "name": "idle",
+          "type": "int",
+          "default": 15
+        },
+        {
+          "name": "install",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "name": "uninstall",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "name": "stop",
+          "type": "bool",
+          "default": false
+        }
+      ]
+    },
+    {
+      "name": "setup",
+      "aliases": [],
+      "local_data": true,
+      "synopsis": "slink setup",
+      "flags": [
+        {
+          "name": "port",
+          "type": "int",
+          "default": 4141
+        }
+      ]
+    },
+    {
+      "name": "on",
+      "aliases": [],
+      "local_data": false,
+      "synopsis": "eval \"$(slink on)\"  [flags]",
+      "flags": [
+        {
+          "name": "port",
+          "type": "int",
+          "default": 0
+        },
+        {
+          "name": "no-start",
+          "type": "bool",
+          "default": false
+        }
+      ]
+    },
+    {
+      "name": "off",
+      "aliases": [],
+      "local_data": false,
+      "synopsis": "eval \"$(slink off)\"",
+      "flags": []
+    },
+    {
+      "name": "status",
+      "aliases": [],
+      "local_data": true,
+      "synopsis": "slink status",
+      "flags": [
+        {
+          "name": "json",
+          "type": "bool",
+          "default": false
+        }
+      ]
+    },
+    {
+      "name": "login",
+      "aliases": [],
+      "local_data": true,
+      "synopsis": "slink login [flags]",
+      "flags": [
+        {
+          "name": "key",
+          "type": "string",
+          "default": ""
+        },
+        {
+          "name": "server",
+          "type": "string",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "name": "logout",
+      "aliases": [],
+      "local_data": true,
+      "synopsis": "slink logout",
+      "flags": []
+    },
+    {
+      "name": "push",
+      "aliases": [],
+      "local_data": true,
+      "synopsis": "slink push [flags] [session-id | session.json]",
+      "flags": [
+        {
+          "name": "yes",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "name": "pick",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "name": "server",
+          "type": "string",
+          "default": ""
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "name": "delete",
+      "aliases": [],
+      "local_data": true,
+      "synopsis": "slink delete <url | published-id>",
+      "flags": [
+        {
+          "name": "yes",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "name": "server",
+          "type": "string",
+          "default": ""
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "name": "prune",
+      "aliases": [],
+      "local_data": true,
+      "synopsis": "slink prune [flags]",
+      "flags": [
+        {
+          "name": "older-than",
+          "type": "int",
+          "default": -1
+        },
+        {
+          "name": "keep",
+          "type": "int",
+          "default": -1
+        },
+        {
+          "name": "empty",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "name": "yes",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "name": "dry-run",
+          "type": "bool",
+          "default": false
+        }
+      ]
+    },
+    {
+      "name": "doctor",
+      "aliases": [],
+      "local_data": true,
+      "synopsis": "slink doctor",
+      "flags": []
+    },
+    {
+      "name": "completion",
+      "aliases": [],
+      "local_data": false,
+      "synopsis": "slink completion <bash|zsh|fish>",
+      "flags": []
+    }
+  ],
+  "help": [
+    "help",
+    "--help",
+    "-h",
+    "-help"
+  ],
+  "version": [
+    "version",
+    "--version",
+    "-v",
+    "-version"
+  ],
+  "environment": [
+    {
+      "name": "ANTHROPIC_BASE_URL",
+      "files": [
+        "go/cmd/slink/doctor.go",
+        "go/cmd/slink/onoff.go",
+        "go/cmd/slink/statuscmd.go"
+      ]
+    },
+    {
+      "name": "CLAUDE_CONFIG_DIR",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    },
+    {
+      "name": "CODEX_HOME",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    },
+    {
+      "name": "DSH_HOME",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    },
+    {
+      "name": "DSH_SESSION_ID",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    },
+    {
+      "name": "DSH_SHELL",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    },
+    {
+      "name": "HERMES_HOME",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    },
+    {
+      "name": "HERMES_STATE_DB",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    },
+    {
+      "name": "OMP_PROFILE",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    },
+    {
+      "name": "OPENAI_BASE_URL",
+      "files": [
+        "go/cmd/slink/doctor.go",
+        "go/cmd/slink/onoff.go",
+        "go/cmd/slink/statuscmd.go"
+      ]
+    },
+    {
+      "name": "OPENCODE_DB",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    },
+    {
+      "name": "PI_CODING_AGENT_DIR",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    },
+    {
+      "name": "PI_CODING_AGENT_SESSION_DIR",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    },
+    {
+      "name": "PI_CONFIG_DIR",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    },
+    {
+      "name": "PI_PROFILE",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    },
+    {
+      "name": "SLINK_API_KEY",
+      "files": [
+        "go/internal/cli/cli.go"
+      ]
+    },
+    {
+      "name": "SLINK_HOME",
+      "files": [
+        "go/cmd/slink/main.go",
+        "go/internal/cli/cli.go"
+      ]
+    },
+    {
+      "name": "SLINK_RETAIN_DAYS",
+      "files": [
+        "go/internal/tap/prune.go"
+      ]
+    },
+    {
+      "name": "SLINK_SERVER",
+      "files": [
+        "go/internal/cli/cli.go"
+      ]
+    },
+    {
+      "name": "SLINK_UPSTREAM_ANTHROPIC",
+      "files": [
+        "go/cmd/slink/onoff.go",
+        "go/internal/tap/server.go"
+      ]
+    },
+    {
+      "name": "SLINK_UPSTREAM_OPENAI",
+      "files": [
+        "go/cmd/slink/onoff.go",
+        "go/internal/tap/server.go"
+      ]
+    },
+    {
+      "name": "SLINK_VIEW_CHILD",
+      "files": [
+        "go/cmd/slink/viewcmd.go"
+      ]
+    },
+    {
+      "name": "SSH_CONNECTION",
+      "files": [
+        "go/cmd/slink/viewcmd.go"
+      ]
+    },
+    {
+      "name": "SSH_TTY",
+      "files": [
+        "go/cmd/slink/viewcmd.go"
+      ]
+    },
+    {
+      "name": "XDG_DATA_HOME",
+      "files": [
+        "go/internal/importers/discover.go"
+      ]
+    }
+  ]
+}

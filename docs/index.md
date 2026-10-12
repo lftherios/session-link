@@ -36,6 +36,7 @@ or an implemented slice.
 | [architecture-review.md](architecture-review.md) | Whole-system review with code evidence, nine architectural findings, live topology and verification results |
 | [architecture-alternatives.md](architecture-alternatives.md) | Two alternatives: a transactional monolith and a stateless hosted platform, with trade-offs, migration paths and a recommendation |
 | [rust-migration.md](rust-migration.md) | Agreed Rust direction: replace Go CLI and hosted runtime, share protocol code, migrate nothing while there are no users, milestones with exit gates |
+| [compatibility-baseline.md](compatibility-baseline.md) | P0 reference for the Rust port: pinned revisions, CLI and hosted inventories, the differential runner, what it covers, findings and gaps |
 
 ## Viewer and sharing experience
 

@@ -20,6 +20,8 @@ jobs:
       - run: npm run check:viewer
       # The Go-migration parity oracle: goldens must match the JS reference.
       - run: node scripts/golden.mjs --check
+      # The surface the Rust port is held to must match the Go source.
+      - run: node scripts/compat-inventory.mjs --check
   go:
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,304 @@
+{
+  "revision": "2250b3ba4721314ad2c4e2b24177a5e177bdfb0c",
+  "routes": [
+    {
+      "path": "/account",
+      "kind": "page",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/api/account/keys/revoke",
+      "kind": "route",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/account/runs/delete",
+      "kind": "route",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/account/shares/delete",
+      "kind": "route",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/cli",
+      "kind": "route",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/cli/:code",
+      "kind": "route",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/api/auth/cli/:code/approve",
+      "kind": "route",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/email/start",
+      "kind": "route",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/email/verify",
+      "kind": "route",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/auth/github",
+      "kind": "route",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/api/auth/github/callback",
+      "kind": "route",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/api/auth/logout",
+      "kind": "route",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/health",
+      "kind": "route",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/api/identity",
+      "kind": "route",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/named-shares",
+      "kind": "route",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/named-shares/:id",
+      "kind": "route",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/named-shares/:id/blob",
+      "kind": "route",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/api/runs",
+      "kind": "route",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/runs/:id",
+      "kind": "route",
+      "methods": [
+        "DELETE",
+        "GET"
+      ]
+    },
+    {
+      "path": "/api/runs/:id/raw",
+      "kind": "route",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/api/shares",
+      "kind": "route",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "path": "/api/shares/:id",
+      "kind": "route",
+      "methods": [
+        "DELETE",
+        "GET"
+      ]
+    },
+    {
+      "path": "/cli/:code",
+      "kind": "page",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/demo",
+      "kind": "route",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/devices",
+      "kind": "route",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/examples",
+      "kind": "page",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/login",
+      "kind": "page",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/login/email/:id",
+      "kind": "page",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/n/:id",
+      "kind": "route",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/r/:id",
+      "kind": "page",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/s/:id",
+      "kind": "route",
+      "methods": [
+        "GET"
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/landing.html"
+    },
+    {
+      "source": "/docs",
+      "destination": "/docs.html"
+    },
+    {
+      "source": "/docs/:page",
+      "destination": "/docs/:page.html"
+    }
+  ],
+  "static": [
+    "/brand-directions.html",
+    "/brand-excerpt.html",
+    "/brand/directions.css",
+    "/brand/excerpt-arrow-mark.svg",
+    "/brand/excerpt-arrow-wordmark.svg",
+    "/brand/excerpt-arrow.html",
+    "/brand/excerpt-handoff-mark.svg",
+    "/brand/excerpt-handoff-wordmark.svg",
+    "/brand/excerpt-handoff.html",
+    "/brand/excerpt-lift-mark.svg",
+    "/brand/excerpt-lift-wordmark.svg",
+    "/brand/excerpt-lift.html",
+    "/brand/excerpt-mark.svg",
+    "/brand/excerpt-wordmark.svg",
+    "/brand/excerpt.html",
+    "/brand/permalink-mark.svg",
+    "/brand/permalink-wordmark.svg",
+    "/brand/permalink.html",
+    "/brand/thread-mark.svg",
+    "/brand/thread-wordmark.svg",
+    "/brand/thread.html",
+    "/branding/brand.css",
+    "/branding/favicon.svg",
+    "/branding/mark.svg",
+    "/branding/wordmark.svg",
+    "/demo/session.json",
+    "/docs.html",
+    "/docs/aider.html",
+    "/docs/claude-code.html",
+    "/docs/codex.html",
+    "/docs/compare.html",
+    "/docs/opencode.html",
+    "/docs/pi.html",
+    "/encrypted-viewer.css",
+    "/encrypted-viewer.js",
+    "/install.sh",
+    "/landing.html",
+    "/llms.txt",
+    "/logos/LICENSE-deepseek-harness",
+    "/logos/LICENSE-hermes-agent",
+    "/logos/LICENSE-lobe-icons",
+    "/logos/LICENSE-octicons",
+    "/logos/LICENSE-oh-my-pi",
+    "/logos/claude-code.svg",
+    "/logos/codex.svg",
+    "/logos/deepseek-harness.svg",
+    "/logos/github.svg",
+    "/logos/hermes.png",
+    "/logos/omp.svg",
+    "/logos/opencode.svg",
+    "/logos/pi.svg",
+    "/logos/radicle.svg",
+    "/product/agent-activity.webp",
+    "/product/capture.json",
+    "/product/focused-mobile.webp",
+    "/product/focused.webp",
+    "/product/prepare-view.webp",
+    "/product/search.webp",
+    "/product/sessions.webp",
+    "/robots.txt",
+    "/sitemap.xml"
+  ]
+}
