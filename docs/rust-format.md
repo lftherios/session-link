@@ -1,6 +1,6 @@
 # Rust format validation and credential scan
 
-2026-10-12 · Implemented slice of the [Rust migration](rust-migration.md), backlog item 4 · `crates/slink-format` reads, validates and scans; the JavaScript, Go and Rust implementations agree on 183 format cases and 31 scan cases with nine recorded differences; run on macOS arm64 only so far.
+2026-10-12 · Implemented slice of the [Rust migration](rust-migration.md), backlog item 4 · `crates/slink-format` reads, validates and scans; the JavaScript, Go and Rust implementations agree on 183 format cases and 31 scan cases with nine recorded differences; the crate's tests pass on all six targets and the sweep on Linux in CI.
 
 What the Rust side of `session/v0` is, how it is held to the validators that
 already exist, and what comparing them found. The crate has no caller in the
@@ -67,7 +67,8 @@ On 2026-10-12 it ran 5,871 texts, in under three seconds once the two helpers
 are built. Verdicts, invariant errors, the places of schema errors and scan
 findings agreed on all but 70, and each of those is one of the three kinds of
 recorded difference below. A difference it cannot attribute to one of them
-fails the run.
+fails the run. The `format` job in `rust.yml` runs it on Linux, where the
+first run, at commit `5dfb7be`, gave the same counts.
 
 ## What the comparison found
 
@@ -122,6 +123,19 @@ Measured on macOS arm64 with the release profile, through `slink-rs`.
 | With the reader, the scan and `regex` | 5.9 MiB |
 | With boon as well | 6.7 MiB |
 
+The same CI run built each target with the crate linked in. Every release
+binary ran `build-check`, which compiles and applies the schema and the
+patterns.
+
+| Target | Before | With the crate |
+| --- | --- | --- |
+| `aarch64-apple-darwin` | 5.2 MiB | 6.7 MiB |
+| `x86_64-apple-darwin` | 5.4 MiB | 7.1 MiB |
+| `x86_64-unknown-linux-musl` | 6.1 MiB | 8.0 MiB |
+| `aarch64-unknown-linux-musl` | 5.5 MiB | 7.0 MiB |
+| `x86_64-pc-windows-msvc` | 6.2 MiB | 8.1 MiB |
+| `aarch64-pc-windows-msvc` | 5.5 MiB | 7.2 MiB |
+
 The lockfile grew from 192 packages to 212. boon turns the `regex` crate's
 Unicode tables on for the whole build, which is part of its 0.8 MiB. A
 validator written for this one schema would save most of that and would be
@@ -129,8 +143,6 @@ ours to keep correct; the sweep is what would make that safe to try.
 
 ## Not done
 
-- A run on Linux or Windows. `rust.yml` runs the crate's tests on all six
-  targets and has a job for the sweep; neither has run yet.
 - Reading a file. Decoding bytes that are not UTF-8 belongs with the first
   command that opens a document.
 - Writing documents. Key order and how a number is written back matter to

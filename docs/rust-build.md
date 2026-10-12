@@ -89,7 +89,8 @@ Linux.
 What this does not show is installation: the binaries ran where they were
 built, on machines with a development toolchain. Running them on a clean
 machine belongs with packaging in P5. The sizes are those of that commit; the
-format crate has since added about 1.5 MiB on macOS arm64.
+format crate has since added 1.5 to 1.9 MiB to each, and
+[rust-format.md](rust-format.md#cost) has the table.
 
 ## What is checked
 
