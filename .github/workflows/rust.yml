@@ -127,7 +127,8 @@ jobs:
         with:
           target: ${{ matrix.target }}
           rustflags: ""
-      - run: cargo test --locked --target ${{ matrix.target }}
+      # Every failure on a target in one run, not the first test binary's.
+      - run: cargo test --locked --no-fail-fast --target ${{ matrix.target }}
       # The one test that reaches the network: this machine's trust store
       # verifies the hosted service.
       - run: cargo test --locked --target ${{ matrix.target }} --test tls -- --ignored

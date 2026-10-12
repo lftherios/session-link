@@ -105,6 +105,8 @@ mod tests {
         assert_eq!(parsed(&json!("not json")), json!({}));
         assert_eq!(parsed(&json!(7)), json!(7));
         assert!(open(&dir.join("absent.db")).is_err());
+        // Windows does not delete a file that is open.
+        drop(db);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
