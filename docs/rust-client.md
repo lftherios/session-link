@@ -1,6 +1,6 @@
 # Rust client: signing in, publishing, deleting and device keys
 
-2026-10-14, extended the same day · Implemented slices of the [Rust migration](rust-migration.md), the first three items of P3 (backlog item 8) · `slink-rs` signs in, publishes a session as an encrypted link from the terminal and from the local viewer, sends a lost upload again as the same ciphertext, and takes a link offline. It sets up recovery, asks for approval and gives it, recovers with the recovery key, revokes a device, and backs each new link up to the account's vault. Against the hosted service's smoke server it signs in by email approval, a browser opens what it published, and three machines share one account through the settings page. Named shares are not ported. The publishing slice's tests pass on all six targets in CI; device keys have run on macOS arm64 and meet the other targets when their branch is pushed.
+2026-10-14, extended the same day · Implemented slices of the [Rust migration](rust-migration.md), the first three items of P3 (backlog item 8) · `slink-rs` signs in, publishes a session as an encrypted link from the terminal and from the local viewer, sends a lost upload again as the same ciphertext, and takes a link offline. It sets up recovery, asks for approval and gives it, recovers with the recovery key, revokes a device, and backs each new link up to the account's vault. Against the hosted service's smoke server it signs in by email approval, a browser opens what it published, and three machines share one account through the settings page. Named shares are not ported. The tests of both slices pass on all six targets in CI.
 
 `crates/slink-client` is the hosted service as the CLI reaches it. It
 composes the [protocol crate](rust-protocol.md), which seals the document and
@@ -114,7 +114,7 @@ Each difference is a refusal or a request not made.
 | The same with `SLINK_BROWSER_SCRIPT=`[check-identity-browser.mjs](../scripts/check-identity-browser.mjs) and `slink-rs` | Passes: a first share through email sign-in, recovery set up on the settings page, a second machine locked until approved by its code, a wrong code refused, revocation, recovery on a third machine that restores the exact link, and no recovery key, content key or text in any request to the service |
 | [check-viewer-browser.mjs](../scripts/check-viewer-browser.mjs), [check-security-browser.mjs](../scripts/check-security-browser.mjs) against `slink-rs` | Both pass |
 | `cargo test` | 289 pass |
-| `rust.yml` at `579f589` | Lint, the format, protocol and viewer jobs, and the build, tests and `build-check` on each of the six targets pass |
+| `rust.yml` at `579f589`, and again at `073ad8a` with device keys | Lint, the format, protocol and viewer jobs, and the build, tests and `build-check` on each of the six targets pass |
 
 ## Cost
 

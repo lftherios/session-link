@@ -272,8 +272,8 @@ Rotation, substitution, rollback and concurrent-vault cases pass in the
 client's tests, and its journey passes against the service's own identity
 store. Tampered statements are the protocol crate's shared cases, and every
 answer is verified by that crate. No content key, recovery key or text
-reached a request to the service or its storage in those runs. Named shares
-remain. [rust-client.md](rust-client.md) has the evidence and where Rust
+reached a request to the service or its storage in those runs. The client's
+tests pass on all six targets in CI. Named shares remain. [rust-client.md](rust-client.md) has the evidence and where Rust
 refuses what Go accepts.
 
 ### P4 Complete recording and operating-system integration
