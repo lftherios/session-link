@@ -252,7 +252,7 @@ and what the six targets have yet to run.
   server-origin rules, redirect behavior, caps, confirmation and error handling.
 - [x] Write a durable pending receipt before upload, resume it after a lost
   acknowledgement, and keep successful links when backup fails.
-- [ ] Port native setup, approval, recovery, revocation, unfinished-setup discard,
+- [x] Port native setup, approval, recovery, revocation, unfinished-setup discard,
   vault merge/CAS retries and account-scoped receipts.
 - [ ] Port named invitations, claims, grant verification, outbox recovery,
   recipient revocation and the existing viewer-driven resume loop.
@@ -264,11 +264,17 @@ result, and a second device recovers Rust-created links. An interrupted upload
 resumes. Rotation, substitution, rollback, tampering and concurrent-vault cases
 pass. Content keys never enter HTTP requests, logs or plaintext server storage.
 
-On 2026-10-14 the first two items hold on macOS arm64: Rust publishes to the
-existing Node server, a browser opens the result, and an interrupted upload
-resumes. Backup reports `setup` until device keys are ported, so nothing yet
-recovers a link on a second device. [rust-client.md](rust-client.md) has the
-evidence and where Rust refuses what Go accepts.
+On 2026-10-14 the first three items hold on macOS arm64: Rust publishes to
+the existing Node server, a browser opens the result, an interrupted upload
+resumes, and a third machine recovers a Rust-created link with the recovery
+key, through the settings page against the service's smoke server.
+Rotation, substitution, rollback and concurrent-vault cases pass in the
+client's tests, and its journey passes against the service's own identity
+store. Tampered statements are the protocol crate's shared cases, and every
+answer is verified by that crate. No content key, recovery key or text
+reached a request to the service or its storage in those runs. Named shares
+remain. [rust-client.md](rust-client.md) has the evidence and where Rust
+refuses what Go accepts.
 
 ### P4 Complete recording and operating-system integration
 

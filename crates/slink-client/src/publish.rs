@@ -20,6 +20,7 @@ use sha2::{Digest, Sha256};
 use slink_local::write_private;
 use slink_protocol::envelope::{self, MAX_PLAINTEXT};
 
+use crate::identity::Identity;
 use crate::origin::{Refused, origin};
 use crate::transport::{client, object};
 
@@ -284,22 +285,15 @@ pub async fn upload(home: &Path, text: &str, server: &str, api_key: &str) -> Upl
     }
     let _ = fs::remove_file(&pending_path);
     body.insert("url".to_owned(), Value::String(receipt.url));
-    body.insert(
-        "backup".to_owned(),
-        Value::String(backup(&receipt.account).to_owned()),
-    );
+    let backup = Identity::new(home, &server, api_key)
+        .backup(&receipt.account)
+        .await;
+    body.insert("backup".to_owned(), Value::String(backup.to_owned()));
     Upload {
         ok: true,
         status,
         body,
     }
-}
-
-/// Whether the share's key went into the account's encrypted vault. This
-/// build keeps no device keys, so there is no vault it can write: Go says
-/// the same, "setup", on a machine that has none.
-fn backup(_account: &str) -> &'static str {
-    "setup"
 }
 
 #[cfg(test)]

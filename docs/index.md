@@ -40,7 +40,7 @@ or an implemented slice.
 | [rust-build.md](rust-build.md) | The Rust workspace as built: pinned toolchain, viewer artifact, TLS and SQLite choices, the six targets and their state, first measurements |
 | [rust-format.md](rust-format.md) | `crates/slink-format`: reading, validating and scanning `session/v0`, the shared cases, the sweep across JS, Go and Rust, recorded differences |
 | [rust-cli.md](rust-cli.md) | `slink-rs` so far: eight importers, the local viewer and sessions page, drafts and excerpt export; what agrees with Go and what was found in it |
-| [rust-client.md](rust-client.md) | `crates/slink-client` and `slink-rs` publishing: sign-in, encrypted links, a lost upload resumed, delete; where Rust refuses what Go accepts |
+| [rust-client.md](rust-client.md) | `crates/slink-client`: sign-in, encrypted links, a lost upload resumed, delete, device keys and the vault; where Rust refuses what Go accepts |
 | [rust-protocol.md](rust-protocol.md) | `crates/slink-protocol`: envelopes, histories and vaults verified; keys, wrappers, requests and named shares made; shared cases, sweep, findings |
 
 ## Viewer and sharing experience

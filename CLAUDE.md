@@ -12,9 +12,9 @@ A Rust port of the CLI is under way in `crates/`, following
 `docs/rust-migration.md`. Its binary, `slink-rs`, is not the product yet, and
 Go remains the reference until the plan's P5. It knows every command, imports
 from all eight harnesses, lists captures, serves the local viewer and exports
-excerpts, and signs in, publishes encrypted links and deletes them; device
-keys and named shares are not ported. `docs/rust-cli.md` and
-`docs/rust-client.md` have what is.
+excerpts, signs in, publishes encrypted links and deletes them, and sets up,
+approves, recovers and revokes devices; named shares are not ported.
+`docs/rust-cli.md` and `docs/rust-client.md` have what is.
 Nobody uses the software yet, so the port migrates nothing and need not read
 state Go wrote.
 

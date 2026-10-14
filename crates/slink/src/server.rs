@@ -19,7 +19,8 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde_json::{Map, Value, json};
-use slink_client::{login, resolve_target};
+use slink_client::identity::Input;
+use slink_client::{Identity, login, resolve_target};
 use slink_local::share::{Catalog, Draft, build_catalog, export};
 use slink_local::{
     Drafts, READING_SUFFIX, SaveError, capture_dir, display_path, home, save_preview,
@@ -40,9 +41,10 @@ const LOCAL_ACCESS_JS: &str = include_str!("../../../go/internal/open/local-acce
 const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'none'";
 /// The name an excerpt carries its selection under.
 const EXCERPT: &str = "session_link.share.v1";
-/// What the settings and outbox pages, and sharing with named people, are
-/// told until device keys are ported.
-const NO_DEVICE_KEYS: &str = "slink-rs keeps no device keys yet, so recovery, devices and sharing with named people are not here — nothing was uploaded. The Go slink has them.";
+/// What the outbox page, and publishing to named people, are told until
+/// named shares are ported.
+const NO_NAMED_SHARES: &str =
+    "slink-rs cannot share with named people yet — nothing was uploaded. The Go slink can.";
 
 pub struct Viewer {
     pub access: String,
@@ -526,7 +528,7 @@ impl Viewer {
             );
         }
         if named {
-            return json_error(StatusCode::NOT_IMPLEMENTED, NO_DEVICE_KEYS);
+            return json_error(StatusCode::NOT_IMPLEMENTED, NO_NAMED_SHARES);
         }
         let upload =
             slink_client::upload(&home(), &inspection.text, &self.target, &self.api_key()).await;
@@ -551,6 +553,53 @@ impl Viewer {
                 "backup": upload.body.get("backup").cloned().unwrap_or(Value::Null),
             }),
         )
+    }
+}
+
+/// What a settings page sent: the first JSON value of the body, with the
+/// action and its fields as text. A field that is missing or null is empty.
+fn identity_input(body: &[u8]) -> Option<(String, Input)> {
+    let value = serde_json::Deserializer::from_slice(body)
+        .into_iter::<Value>()
+        .next()?
+        .ok()?;
+    if !value.is_object() && !value.is_null() {
+        return None;
+    }
+    let text = |name: &str| match &value[name] {
+        Value::Null => Some(String::new()),
+        Value::String(text) => Some(text.clone()),
+        _ => None,
+    };
+    let input = Input {
+        name: text("name")?,
+        id: text("id")?,
+        code: text("code")?,
+        recovery_key: text("recovery_key")?,
+    };
+    Some((text("action")?, input))
+}
+
+impl Viewer {
+    /// This machine's devices for the account the viewer publishes to.
+    /// The keys stay here; the page sees the status, and the recovery key
+    /// when it is asked to show it.
+    async fn identity(&self, action: &str, input: &Input) -> Response {
+        let identity = Identity::new(&home(), &self.target, &self.api_key());
+        let (status, body) = match identity.handle(action, input).await {
+            Ok(status) => (StatusCode::OK, status.to_json()),
+            Err(error) => {
+                let mut failure = json!({"message": error.to_string()});
+                // The settings page offers to discard the unfinished setup.
+                if let Some(code) = error.code() {
+                    failure["code"] = json!(code);
+                }
+                let status = StatusCode::from_u16(error.status())
+                    .unwrap_or(StatusCode::UNPROCESSABLE_ENTITY);
+                (status, json!({"error": failure}))
+            }
+        };
+        send(status, "application/json", slink_format::encode(&body))
     }
 }
 
@@ -918,12 +967,28 @@ pub async fn handle(State(viewer): State<Arc<Viewer>>, request: Request) -> Resp
         }
         return login_api(viewer.clone(), action, method).await;
     }
-    // Device keys, recovery and named shares are the next part of the port.
-    if path == "/api/identity" || path == "/api/named" {
+    if path == "/api/identity" {
         if !local_action {
             return blocked();
         }
-        return json_error(StatusCode::NOT_IMPLEMENTED, NO_DEVICE_KEYS);
+        if !post {
+            return json_error(StatusCode::METHOD_NOT_ALLOWED, "POST required");
+        }
+        let input = match axum::body::to_bytes(body, 4096).await {
+            Ok(body) => identity_input(&body),
+            Err(_) => None,
+        };
+        let Some((action, input)) = input else {
+            return json_error(StatusCode::BAD_REQUEST, "invalid request");
+        };
+        return viewer.identity(&action, &input).await;
+    }
+    // Named shares are the next part of the port.
+    if path == "/api/named" {
+        if !local_action {
+            return blocked();
+        }
+        return json_error(StatusCode::NOT_IMPLEMENTED, NO_NAMED_SHARES);
     }
     send(
         StatusCode::NOT_FOUND,

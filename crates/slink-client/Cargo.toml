@@ -22,8 +22,8 @@ sha2 = "0.11"
 slink-format = { path = "../slink-format" }
 slink-local = { path = "../slink-local" }
 slink-protocol = { path = "../slink-protocol" }
-# Waiting between polls while a person signs in.
-tokio = { version = "1", features = ["time"] }
+# Waiting between polls while a person signs in; one device action at a time.
+tokio = { version = "1", features = ["sync", "time"] }
 
 [dev-dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }

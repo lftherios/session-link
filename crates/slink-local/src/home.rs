@@ -87,7 +87,7 @@ fn restrict(_path: &Path, _mode: u32) -> io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn create_private_dir(dir: &Path) -> io::Result<()> {
+pub fn create_private_dir(dir: &Path) -> io::Result<()> {
     let mut builder = fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]

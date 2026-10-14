@@ -13,6 +13,8 @@ mod time;
 
 pub use captures::{Capture, capture_id, list_captures, new_capture_path};
 pub use drafts::{Drafts, SaveError, SavedView, ViewRecord, session_title_key};
-pub use home::{capture_dir, display_path, home, preview_dir, secure_home, write_private};
+pub use home::{
+    capture_dir, create_private_dir, display_path, home, preview_dir, secure_home, write_private,
+};
 pub use preview::{READING_SUFFIX, remember_preview, reusable_preview, save_preview, source_stamp};
 pub use time::{ago, stamp, unix_now};

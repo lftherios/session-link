@@ -266,9 +266,9 @@ there for the build check and now has callers.
   [protocol](spool-protocol.md) together. Until then `list` shows finished
   captures only and the server has no `/r/<id>`.
 - `prune`, `on`, `off`, `status`, `doctor`, `setup`, `tap`, `record`.
-- Device keys and named shares, the rest of backlog item 8. The server's
-  identity and named-share endpoints answer 501 with one message; publishing
-  a link and signing in are in [rust-client.md](rust-client.md).
+- Named shares, the rest of backlog item 8. The server's named-share
+  endpoint answers 501 with one message; publishing a link, signing in and
+  device keys are in [rust-client.md](rust-client.md).
 - The runner in CI, and on Linux and Windows at all.
 - The browser checks and the opt-in handoff test in CI. They were run by
   hand.

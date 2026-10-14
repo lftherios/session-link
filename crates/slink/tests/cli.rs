@@ -641,8 +641,11 @@ impl Service {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Sent>::new()));
         let record = sent.clone();
+        // The account's identity record, as the last write left it. Each
+        // write is taken as sent: the client verifies what it reads back.
+        let identity = std::sync::Arc::new(std::sync::Mutex::new(serde_json::Value::Null));
         let app = axum::Router::new().fallback(move |request: Request| {
-            let record = record.clone();
+            let (record, identity) = (record.clone(), identity.clone());
             async move {
                 let (parts, body) = request.into_parts();
                 let body = axum::body::to_bytes(body, 64 * 1024 * 1024)
@@ -674,6 +677,21 @@ impl Service {
                         )
                     }
                     ("DELETE", "/api/shares/23456789abcdef") => (204, String::new()),
+                    (method, "/api/identity") => {
+                        let mut held = identity.lock().unwrap();
+                        if method == "POST" {
+                            let write: serde_json::Value =
+                                serde_json::from_slice(&request.body).unwrap();
+                            let mut events = held["events"].as_array().cloned().unwrap_or_default();
+                            events.extend(write.get("event").cloned());
+                            *held = serde_json::json!({"events": events, "vault": write["vault"]});
+                        }
+                        (
+                            200,
+                            serde_json::json!({"account": "acct_1", "record": *held, "requests": []})
+                                .to_string(),
+                        )
+                    }
                     _ => (404, String::new()),
                 };
                 axum::response::Response::builder()
@@ -797,9 +815,60 @@ fn a_session_is_published_encrypted_and_taken_offline() {
         slink_protocol::envelope::decrypt(&upload.body, content_key(link)).unwrap(),
         preview
     );
-    let (status, identity) = viewer.json("POST", "/api/identity", r#"{"action":"status"}"#);
-    assert_eq!(status, 501, "{identity}");
+    // Recovery set up from the settings page; the next link is backed up.
     assert_eq!(viewer.ask("GET", "/settings", "").0, 200);
+    let (status, identity) = viewer.json("POST", "/api/identity", r#"{"action":"status"}"#);
+    assert_eq!(
+        (status, identity["state"].as_str()),
+        (200, Some("setup")),
+        "{identity}"
+    );
+    assert_eq!(viewer.ask("GET", "/api/identity", "").0, 405);
+    assert_eq!(viewer.ask("POST", "/api/identity", "[").0, 400);
+    assert_eq!(
+        viewer.ask("POST", "/api/identity", r#"{"action":1}"#).0,
+        400
+    );
+    let (status, identity) = viewer.json(
+        "POST",
+        "/api/identity",
+        r#"{"action":"setup","name":"Laptop"}"#,
+    );
+    assert_eq!(status, 200, "{identity}");
+    assert_eq!(identity["state"], "ready");
+    assert_eq!(identity["devices"][0]["name"], "Laptop");
+    // The links `push` and the page published above, both for this account.
+    assert_eq!(identity["shares"].as_array().unwrap().len(), 2);
+    let recovery_key = identity["recovery_key"].as_str().unwrap().to_owned();
+    assert!(recovery_key.starts_with("slr1."), "{identity}");
+    let (status, confirmed) =
+        viewer.json("POST", "/api/identity", r#"{"action":"confirm-recovery"}"#);
+    assert_eq!(
+        (status, confirmed["recovery_pending"].as_bool()),
+        (200, Some(false))
+    );
+    let (status, unknown) = viewer.json("POST", "/api/identity", r#"{"action":"rotate"}"#);
+    assert_eq!(
+        (status, unknown["error"]["message"].as_str()),
+        (422, Some("unknown device action"))
+    );
+    let (status, again) = viewer.json("POST", &endpoint, "");
+    assert_eq!(status, 200, "{again}");
+    assert_eq!(again["backup"], "synced");
+    let (_, synced) = viewer.json("POST", "/api/identity", r#"{"action":"status"}"#);
+    assert_eq!(synced["shares"].as_array().unwrap().len(), 3, "{synced}");
+    let writes = service.sent();
+    let stored: String = writes
+        .iter()
+        .map(|sent| String::from_utf8_lossy(&sent.body).into_owned())
+        .collect();
+    for secret in [
+        recovery_key.as_str(),
+        content_key(link),
+        content_key(again["url"].as_str().unwrap()),
+    ] {
+        assert!(!stored.contains(secret), "a key reached the service");
+    }
     let foreign = [
         ("X-Slink-Access", viewer.key.as_str()),
         ("x-slink", "1"),
@@ -824,7 +893,21 @@ fn a_session_is_published_encrypted_and_taken_offline() {
         "{:?}",
         home.files()
     );
-    assert_eq!(service.sent().len(), 3);
+    // Two uploads and a delete; the identity reads and writes; nothing from
+    // the refused requests above.
+    let sent = service.sent();
+    assert_eq!(
+        sent.iter()
+            .filter(|sent| sent.path == "/api/shares")
+            .count(),
+        3,
+        "{:?}",
+        sent.iter().map(|sent| &sent.path).collect::<Vec<_>>()
+    );
+    assert!(
+        sent.iter()
+            .all(|sent| sent.path.starts_with("/api/shares") || sent.path == "/api/identity")
+    );
     home.assert_contained();
 }
 
