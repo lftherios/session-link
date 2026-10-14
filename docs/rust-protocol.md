@@ -1,13 +1,14 @@
-# Rust envelope and signed-history verification
+# Rust protocol crate: verifying and making
 
-2026-10-12 · Implemented slice of the [Rust migration](rust-migration.md), backlog item 5 · `crates/slink-protocol` opens envelopes and verifies signed statements, device histories and vault records; Go, the viewer and Rust agree on 341 shared cases with 38 recorded differences; the crate's tests pass on all six targets and the sweep on Linux in CI, the two rules of 2026-10-12 included.
+2026-10-12, extended 2026-10-13 · Implemented slices of the [Rust migration](rust-migration.md), backlog item 5 and the first part of item 8 · `crates/slink-protocol` opens envelopes and verifies signed statements, device histories and vault records, and makes what a client makes: keys, boxes, wrappers, signatures, device requests, the recovery package and a named share's statements. Go, the viewer and Rust agree on 539 shared cases with 53 recorded differences. The verifying slice has passed on all six targets and its sweep on Linux in CI; the making slice has run on macOS arm64 and meets the other targets when its branch is pushed.
 
 What the Rust side of the protocol is so far, how it is held to the three
-verifiers that already exist, and what comparing them found. The crate checks
-and does not yet make anything: wrapping, recovery, named-share statements,
-sealing and signing are the rest of the plan's P1 line and are listed at the
-end. It has no caller in the product; `slink-rs build-check` links and runs it
-so that every target proves it.
+implementations that already exist, and what comparing them found. The first
+slice checked and made nothing. The second, of 2026-10-13, makes everything a
+client makes and adds the one check a sender runs before it releases a
+share's key. What is left is listed at the end. The crate has no caller in
+the product; `slink-rs build-check` links and runs it so that every target
+proves it.
 
 [identity-encryption.md](identity-encryption.md) describes the protocol
 itself. Two of the findings below became rules in it, in every implementation
@@ -18,7 +19,7 @@ whole characters only.
 
 [crates/slink-protocol](../crates/slink-protocol) is deterministic and holds
 no state. Every function takes its input as untrusted and returns what it
-verified or one error, never part of a result.
+verified or made, or one error, never part of a result.
 
 | Function | What it does |
 | --- | --- |
@@ -32,6 +33,44 @@ A history that fails reports the one message the Go CLI prints, and carries
 the name of the rule it broke. Go and the viewer have no such name; it is
 there so that a case can say which rule it is about.
 
+What it makes, and the opening that goes with each:
+
+| Function | What it does |
+| --- | --- |
+| `SigningKey`, `AgreementKey` | The two kinds of private key: a device has one of each, so has the recovery identity, and an incoming-share key is the second alone. Each gives its public half |
+| `Signed::sign` | A statement of one kind over the bytes given, refused when it is longer than its kind may be |
+| `envelope::encrypt` | A document in an envelope |
+| `seal`, `unseal` | A box: bytes under a key, bound to a context |
+| `wrap`, `unwrap` | A wrapper: a 32-byte key that the holder of one X25519 key can open |
+| `State::encode`, `Vault::encode`, `Request::encode` | A statement's payload, byte for byte as the Go CLI writes it |
+| `State::wrap_key`, `State::unwrap_key`, `State::seal_vault`, `Verified::open_vault` | The vault key and the vault, bound to the account, root key and epoch of a state. Only a record that verified has a vault to open |
+| `Recovery::seal`, `open_recovery`, `recovery_token` | The recovery package in a history, and the key a person holds for it |
+| `Request::verify`, `confirmation`, `code_matches` | A device's request to join, and the code that confirms it |
+| `Invite::encode`, `Claim::encode`, `Grant::encode`, `State::wrap_share_key` | A named share's three statements, and its key wrapped to an account's incoming-share key |
+| `verify_claim`, `Accepted::grant` | Whether a recipient's claim is the invited person's, made by a device their history approved; then the grant that answers it |
+| `binding_proof`, `commitment` | The proof that ties a claim to an invitation's secret, and what an invitation says of that secret |
+
+A function that makes something is handed its randomness: a key, a nonce, a
+one-time key. Given the same ones it writes the same bytes, which is how it is
+held to the other implementations. The client will take them from the
+operating system. A clock is handed in the same way: `Request::pending` is
+told the time.
+
+[keys.rs](../crates/slink-protocol/src/keys.rs),
+[wrap.rs](../crates/slink-protocol/src/wrap.rs),
+[recovery.rs](../crates/slink-protocol/src/recovery.rs),
+[request.rs](../crates/slink-protocol/src/request.rs) and
+[named.rs](../crates/slink-protocol/src/named.rs) are the new files. Every
+string that binds a box to its purpose is in the crate, so a client never
+writes one.
+
+`verify_claim` is the one function here that releases something: nothing of
+a share's key is wrapped for a recipient until it returns. It checks the
+proof and what the claim is for, then the recipient's whole history, then
+that the claim was signed at a point of that history by a device the history
+held then, for the incoming-share key it had then. The grant is wrapped to
+the key the history has now, which a revocation since may have changed.
+
 ## Choices
 
 | Area | Choice | Reason |
@@ -43,6 +82,14 @@ there so that a case can say which rule it is about.
 | Sizes | The hosted service's: 32 KiB of text for an event, 8 MiB for a vault statement | Nothing the service stores is refused, and nothing longer is ever decoded |
 | Statement kinds | An enum of the seven | The kind is part of what is signed, and a kind cannot be mistyped into one that verifies |
 | Error text | The Go CLI's | The differential runner compares what the two binaries print |
+| Key agreement | x25519-dalek 3.0, without its precomputed tables, named only in `crypto.rs` | ring agrees with a key once and discards it, and a device's key is used for as long as the device lives. The one way to a key that is used twice in ring is a test helper it marks for removal |
+| Points of small order | Refused as a one-time key and as a key to wrap to | Such a point agrees with every private key on 32 zero bytes, so what is wrapped under one is anyone's to open. Go and both Web Crypto libraries refuse it; x25519-dalek leaves it to the caller, who asks |
+| Randomness and time | Handed in | The plan keeps the rules apart from random generation, and a case can then say which bytes must come out |
+| Payload bytes | What Go's `encoding/json` writes for its struct: the fields in its order, `inbox` first when there is one, and its escapes | Nothing verifies by spelling. Two clients that write one statement two ways could not be held to one case |
+| Private keys | Two types that print their public half and clear their bytes when dropped | A key that reaches a log is lost |
+| Device requests | Read by the hosted service's rule | See the ninth finding |
+| Recovery | One function from the key a person typed to the two private keys, checked against the history | Go and the viewer have the steps inside the code that talks to the service. Here a client cannot skip one |
+| Context strings | Inside the crate, behind `State` | A vault sealed for the wrong epoch, or a wrapper for the wrong account, is a mistake a caller can no longer make |
 
 ## Shared cases
 
@@ -57,6 +104,7 @@ each run.
 | `envelopes.json` | 55: envelopes sealed by Web Crypto, by Go and by `node:crypto`; one bit changed in each part; cut short and lengthened; eight spellings of a key; five that authenticate under a header no reader supports |
 | `statements.json` | 54: each kind as itself and offered as another; one spelling of a payload, a signature and a key; the eight points of small order as keys, in all 14 spellings |
 | `histories.json` | 232: 34 histories and records every implementation accepts, with the state each must report; 160 that all refuse, each naming its rule; 38 recorded differences |
+| `keys.json` | 198: 29 boxes; 36 wrappers and 11 keys to wrap to, the seven spellings of a point of small order among both; 9 signatures; 31 device requests, 12 of them recorded differences; 17 accounts opened by a device and 23 by a recovery key; 42 shares for named people, of which a sender grants 7, refuses 32, and 3 are recorded differences |
 
 A case needs signatures, so the files are written by
 [protocol-cases.mjs](../scripts/protocol-cases.mjs) and not by hand. Every key
@@ -69,6 +117,35 @@ to show the script wrote what a client writes.
 Every rule the Rust crate names has at least one case, and the Rust test
 accepts a refusal only for the rule the case is about. A case that is refused
 for some other reason fails.
+
+A case in `keys.json` gives the secrets it was made with. Rust makes each one
+again and must write the same bytes: the box, the wrapper, the signature, the
+vault and the recovery package. It also seals every envelope that opens again
+from its key and nonce, Go's and Web Crypto's among them. Go and the viewer
+choose their own nonces and one-time keys, so they open each case, and sign
+again where a statement is what a client writes. An account that is opened
+starts from a record that verifies; what the case is about is whether the
+device's key, or the recovery key, then reaches the vault's contents.
+
+27 of the 34 histories every implementation accepts are marked as spelt the
+way a client spells them. For those, Rust and Go each write the state they
+read back to the same bytes, and the vault likewise. The other seven are
+spelt some other way on purpose.
+
+A share's case is what a sender holds when a claim arrives: its own history,
+the invitation and its secret, the claim with its proof, and the recipient's
+history. Rust and Go decide whether to grant. Where they do, Rust makes the
+grant again, byte for byte, and Go signs the same statement around the
+wrapper the case made. The viewer is the other side: it has no sender's rule,
+and it opens each granted share as its recipient and every share as its
+sender, through the code that verifies the invitation, the claim, the grant
+and both histories before it unwraps anything. So a grant made the way Rust
+makes one is a grant the viewer takes.
+
+Go and the viewer keep three rules inside the code that talks to the service:
+what a recovery key must match before it is used, what is checked of a
+pending request, and Go's check of a claim. Their tests repeat those steps
+with their own primitives. Rust has each as one function.
 
 ## Differential sweep
 
@@ -84,21 +161,34 @@ two envelopes; and the eight points of small order in their spellings. It
 adds the limits, which need a megabyte of history and so are not in a file:
 512 events and 513, 32 devices and 33.
 
-On 2026-10-12 it ran 23,503 cases in under 40 seconds. JavaScript, Go and Rust
-judged 21,521 alike, and where all three accepted they reported the same state
-at the same head. The other 1,982 are the kinds of recorded difference below.
-Anything else fails the run, as does any case Rust accepts and another
-implementation refuses. The `protocol` job in `rust.yml` runs it on Linux,
-where the first run, at commit `46fd4a5`, gave the same counts.
+Since 2026-10-13 it does the same to a box, a wrapper and a device request:
+every byte, every length and every character; the key and the context; a
+private key with each of the bits that clamping ignores; a request's fields
+each way, as a state's are. For a wrapper it also tries 63 numbers as the
+one-time key, each with and without its unused top bit: the first 26, the 22
+around the field's size, the two points of order eight, the largest, and 12
+at random. Each is sealed twice, under what the recipient would agree on with
+it and under 32 zero bytes.
+
+On 2026-10-13 it ran 25,078 cases in 40 seconds. JavaScript, Go and Rust
+judged 22,880 alike, and where all three accepted they read the same thing:
+the same state at the same head, the same key, the same request. The other
+2,198 are the kinds of recorded difference below. Anything else fails the
+run, as does any case Rust accepts and another implementation refuses. All
+three accept some cases of every kind, which the run now checks: 8 of 282
+boxes, 121 of 707 wrappers, 62 of 586 requests. The `protocol` job in
+`rust.yml` runs it on Linux, where the run at commit `46fd4a5` gave the counts
+of the first slice: 23,503 cases, 21,521 alike.
 
 With `--server` and a checkout of the hosted service it runs that verifier as
-a fourth. On the same cases the service refused nothing Rust accepted, and
-accepted 1,200 that Rust refused, all of them among the kinds below.
+a fourth, on statements and histories. The service refused nothing Rust
+accepted, and accepted 1,200 that Rust refused, all of them among the kinds
+below.
 
 [check-protocol-browser.mjs](../scripts/check-protocol-browser.mjs) runs the
 case files through the viewer's code in a browser, because Node's Web Crypto
-is OpenSSL and a browser brings its own. Headless Chromium 149 gave all 341
-cases the verdict recorded for the viewer.
+is OpenSSL and a browser brings its own. Headless Chromium 149 gave all 504
+cases that are the viewer's to judge the verdict recorded for it.
 
 ## What the comparison found
 
@@ -151,6 +241,51 @@ cases the verdict recorded for the viewer.
    from the character after decoding, and Rust refuses the escape anywhere in
    a payload.
 
+The second slice found five more.
+
+9. **Only the service says what a device request is.** Go and the viewer read
+   a pending request, check that the key it names signed it, and compare its
+   account, root key and time. Neither looks at the rest: a name of 81 bytes,
+   a nonce that is not 24 bytes, an agreement key that is not a key, a
+   request with no name at all. The service refuses each of those when the
+   request is uploaded, so a client only ever sees them from a service that
+   is not the real one. An approving client would then wrap the vault key and
+   sign an event that every verifier refuses. Rust reads a request by the
+   service's rule, and the sweep holds its refusals to a second statement of
+   that rule: 144 cases, none refused that the service would store.
+10. **Go and JavaScript write five characters differently.** Go's
+    `encoding/json` escapes `<`, `>`, `&`, U+2028 and U+2029 in a payload and
+    `JSON.stringify` does not, so a device named `<Phone & tablet>` is one
+    payload from the Go CLI and another from the viewer. Both verify, because
+    a payload is signed as bytes. Rust writes Go's, and a request case with
+    such a name pins it. The first slice's generator had written every case
+    with `JSON.stringify`, which no name in it could show.
+11. **A key has spellings, and every library reads each the same.** A
+    one-time key with its unused top bit set, or written past the field's
+    size, is the same point to Go, OpenSSL and x25519-dalek: all three open
+    the wrapper to the same key, in two cases and in more than 70 of the
+    sweep's.
+    The spelling is part of what the wrapping key is derived from, so it is
+    another wrapper and not a second reading of one. A point of small order
+    is refused by all three, and by BoringSSL in Chromium 149, with the box
+    sealed under the zero bytes such a point would agree on.
+12. **The browser check took an error that says nothing for success.**
+    Chromium's Web Crypto refuses a point of small order with an error whose
+    message is empty, and the check decided by the message. Until that was
+    seen it reported Chromium as opening eight such wrappers and wrapping to
+    seven such keys. The check now counts any error, and so does the sweep.
+    No earlier case was affected: every refusal before these carried a
+    message of the viewer's own.
+13. **Go grants a claim that names no key.** Go reads an account with no
+    incoming-share key as having the empty one. A claim signed before its
+    account turned sharing on, naming the empty key, then matches the state
+    it was signed at, and Go's sender wraps the share's key to whatever key
+    the account has since taken. The claim still needs the invitation's
+    secret and an approved device's signature, so this releases nothing to
+    anyone the sender did not invite. The service refuses a claim from an
+    account that does not share, so no such claim is stored. Rust reads no
+    key as none and refuses.
+
 ## Recorded differences
 
 In every one Rust refuses. Across the sweep nothing Rust accepts is refused by
@@ -178,6 +313,32 @@ In the second row and the last five, Rust refuses what both others read: a
 repeated key by decision, four from serde_json and one from the size limit. No
 client writes any of them.
 
+A device request is read by the same reader, so the rows above hold for it
+too. These are its own, from the ninth finding:
+
+| Device request | JavaScript | Go | Rust |
+| --- | --- | --- | --- |
+| A name longer than 80 bytes, a nonce that is not 24 bytes, an agreement key or a root key that is not a key | verified | verified | refused |
+| No name, or no time | verified | verified | refused |
+| A time with a fraction, in quotes, or before 1970 | verified | refused, but for the last | refused |
+| The signing key under a name in another case | refused | verified | refused |
+| More than 4 KiB as text | verified | verified | refused |
+
+A claim is read by the same reader as well, and the sender's side is Go's
+and Rust's alone:
+
+| Recipient's claim | Go | Rust |
+| --- | --- | --- |
+| A field's name in another case | granted | refused |
+| A field given twice | granted | refused |
+| Signed before the account shared, naming no key | granted | refused |
+
+Boxes, wrappers, signatures, and accounts opened by a device or a recovery
+key have no recorded difference: on the 125 cases and on the sweep's 989, the
+three open the same things to the same bytes. Go's approval code compares
+letters by Unicode's upper case and Rust by ASCII's, which no case can show:
+a code is twelve characters of base32.
+
 Apart from the two rules of the seventh and eighth findings, the Go and
 JavaScript verifiers are unchanged. The first finding is a difference between
 the two that are in use today; Go is replaced at P5 and the viewer's rules at
@@ -203,6 +364,25 @@ writes the very signature Node wrote into the case file.
   refused before it is decoded.
 - Of 10,000 damaged envelopes, none opens.
 
+[made.rs](../crates/slink-protocol/tests/made.rs) does the same for what the
+crate makes, with keys chosen at random and the same on every run.
+
+- 1,500 boxes, 600 wrappers, 300 envelopes, 200 statements, 500 requests and
+  200 recovery identities open again to what went in, and read back as JSON.
+- A box or a wrapper with one character changed, removed or added does not
+  open: 3,900 of them. Nor does either under another key or in another
+  context.
+- A wrapper does not open for the one-time key it was made with, and a
+  device's wrapper does not open for the recovery identity or at the next
+  epoch.
+- Of 4,000 damaged and correctly signed requests, each is refused or still
+  names the key that signed it in a shape the service stores.
+- 80 accounts are made with the crate alone, a first event by the recovery
+  identity and a second that turns sharing on, and each history verifies as
+  it grows. Between 40 pairs of them a share goes from invitation to claim to
+  grant, and the recipient unwraps the key. The same claim with another
+  secret, for another share, or against another history releases nothing.
+
 These run on every target, unlike the sweep, which needs Node and Go.
 
 ## Cost
@@ -218,6 +398,22 @@ The 16 KiB is nearly all the two envelopes and the statement cases that
 `build-check` embeds; the cryptography was already linked for TLS. The
 lockfile gained no third-party package and holds 213 with the crate itself.
 
+The second slice, against `main` at `00334aa` built the same day:
+
+| Build | Binary |
+| --- | --- |
+| Before the making slice | 8,454,400 bytes |
+| With it, and a wrapper made and opened in `build-check` | 8,470,960 bytes |
+
+Another 16 KiB. HKDF, HMAC and Ed25519 signing were linked for TLS; what is
+new is X25519 on a key that is kept. The binary holds only what `build-check`
+calls, a wrapper made and opened; the rest of the slice arrives with the
+commands that call it. The lockfile holds 233 packages, from
+228: x25519-dalek, curve25519-dalek and its derive macros, fiat-crypto and
+rand_core. Without its precomputed tables x25519-dalek derives a public key
+by the same ladder it agrees with, which costs a client nothing it would
+notice: a handful of keys in a session.
+
 The CI run at `46fd4a5` built each target with the crate linked in, and every
 release binary ran `build-check` with its protocol step.
 
@@ -232,15 +428,25 @@ release binary ran `build-check` with its protocol step.
 
 ## Not done
 
-- The rest of the plan's P1 line: wrapping and unwrapping a key, the recovery
-  box, device requests and their confirmation code, and the named-share
-  statements with the recipient's binding proof. The generator already writes
-  real wrappers and vaults for them.
-- Making anything: sealing an envelope, signing a statement. Those need
-  randomness and keys, which the plan keeps apart from the rules here.
+- The recipient's and the service's side of a named share: reading an
+  invitation and a grant, and the rules the service applies to all three
+  statements. A sender needs neither. The address a share is for is text
+  here; the rule for an email address is the client's.
+- Claims in the sweep. The 42 cases are the only ones Go and Rust have
+  judged together, and the viewer could not be a third.
+- The six targets for the making slice. x25519-dalek chooses its arithmetic
+  by target, and only macOS arm64 has run it; `build-check` wraps and unwraps
+  a key so that each release binary will show it.
+- What a vault holds: the JSON under the vault key, with its receipts,
+  incoming-share private keys and outbox. Here it is bytes. It belongs with
+  the client, which is also where the next state is put together: this crate
+  writes and signs the state it is given and does not decide what follows.
 - Reading a record off the wire, where the service refuses a signed object
   with a field besides its payload and signature, and pinning a root and a
   head, which belong to the client.
+- One function each in Go and the viewer for a recovery key and for a pending
+  request, so that their tests call what the product runs. Both are left as
+  they are; Go is replaced at P5.
 - The limits on the accepting side run only in the sweep. `cargo test` shows
   that 513 events and an oversized statement are refused, not that 512 events
   and 32 devices are accepted.

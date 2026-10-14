@@ -6,7 +6,7 @@
 //! the vault and never in a request.
 
 use crate::Error;
-use crate::crypto::aes_256_gcm_open;
+use crate::crypto::{aes_256_gcm_open, aes_256_gcm_seal};
 use crate::encoding::decode_exact;
 
 pub const MAX_PLAINTEXT: usize = 25 * 1024 * 1024;
@@ -27,6 +27,22 @@ pub fn validate(data: &[u8]) -> Result<(), Error> {
         return Err(Error::Envelope);
     }
     Ok(())
+}
+
+/// `plaintext` in an envelope under `key`. The key and the nonce are the
+/// caller's: 32 and 12 random bytes made for this one document. The key
+/// travels as `encoding::encode` writes it.
+pub fn encrypt(plaintext: &[u8], key: &[u8; 32], nonce: [u8; 12]) -> Result<Vec<u8>, Error> {
+    if plaintext.len() > MAX_PLAINTEXT {
+        return Err(Error::Plaintext);
+    }
+    let mut data = Vec::with_capacity(HEADER_SIZE + plaintext.len() + TAG_SIZE);
+    data.extend_from_slice(&MAGIC);
+    data.extend_from_slice(&[0; 4]);
+    data.extend_from_slice(&nonce);
+    let sealed = aes_256_gcm_seal(key, nonce, &data, plaintext);
+    data.extend(sealed);
+    Ok(data)
 }
 
 /// The document inside `data`, if `key` opens it. A changed byte anywhere,
@@ -56,6 +72,24 @@ mod tests {
             Err(Error::Envelope)
         );
         assert_eq!(validate(&[]), Err(Error::Envelope));
+    }
+
+    #[test]
+    fn what_is_sealed_opens_and_nothing_longer_is_sealed() {
+        use crate::encoding::encode;
+        let data = encrypt(b"{}", &[3; 32], [5; 12]).unwrap();
+        assert_eq!(data.len(), HEADER_SIZE + 2 + TAG_SIZE);
+        assert_eq!(data[..8], MAGIC);
+        assert_eq!(data[8..12], [0; 4]);
+        assert_eq!(data[12..24], [5; 12]);
+        assert_eq!(decrypt(&data, &encode(&[3; 32])).unwrap(), b"{}");
+        assert_eq!(decrypt(&data, &encode(&[4; 32])), Err(Error::Decrypt));
+        let empty = encrypt(b"", &[3; 32], [5; 12]).unwrap();
+        assert_eq!(decrypt(&empty, &encode(&[3; 32])).unwrap(), b"");
+        assert_eq!(
+            encrypt(&vec![0; MAX_PLAINTEXT + 1], &[3; 32], [5; 12]),
+            Err(Error::Plaintext)
+        );
     }
 
     #[test]

@@ -164,6 +164,11 @@ and the UTF-8 info string
 Public keys are base64url. The derived 32-byte key encrypts the vault key with
 AES-GCM, a fresh 12-byte nonce and that same info as additional authenticated
 data. The wrapper is `ephemeral_public + "." + base64url(nonce || ciphertext || tag)`.
+A point of small order is refused as the ephemeral key and as the key to wrap
+to: it agrees with every private key on 32 zero bytes, so what is wrapped
+under one is anyone's to open. Go's library and the browsers' refuse it
+themselves, and the Rust crate asks its own.
+[rust-protocol.md](rust-protocol.md) has the cases.
 
 Vault AES-GCM additional data is
 `"slink/vault/v1/" + account + "/" + root_public + "/" + epoch`.

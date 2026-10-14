@@ -4,8 +4,9 @@
 //! being offered for another.
 
 use crate::Error;
-use crate::crypto::{ed25519_verify, small_order};
-use crate::encoding::{decode, decode_exact, digest};
+use crate::crypto::{ed25519_sign, ed25519_verify, small_order};
+use crate::encoding::{decode, decode_exact, digest, encode};
+use crate::keys::SigningKey;
 
 /// What a statement is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +64,32 @@ pub struct Signed {
     pub signature: String,
 }
 
+/// What is signed: the kind, then the payload as it travels.
+fn message(kind: Kind, raw: &[u8]) -> Vec<u8> {
+    let name = kind.as_str();
+    let mut message = Vec::with_capacity(name.len() + raw.len() + 10);
+    message.extend_from_slice(b"slink/");
+    message.extend_from_slice(name.as_bytes());
+    message.extend_from_slice(b"/v1\x00");
+    message.extend_from_slice(raw);
+    message
+}
+
 impl Signed {
+    /// `payload` as a statement of `kind`, signed by `key`. A payload longer
+    /// than the kind allows is not signed: no verifier would read it.
+    pub fn sign(kind: Kind, payload: &[u8], key: &SigningKey) -> Result<Signed, Error> {
+        // The limit is on the payload as text, four characters for three bytes.
+        let limit = kind.payload_limit();
+        if payload.len() > limit || (payload.len() * 4).div_ceil(3) > limit {
+            return Err(Error::TooLarge);
+        }
+        Ok(Signed {
+            payload: encode(payload),
+            signature: encode(&ed25519_sign(key.seed(), &message(kind, payload))),
+        })
+    }
+
     /// The payload's bytes. A payload longer than `kind` allows is refused
     /// before it is decoded.
     pub fn read(&self, kind: Kind) -> Result<Vec<u8>, Error> {
@@ -96,13 +122,7 @@ impl Signed {
             return Err(Error::SigningKey);
         }
         let signature: [u8; 64] = decode_exact(&self.signature)?;
-        let name = kind.as_str();
-        let mut message = Vec::with_capacity(name.len() + raw.len() + 10);
-        message.extend_from_slice(b"slink/");
-        message.extend_from_slice(name.as_bytes());
-        message.extend_from_slice(b"/v1\x00");
-        message.extend_from_slice(raw);
-        if ed25519_verify(public, &message, &signature) {
+        if ed25519_verify(public, &message(kind, raw), &signature) {
             Ok(())
         } else {
             Err(Error::Signature(kind))

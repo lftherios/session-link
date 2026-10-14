@@ -4,14 +4,13 @@
 
 use crate::encoding::{decode, decode_exact};
 use crate::history::{History, Operation, State, verify_history};
-use crate::payload::{self, Fields};
+use crate::payload::{self, Fields, Object};
 use crate::signed::{Kind, Signed};
+use crate::wrap::{MIN_SEALED, seal, unseal};
 use crate::{Error, Refusal};
 
 /// The longest vault ciphertext, as text.
 pub const MAX_VAULT_DATA: usize = 6 * 1024 * 1024;
-/// A nonce and a tag: the least any ciphertext holds.
-const MIN_SEALED: usize = 12 + 16;
 
 /// The signed statement that carries the vault.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +26,34 @@ pub struct Vault {
     pub data: String,
 }
 
+impl Vault {
+    /// The vault as a payload, written as the Go CLI writes it.
+    pub fn encode(&self) -> Vec<u8> {
+        Object::new()
+            .text("account", &self.account)
+            .count("revision", self.revision)
+            .text("head", &self.head)
+            .count("epoch", self.epoch)
+            .text("signer", &self.signer)
+            .text("data", &self.data)
+            .finish()
+            .into_bytes()
+    }
+}
+
+/// What a vault's ciphertext is bound to: its account, root key and epoch.
+fn context(state: &State) -> String {
+    format!("slink/vault/v1/{}", state.context())
+}
+
+impl State {
+    /// `contents` sealed under `key`, the vault key of this state: a vault
+    /// statement's `data`. The nonce is the caller's, 12 random bytes.
+    pub fn seal_vault(&self, key: &[u8; 32], contents: &[u8], nonce: [u8; 12]) -> String {
+        seal(key, contents, &context(self), nonce)
+    }
+}
+
 /// What the service holds for an account.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Record {
@@ -40,6 +67,14 @@ pub struct Verified {
     pub state: State,
     pub head: String,
     pub vault: Vault,
+}
+
+impl Verified {
+    /// What the vault holds, if `key` is the vault key of the record's state.
+    /// Only a record that verified has a vault to open.
+    pub fn open_vault(&self, key: &[u8; 32]) -> Result<Vec<u8>, Error> {
+        unseal(key, &self.vault.data, &context(&self.state)).map_err(|_| Error::VaultKey)
+    }
 }
 
 /// Verifies the history, then that the vault was written for its last state

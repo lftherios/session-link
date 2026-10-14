@@ -11,9 +11,10 @@ use std::collections::HashSet;
 use serde_json::Value;
 
 use crate::encoding::{decode_exact, digest};
-use crate::payload::{self, Fields};
+use crate::keys::{AgreementKey, device_id};
+use crate::payload::{self, Fields, Object, list};
 use crate::signed::{Kind, Signed};
-use crate::{Error, Refusal};
+use crate::{Error, Refusal, wrap};
 
 pub const MAX_EVENTS: usize = 512;
 pub const MAX_DEVICES: usize = 32;
@@ -83,6 +84,64 @@ pub struct State {
 impl State {
     pub fn device(&self, id: &str) -> Option<&Device> {
         self.devices.iter().find(|device| device.id == id)
+    }
+
+    /// What the wrappers and the vault of this state are bound to: the
+    /// account, its root key and the epoch. A wrapper made for one epoch
+    /// does not open in the next.
+    pub fn context(&self) -> String {
+        format!("{}/{}/{}", self.account, self.root, self.epoch)
+    }
+
+    /// The state as an event's payload, written as the Go CLI writes it:
+    /// the incoming-share key first when there is one, then the other fields
+    /// in the order Go declares them.
+    pub fn encode(&self) -> Vec<u8> {
+        let devices = self.devices.iter().map(|device| {
+            Object::new()
+                .text("id", &device.id)
+                .text("name", &device.name)
+                .text("sign", &device.sign_key)
+                .text("box", &device.box_key)
+                .text("wrap", &device.wrap)
+                .finish()
+        });
+        let object = match &self.inbox {
+            Some(inbox) => Object::new().text("inbox", inbox),
+            None => Object::new(),
+        };
+        object
+            .text("account", &self.account)
+            .count("seq", self.seq)
+            .text("prev", &self.prev)
+            .text("kind", self.kind.as_str())
+            .text("signer", &self.signer)
+            .text("root", &self.root)
+            .text("recovery", &self.recovery)
+            .text("recovery_box", &self.recovery_box)
+            .text("recovery_wrap", &self.recovery_wrap)
+            .count("epoch", self.epoch)
+            .json("devices", &list(devices))
+            .finish()
+            .into_bytes()
+    }
+
+    /// `key`, the vault key of this state, wrapped to an X25519 public key:
+    /// a device's `wrap`, or the state's `recovery_wrap`. The one-time key
+    /// and the nonce are the caller's, random and made for this wrapper.
+    pub fn wrap_key(
+        &self,
+        recipient: &str,
+        key: &[u8; 32],
+        ephemeral: &AgreementKey,
+        nonce: [u8; 12],
+    ) -> Result<String, Error> {
+        wrap::wrap(recipient, key, &self.context(), ephemeral, nonce)
+    }
+
+    /// The vault key of this state, from a wrapper it holds for `private`.
+    pub fn unwrap_key(&self, private: &AgreementKey, wrapper: &str) -> Result<[u8; 32], Error> {
+        wrap::unwrap(private, wrapper, &self.context())
     }
 }
 
@@ -348,7 +407,7 @@ fn check_keys(state: &State) -> Result<(), Refusal> {
         key(&device.sign_key)?;
         key(&device.box_key)?;
         wrapper(&device.wrap)?;
-        let id = digest(format!("{}.{}", device.sign_key, device.box_key).as_bytes());
+        let id = device_id(&device.sign_key, &device.box_key);
         if device.id != id || !seen.insert(&device.id) || device.name.len() > MAX_DEVICE_NAME {
             return Err(Refusal::Device);
         }
@@ -359,8 +418,5 @@ fn check_keys(state: &State) -> Result<(), Refusal> {
 /// A wrapped vault key: the sender's one-time X25519 key, a dot, then a
 /// nonce, the 32-byte key and a tag.
 fn wrapper(text: &str) -> Result<(), Refusal> {
-    let (key, sealed) = text.split_once('.').ok_or(Refusal::Wrapper)?;
-    decode_exact::<32>(key).map_err(|_| Refusal::Wrapper)?;
-    decode_exact::<60>(sealed).map_err(|_| Refusal::Wrapper)?;
-    Ok(())
+    wrap::split(text).map(drop).ok_or(Refusal::Wrapper)
 }

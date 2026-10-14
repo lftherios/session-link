@@ -4,9 +4,9 @@
 //! `test/protocol-cases.test.mjs`, and Go in `go/internal/sealed` and
 //! `go/internal/identity`.
 
+mod common;
+
 use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -15,31 +15,7 @@ use slink_protocol::{
     Error, Kind, Record, Refusal, Signed, State, envelope, verify_history, verify_record,
 };
 
-fn read(name: &str) -> Value {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../testdata/protocol")
-        .join(name);
-    let text = fs::read_to_string(&path).unwrap_or_else(|err| panic!("{}: {err}", path.display()));
-    serde_json::from_str(&text).expect("the case file is JSON")
-}
-
-/// One verdict for every implementation, or one for each.
-fn expected(case: &Value) -> &str {
-    case["expect"]
-        .as_str()
-        .or_else(|| case["expect"]["rust"].as_str())
-        .expect("the case has a verdict for rust")
-}
-
-fn text<'a>(case: &'a Value, field: &str) -> &'a str {
-    case[field]
-        .as_str()
-        .unwrap_or_else(|| panic!("{}: no {field}", case["name"]))
-}
-
-fn report(failures: Vec<String>) {
-    assert!(failures.is_empty(), "\n{}", failures.join("\n"));
-}
+use common::{expected, read, report, signed, text};
 
 #[test]
 fn every_envelope_opens_or_is_refused() {
@@ -77,11 +53,7 @@ fn every_statement_verifies_or_is_refused() {
             .into_iter()
             .find(|kind| kind.as_str() == text(case, "kind"))
             .expect("a kind this crate knows");
-        let signed = Signed {
-            payload: text(case, "payload").to_owned(),
-            signature: text(case, "signature").to_owned(),
-        };
-        let got = signed.verify(kind, text(case, "public"));
+        let got = signed(case).verify(kind, text(case, "public"));
         match (expected(case), got) {
             ("verified", Ok(())) => verified += 1,
             ("refused", Err(_)) => {}
@@ -103,13 +75,7 @@ fn histories() -> Histories {
         .as_object()
         .expect("the statements by id")
         .iter()
-        .map(|(id, value)| {
-            let signed = Signed {
-                payload: text(value, "payload").to_owned(),
-                signature: text(value, "signature").to_owned(),
-            };
-            (id.clone(), signed)
-        })
+        .map(|(id, value)| (id.clone(), signed(value)))
         .collect();
     let cases = file["cases"].as_array().expect("a list of cases").clone();
     Histories { signed, cases }
@@ -176,6 +142,9 @@ fn rule(error: Error) -> &'static str {
         Error::SigningKey => "key",
         Error::Encoding | Error::TooLarge => "signed",
         Error::Envelope | Error::ContentKey | Error::Decrypt => "envelope",
+        // What a box, a wrapper, a recovery key or a request is refused
+        // with; no history or record is.
+        _ => "keys",
     }
 }
 

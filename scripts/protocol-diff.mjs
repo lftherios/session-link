@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
  * Differential check of the protocol verifiers (docs/rust-migration.md, P1).
- * It makes envelopes, signed statements, device histories and vault records
- * that are wrong in one way each, hands the same bytes to every
- * implementation, and compares what each makes of them:
+ * It makes envelopes, signed statements, device histories, vault records,
+ * boxes, key wrappers and device requests that are wrong in one way each,
+ * hands the same bytes to every implementation, and compares what each makes
+ * of them:
  *
  *   js      the viewer's code on Node's Web Crypto (packages/viewer)
  *   go      the Go CLI, through TestSweep in go/internal/identity
@@ -18,10 +19,11 @@
  * VERDICTS_RUST names a prebuilt helper; without it the script runs
  * `cargo run`. The Go side always runs through `go test`.
  *
- * An envelope `opens` or is `refused`, a statement is `verified` or
- * `refused`, a history or record is `valid` or `invalid`. Where every
- * implementation accepts, they must also have read the same thing: the same
- * document, or the same state at the same head.
+ * An envelope, a box or a wrapper `opens` or is `refused`, a statement or a
+ * request is `verified` or `refused`, a history or record is `valid` or
+ * `invalid`. Where every implementation accepts, they must also have read the
+ * same thing: the same document or key, the same request, or the same state
+ * at the same head.
  *
  * Verdicts that differ must be one of the kinds listed under `explained`
  * below, each of which testdata/protocol/histories.json pins with a case.
@@ -38,7 +40,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
-import { account, b64, digest, envelope, hash, keyPair, limitCases, material, sign, signBytes, summary, unb64 } from "./protocol-cases.mjs";
+import { createPublicKey, diffieHellman, hkdfSync } from "node:crypto";
+import { account, b64, digest, envelope, hash, keyPair, limitCases, material, seal, sign, signBytes, summary, unb64, wrap } from "./protocol-cases.mjs";
 
 const started = Date.now();
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -436,6 +439,191 @@ for (const size of [0, 1, 15, 16, 17, 4096]) {
   }
 }
 
+/* Boxes: every byte, every length, every character, the key and the context. */
+
+const flips = (bytes) => Array.from(bytes, (_, at) => [1, 0x80].map((bit) => [at, bit, Buffer.from(bytes).fill(bytes[at] ^ bit, at, at + 1)])).flat();
+const SPELLINGS = (text) => [
+  ["with padding", `${text}=`],
+  ["in the other alphabet", text.replaceAll("-", "+").replaceAll("_", "/")],
+  ["followed by a line break", `${text}\n`],
+  ["with a line break inside", `${text.slice(0, 8)}\n${text.slice(8)}`],
+  ["with a space inside", `${text.slice(0, 8)} ${text.slice(8)}`],
+  ["one character short", text.slice(0, -1)],
+  ["one character long", `${text}A`],
+  ["empty", ""],
+  ["twice", text + text],
+];
+const CONTEXTS = (context) => [
+  ...Array.from(context, (_, at) => [`character ${at} changed`, context.slice(0, at) + (context[at] === "A" ? "B" : "A") + context.slice(at + 1)]).filter((_, at) => at % 5 === 0),
+  ["in capitals", context.toUpperCase()],
+  ["one character longer", `${context}0`],
+  ["one character shorter", context.slice(0, -1)],
+  ["with a slash after", `${context}/`],
+  ["after a space", ` ${context}`],
+  ["empty", ""],
+  ["twice", context + context],
+];
+{
+  const key = material("sweep/box key");
+  const context = `slink/vault/v1/${A.context(1)}`;
+  const item = (box, of = context, under = key) => ({ t: "box", key: b64(under), context: of, box });
+  for (const size of [0, 1, 15, 16, 17, 64, 4096]) add(`a box of ${size} bytes`, item(seal(key, material("contents", size), context, `sweep/box/${size}`)));
+  add("a box with no context", item(seal(key, material("contents", 20), "", "sweep/box/no context"), ""));
+  const good = seal(key, material("contents", 20), context, "sweep/box");
+  const raw = unb64(good);
+  for (const [at, bit, changed] of flips(raw)) add(`box: byte ${at} xor ${bit}`, item(b64(changed)));
+  for (let length = 0; length < raw.length; length++) add(`box: the first ${length} bytes`, item(b64(raw.subarray(0, length))));
+  for (const extra of [1, 12, 16]) add(`box: ${extra} bytes added`, item(b64(Buffer.concat([raw, Buffer.alloc(extra)]))));
+  for (let at = 0; at < good.length; at++) add(`box: character ${at} changed`, item(good.slice(0, at) + (good[at] === "A" ? "B" : "A") + good.slice(at + 1)));
+  for (const [what, text] of SPELLINGS(good)) add(`box ${what}`, item(text));
+  for (const [what, other] of CONTEXTS(context)) add(`box: context ${what}`, item(good, other));
+  for (const [at, bit, changed] of flips(key)) if (bit === 1) add(`box: key byte ${at} changed`, item(good, context, changed));
+}
+
+/* Wrappers: the same, and every point a one-time key can be. */
+
+const x25519Public = (raw) => createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b656e032100", "hex"), raw]), format: "der", type: "spki" });
+/** What a private key and a point agree on, or 32 zero bytes where the library refuses the point. */
+const agreement = (key, point) => {
+  try {
+    return diffieHellman({ privateKey: key.private, publicKey: x25519Public(point) });
+  } catch {
+    return Buffer.alloc(32);
+  }
+};
+{
+  const recipient = keyPair("x", "sweep/recipient");
+  const stranger = keyPair("x", "sweep/stranger");
+  const key = material("sweep/wrapped key");
+  const context = A.context(1);
+  const item = (wrapper, of = context, to = recipient) => ({ t: "wrapper", private: b64(to.seed), public: to.public, context: of, wrapper });
+  const good = wrap(recipient.public, key, context, "sweep/wrapper");
+  const [half, box] = good.split(".");
+  add("a wrapper as written", item(good));
+  add("a wrapper with no context", item(wrap(recipient.public, key, "", "sweep/wrapper/no context"), ""));
+  add("a wrapper for another key", item(good, context, stranger));
+  for (const [at, bit, changed] of flips(unb64(half))) add(`wrapper: one-time key byte ${at} xor ${bit}`, item(`${b64(changed)}.${box}`));
+  for (const [at, bit, changed] of flips(unb64(box))) add(`wrapper: box byte ${at} xor ${bit}`, item(`${half}.${b64(changed)}`));
+  for (let at = 0; at < good.length; at++) add(`wrapper: character ${at} changed`, item(good.slice(0, at) + (good[at] === "A" ? "B" : "A") + good.slice(at + 1)));
+  for (let length = 0; length < good.length; length += 3) add(`wrapper: the first ${length} characters`, item(good.slice(0, length)));
+  for (const [what, text] of SPELLINGS(good)) add(`wrapper ${what}`, item(text));
+  for (const [what, text] of SPELLINGS(half)) add(`wrapper: its one-time key ${what}`, item(`${text}.${box}`));
+  for (const [what, text] of SPELLINGS(box)) add(`wrapper: its box ${what}`, item(`${half}.${text}`));
+  for (const [what, text] of [["two dots", good.replace(".", "..")], ["a dot at the end", `${good}.`], ["a dot first", `.${good}`], ["a comma for the dot", good.replace(".", ",")], ["its halves the other way round", `${box}.${half}`], ["its box twice", `${half}.${box}.${box}`]]) add(`wrapper with ${what}`, item(text));
+  for (const [what, other] of CONTEXTS(context)) add(`wrapper: context ${what}`, item(good, other));
+  // A private key is read after clamping: three bits of its first byte and
+  // two of its last make no difference to what it is.
+  for (const [at, bit, changed] of flips(recipient.seed)) {
+    if (at === 0 || at === 31 || bit === 1) add(`wrapper: private key byte ${at} xor ${bit}`, { ...item(good), private: b64(changed) });
+  }
+  for (let bit = 0; bit < 8; bit++) {
+    for (const at of [0, 31]) {
+      const changed = Buffer.from(recipient.seed);
+      changed[at] ^= 1 << bit;
+      add(`wrapper: private key byte ${at} bit ${bit} changed`, { ...item(good), private: b64(changed) });
+    }
+  }
+  // Whatever 32 bytes a one-time key is, with the box sealed under what the
+  // recipient would agree on with it, or under 32 zero bytes where no
+  // agreement is to be had. The points of small order are among these.
+  const field = (1n << 255n) - 19n;
+  const bytesOf = (number) => Buffer.from(number.toString(16).padStart(64, "0"), "hex").reverse();
+  const under = (point, secret, label) => {
+    const info = `slink/wrap/v1/${context}/${b64(point)}/${recipient.public}`;
+    const derived = Buffer.from(hkdfSync("sha256", secret, Buffer.alloc(0), info, 32));
+    return `${b64(point)}.${seal(derived, key, info, label)}`;
+  };
+  const POINTS = [
+    ...Array.from({ length: 26 }, (_, n) => [`the number ${n}`, BigInt(n)]),
+    ...Array.from({ length: 22 }, (_, n) => [`the field's size ${n < 3 ? "less" : "and"} ${Math.abs(n - 3)}`, field + BigInt(n - 3)]),
+    ["a point of order eight", 325606250916557431795983626356110631294008115727848805560023387167927233504n],
+    ["the other point of order eight", 39382357235489614581723060781553021112529911719440698176882885853963445705823n],
+    ["the largest number in 255 bits", (1n << 255n) - 1n],
+    ...Array.from({ length: 12 }, (_, n) => [`a number from the label ${n}`, BigInt(`0x${Buffer.from(material(`sweep/point/${n}`)).reverse().toString("hex")}`) & ((1n << 255n) - 1n)]),
+  ];
+  for (const [what, u] of POINTS) {
+    for (const top of [0n, 1n]) {
+      const point = bytesOf(u | (top << 255n));
+      const name = `${what}${top ? " with the top bit set" : ""} as the one-time key`;
+      add(`wrapper: ${name}, sealed under what it agrees on`, item(under(point, agreement(recipient, point), `sweep/point/${name}`)));
+      add(`wrapper: ${name}, sealed under zeros`, item(under(point, Buffer.alloc(32), `sweep/point/zeros/${name}`)));
+    }
+  }
+}
+
+/* Device requests: every field every way, the text around it, who signs. */
+
+const requester = { sign: keyPair("ed", "sweep/request/sign"), box: keyPair("x", "sweep/request/box") };
+const REQUEST = { account: "usr_fixture", root: A.root.public, name: "Phone", sign: requester.sign.public, box: requester.box.public, nonce: b64(material("sweep/request/nonce", 24)), created: 1760000000000 };
+{
+  const request = (name, bytes, key = requester.sign, kind = "request") => add(name, { t: "request", ...signBytes(kind, Buffer.from(bytes), key) });
+  const text = JSON.stringify(REQUEST);
+  request("a request as written", text);
+  for (const [what, changed] of changes(REQUEST)) request(`request: ${what}`, changed);
+  const named = (name) => JSON.stringify({ ...REQUEST, name });
+  const TEXTS = {
+    "a byte-order mark first": Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text)]),
+    "white space around": ` \t\r\n${text} \t\r\n`,
+    "a form feed after": `${text}\f`,
+    "a null character after": `${text}\u0000`,
+    "text after": `${text}x`,
+    "a second value after": `${text}{}`,
+    "the last brace missing": text.slice(0, -1),
+    "a trailing comma": text.replace(/\}$/, ",}"),
+    "single quotes": text.replaceAll('"', "'"),
+    "wrapped in a list": `[${text}]`,
+    "as a JSON string": JSON.stringify(text),
+    "as a list of its values": JSON.stringify(Object.values(REQUEST)),
+    "nothing": "",
+    "NaN in an unknown field": text.replace("{", '{"n":NaN,'),
+    "a number too large for a double in an unknown field": text.replace("{", '{"n":1e400,'),
+    "half a surrogate pair in an unknown field": text.replace("{", `{"n":"${backslash}ud83d",`),
+    "a whole surrogate pair in an unknown field": text.replace("{", `{"n":"${backslash}ud83d${backslash}ude00",`),
+    "half a surrogate pair in a device name": text.replace('"name":"', `"name":"${backslash}ud83d`),
+    "an escaped null character in a device name": text.replace('"name":"', `"name":"${backslash}u0000`),
+    "a raw tab in a device name": text.replace('"name":"', '"name":"\t'),
+    "a byte that is not UTF-8 in a device name": Buffer.from(text.replace('"name":"', '"name":"\u0000')).map((byte) => (byte === 0 ? 0xff : byte)),
+    "a byte that is not UTF-8 in an unknown field": Buffer.from(text.replace("{", '{"n":"\u0000",')).map((byte) => (byte === 0 ? 0xff : byte)),
+    ...Object.fromEntries([1, 126, 127, 128, 200].map((depth) => [`an unknown field nested ${depth} deep`, text.replace("{", `{"deep":${"[".repeat(depth)}${"]".repeat(depth)},`)])),
+    ...Object.fromEntries(
+      [80, 81].flatMap((bytes) => [[1, 0x6e], [2, 0xe9], [4, 0x1f4bb]].map(([width, point]) => [
+        `a device name of ${Math.floor(bytes / width)} characters of ${width} bytes and ${bytes % width} letters`,
+        named(String.fromCodePoint(point).repeat(Math.floor(bytes / width)) + "n".repeat(bytes % width)),
+      ])),
+    ),
+    "a device name Go would escape": named(`<a & b>${String.fromCodePoint(0x2028)}`),
+    "no device name": named(""),
+  };
+  for (const [what, bytes] of Object.entries(TEXTS)) request(`request: ${what}`, bytes);
+  // Around the size the hosted service stops at: 4 KiB of payload as text.
+  for (const length of [4092, 4094, 4096, 4098, 4100, 6000]) {
+    const bytes = Math.floor((length * 3) / 4);
+    const padded = text.replace("{", `{"padding":"${"p".repeat(bytes - Buffer.byteLength(text) - 13)}",`);
+    request(`request: a payload of ${b64(Buffer.from(padded)).length} characters`, padded);
+  }
+  for (const kind of KINDS) request(`request signed as ${kind}`, text, requester.sign, kind);
+  for (const [who, key] of Object.entries({ "the root key": A.root, "another device": laptop.sign, "a stranger": keyPair("ed", "stranger") })) request(`request signed by ${who}`, text, key);
+  // The points of small order as the device's key, under the signature that
+  // fits every payload for the identity among them.
+  const field = (1n << 255n) - 19n;
+  const bytesOf = (number) => Buffer.from(number.toString(16).padStart(64, "0"), "hex").reverse();
+  for (const [what, y] of [["the identity", 1n], ["the point of order two", field - 1n], ["a point of order four", 0n], ["the identity past the field's size", field + 1n]]) {
+    for (const top of [0n, 1n]) {
+      const point = b64(bytesOf(y | (top << 255n)));
+      for (let n = 0; n < 4; n++) {
+        add(`request in the name of ${what}${top ? " with the sign bit" : ""}, payload ${n}`, { t: "request", payload: b64(JSON.stringify({ ...REQUEST, sign: point, created: REQUEST.created + n })), signature: b64(Buffer.concat([bytesOf(1n), Buffer.alloc(32)])) });
+      }
+    }
+  }
+  const good = signBytes("request", Buffer.from(text), requester.sign);
+  for (const field of ["payload", "signature"]) {
+    for (let at = 0; at < good[field].length; at += field === "payload" ? 3 : 1) {
+      add(`request: ${field} character ${at} changed`, { t: "request", ...good, [field]: good[field].slice(0, at) + (good[field][at] === "A" ? "B" : "A") + good[field].slice(at + 1) });
+    }
+    for (const [what, value] of SPELLINGS(good[field])) add(`request: ${field} ${what}`, { t: "request", ...good, [field]: value });
+  }
+}
+
 /* ------------------------------------------------------- implementations */
 
 const selected = filter ? cases.filter((item) => item.name.includes(filter)) : cases;
@@ -472,18 +660,34 @@ async function judgeJs(item) {
       await viewer.verify(item.kind, { payload: item.payload, signature: item.signature }, item.public);
       return { verdict: "verified" };
     }
+    if (item.t === "box") {
+      return { verdict: "opens", plaintext: Buffer.from(await viewer.unseal(new Uint8Array(unb64(item.key)), item.box, item.context)).toString("base64") };
+    }
+    if (item.t === "wrapper") {
+      const key = await viewer.unwrap(await viewer.privateKey("X25519", new Uint8Array(unb64(item.private))), item.public, item.wrapper, item.context);
+      return { verdict: "opens", plaintext: Buffer.from(key).toString("base64") };
+    }
+    if (item.t === "request") {
+      // What the viewer does with a pending request before it looks at the
+      // account, the root key and the time.
+      const request = viewer.unpack(item);
+      await viewer.verify("request", item, request.sign);
+      return { verdict: "verified", state: { id: await viewer.deviceID(request.sign, request.box), account: request.account, root: request.root, name: request.name, created: request.created, code: await viewer.confirmation(item) } };
+    }
     const { state, head, vault } = item.vault ? await viewer.verifyRecord({ events: item.events, vault: item.vault }, item.account) : await viewer.verifyHistory(item.events, item.account);
     return { verdict: "valid", state: read(state, head, vault) };
   } catch (error) {
-    return refusal(item.t === "history" ? "invalid" : "refused", error);
+    // A library's own error can have no message, and it is still a refusal.
+    return refusal(item.t === "history" ? "invalid" : "refused", error?.message || error?.name || error || "refused");
   }
 }
 
 // The hosted service's own verifier. It has no envelope code: it stores
-// ciphertext and never opens it.
+// ciphertext and never opens it, and it takes a device request only into an
+// account's store.
 const server = serverDir ? await import(pathToFileURL(path.resolve(serverDir, "lib/identity-store.mjs")).href) : null;
 function judgeServer(item) {
-  if (item.t === "envelope") return null;
+  if (item.t !== "statement" && item.t !== "history") return null;
   try {
     if (item.t === "statement") {
       server.verifySigned({ payload: item.payload, signature: item.signature }, item.kind, item.public);
@@ -563,11 +767,11 @@ try {
 
 const accepts = (side) => side.verdict === "valid" || side.verdict === "verified" || side.verdict === "opens";
 const payloadOf = (result) => {
-  const last = result.vault ?? result.events?.at(-1);
+  const last = result.vault ?? result.events?.at(-1) ?? (result.t === "request" ? result : undefined);
   return last ? Buffer.from(last.payload ?? "", "base64url") : Buffer.alloc(0);
 };
 const text = (result) => payloadOf(result).toString("latin1");
-const FIELDS = ["inbox", "account", "seq", "prev", "kind", "signer", "root", "recovery", "recovery_box", "recovery_wrap", "epoch", "devices", "id", "name", "sign", "box", "wrap", "revision", "head", "data"];
+const FIELDS = ["inbox", "account", "seq", "prev", "kind", "signer", "root", "recovery", "recovery_box", "recovery_wrap", "epoch", "devices", "id", "name", "sign", "box", "wrap", "revision", "head", "data", "nonce", "created"];
 const fold = (key) => [...key].map((c) => (c === String.fromCodePoint(0x17f) ? "s" : c === String.fromCodePoint(0x212a) ? "k" : c.toLowerCase())).join("");
 /** Field names in the payload that are a known field in another case. */
 function folded(result) {
@@ -630,8 +834,23 @@ function repeats(result) {
   }
   return found;
 }
-const LIMIT = { event: 32 * 1024, vault: 8 * 1024 * 1024 };
-const tooLong = (result) => (result.events ?? []).some((event) => event.payload.length > LIMIT.event) || (result.vault?.payload.length ?? 0) > LIMIT.vault;
+const LIMIT = { event: 32 * 1024, vault: 8 * 1024 * 1024, request: 4096 };
+const tooLong = (result) =>
+  (result.events ?? []).some((event) => event.payload.length > LIMIT.event) || (result.vault?.payload.length ?? 0) > LIMIT.vault || (result.t === "request" && result.payload.length > LIMIT.request);
+/** Rust read the payload and found it is not a statement of its kind. */
+const unread = (rust) => rust.rule === "payload" || rust.rule === "request";
+const canonicalKey = (text, length) => typeof text === "string" && /^[A-Za-z0-9_-]*$/.test(text) && Buffer.from(text, "base64url").length === length && b64(Buffer.from(text, "base64url")) === text;
+/**
+ * Whether the hosted service would store a request of this shape, whoever it
+ * is for and whenever it was made: lib/identity-store.mjs in the server's
+ * repository, said again here.
+ */
+const storable = (value) =>
+  !!value && typeof value === "object" && !Array.isArray(value) &&
+  typeof value.account === "string" && canonicalKey(value.root, 32) &&
+  typeof value.name === "string" && value.name.isWellFormed() && Buffer.byteLength(value.name) <= 80 &&
+  Number.isSafeInteger(value.created) && value.created >= 0 &&
+  canonicalKey(value.sign, 32) && canonicalKey(value.box, 32) && canonicalKey(value.nonce, 24);
 
 // Known differences, each decided and pinned by a case in
 // testdata/protocol/histories.json. `when` sees one result whose verdicts
@@ -639,19 +858,23 @@ const tooLong = (result) => (result.events ?? []).some((event) => event.payload.
 const explained = [
   {
     name: "a field's name in another case: Go takes it for the field; JavaScript does not, and Rust refuses the payload",
-    when: (result) => folded(result) && result.rust.rule === "payload",
+    when: (result) => folded(result) && unread(result.rust),
   },
   {
     name: "a field given twice: JavaScript and Go take the last, or for Go the one before a null; Rust refuses the payload",
-    when: (result) => repeats(result) && result.rust.rule === "payload",
+    when: (result) => repeats(result) && unread(result.rust),
   },
   {
     name: "a field that is null or left out: Go reads it as empty or zero; JavaScript and Rust need it",
     when: (result) => accepts(result.go) && !accepts(result.js) && result.rust.rule === "payload" && lacks(result),
   },
   {
+    name: "a device request the hosted service would not store: Go and the viewer leave its shape to the service; Rust keeps the service's rule",
+    when: (result) => result.t === "request" && result.rust.rule === "request" && (accepts(result.js) || accepts(result.go)) && !storable(parsed(result)),
+  },
+  {
     name: "a count not written as a whole number (1.0, 1e0, 10e-1): JavaScript reads the number; Go and Rust refuse",
-    when: ({ js, go, rust, name }) => accepts(js) && !accepts(go) && rust.rule === "payload" && / written /.test(name),
+    when: ({ js, go, rust, name }) => accepts(js) && !accepts(go) && unread(rust) && / written /.test(name),
   },
   {
     name: "a count of -0: JavaScript and Go read zero; Rust refuses",
@@ -671,11 +894,11 @@ const explained = [
   },
   {
     name: "a byte-order mark before the payload: the viewer drops it; Go, Rust and the hosted service refuse",
-    when: ({ js, go, rust, name }) => accepts(js) && !accepts(go) && rust.rule === "payload" && /a byte-order mark first$/.test(name),
+    when: ({ js, go, rust, name }) => accepts(js) && !accepts(go) && unread(rust) && /a byte-order mark first$/.test(name),
   },
   {
     name: "bytes that are not UTF-8: Go reads U+FFFD; the viewer and Rust refuse",
-    when: ({ js, go, rust, name }) => accepts(go) && !accepts(js) && rust.rule === "payload" && /not UTF-8|overlong|surrogate encoded/.test(name),
+    when: ({ js, go, rust, name }) => accepts(go) && !accepts(js) && unread(rust) && /not UTF-8|overlong|surrogate encoded/.test(name),
   },
   {
     name: "half a surrogate pair in a device name: Go reads U+FFFD; the viewer refuses the name and Rust the escape",
@@ -683,15 +906,15 @@ const explained = [
   },
   {
     name: "half a surrogate pair as an escape: JavaScript and Go read it; Rust refuses the payload",
-    when: ({ js, go, rust, name }) => accepts(js) && accepts(go) && rust.rule === "payload" && /surrogate pair/.test(name),
+    when: ({ js, go, rust, name }) => accepts(js) && accepts(go) && unread(rust) && /surrogate pair/.test(name),
   },
   {
     name: "nesting past 127 levels: Rust refuses the payload",
-    when: ({ js, go, rust, name }) => accepts(js) && accepts(go) && rust.rule === "payload" && /nested \d+ deep/.test(name),
+    when: ({ js, go, rust, name }) => accepts(js) && accepts(go) && unread(rust) && /nested \d+ deep/.test(name),
   },
   {
     name: "a number too large for a double in a field no verifier reads: Rust refuses the payload",
-    when: ({ js, go, rust, name }) => accepts(js) && accepts(go) && rust.rule === "payload" && /too large for a double/.test(name),
+    when: ({ js, go, rust, name }) => accepts(js) && accepts(go) && unread(rust) && /too large for a double/.test(name),
   },
   {
     name: "a statement longer than the hosted service stores: Rust keeps the service's limit; Go and the viewer have none",
@@ -732,6 +955,22 @@ for (const result of results) {
 const verdicts = ({ js, go, rust, server: hosted }) =>
   `js ${js.verdict}, go ${go.verdict}, rust ${rust.verdict}${rust.rule ? ` (${rust.rule})` : ""}${hosted ? `, server ${hosted.verdict}` : ""}`;
 console.log(`${results.length} cases: ${agreed} judged alike by JavaScript, Go and Rust`);
+// A helper that refused everything would agree with the others on every case
+// that is wrong, which is most of them. Each kind of case must have some
+// that all three accept.
+const kinds = new Map();
+for (const result of results) {
+  const count = kinds.get(result.t) ?? { all: 0, accepted: 0 };
+  count.all++;
+  if (accepts(result.js) && accepts(result.go) && accepts(result.rust)) count.accepted++;
+  kinds.set(result.t, count);
+}
+console.log(`  accepted by all three: ${[...kinds].map(([kind, count]) => `${count.accepted} of ${count.all} ${kind} cases`).join(", ")}`);
+const idle = [...kinds].filter(([, count]) => !filter && count.accepted === 0).map(([kind]) => kind);
+if (idle.length) {
+  console.error(`no ${idle.join(" or ")} case is accepted by all three; a helper is not judging them`);
+  process.exit(1);
+}
 for (const [name, count] of counts) if (count) console.log(`  ${String(count).padStart(5)}  ${name}`);
 if (list) {
   for (const result of results) {

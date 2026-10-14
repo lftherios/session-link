@@ -142,10 +142,12 @@ touches before finishing.
   caches test results across fixture edits, so use `go test -count=1`.
 - `testdata/protocol` holds the envelopes, signed statements, device histories
   and vault records that the viewer, Go and Rust verifiers must all judge
-  alike. The files are generated, because a case needs signatures: a change to
-  a rule in any of the three adds its case to `scripts/protocol-cases.mjs`,
-  which is then run with `--update`. `docs/rust-protocol.md` has the
-  differences that are recorded on purpose; in each of them Rust refuses.
+  alike, and the boxes, key wrappers, device requests, recovery keys and
+  named shares they must all open alike. The files are generated, because a case needs
+  signatures: a change to a rule in any of the three adds its case to
+  `scripts/protocol-cases.mjs`, which is then run with `--update`.
+  `docs/rust-protocol.md` has the differences that are recorded on purpose; in
+  each of them Rust refuses.
 - The `slink help` text in `go/cmd/slink/help.go` is the CLI spec. Keep its
   `commands` list in sync with the switch in `dispatch()` in `main.go`.
 - `testdata/compat/cli.json` is the command, flag and environment-variable

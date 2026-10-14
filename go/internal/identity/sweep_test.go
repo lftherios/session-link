@@ -65,13 +65,28 @@ type sweepCase struct {
 	Account   string
 	Events    []Signed
 	Vault     *Signed
+	Box       string
+	Context   string
+	Private   string
+	Wrapper   string
 }
 
 type sweepVerdict struct {
-	Verdict   string   `json:"verdict"`
-	Error     string   `json:"error,omitempty"`
-	Plaintext string   `json:"plaintext,omitempty"`
-	State     *summary `json:"state,omitempty"`
+	Verdict   string `json:"verdict"`
+	Error     string `json:"error,omitempty"`
+	Plaintext string `json:"plaintext,omitempty"`
+	// A history's summary, or what a request says.
+	State any `json:"state,omitempty"`
+}
+
+// sweepRequest is what a reader takes from a device request it verified.
+type sweepRequest struct {
+	ID      string `json:"id"`
+	Account string `json:"account"`
+	Root    string `json:"root"`
+	Name    string `json:"name"`
+	Created int64  `json:"created"`
+	Code    string `json:"code"`
 }
 
 func (c sweepCase) judge() sweepVerdict {
@@ -91,6 +106,38 @@ func (c sweepCase) judge() sweepVerdict {
 			return refused("refused", err)
 		}
 		return sweepVerdict{Verdict: "verified"}
+	case "box":
+		key, err := decode(c.Key, 32)
+		if err != nil {
+			return refused("refused", err)
+		}
+		plain, err := unseal(key, c.Box, c.Context)
+		if err != nil {
+			return refused("refused", err)
+		}
+		return sweepVerdict{Verdict: "opens", Plaintext: base64.StdEncoding.EncodeToString(plain)}
+	case "wrapper":
+		private, err := decode(c.Private, 32)
+		if err != nil {
+			return refused("refused", err)
+		}
+		key, err := unwrap(private, c.Wrapper, c.Context)
+		if err != nil {
+			return refused("refused", err)
+		}
+		return sweepVerdict{Verdict: "opens", Plaintext: base64.StdEncoding.EncodeToString(key)}
+	case "request":
+		// What handle does with a pending request before it looks at the
+		// account, the root key and the time.
+		signed := Signed{Payload: c.Payload, Signature: c.Signature}
+		var request Request
+		if err := signed.read(&request); err != nil {
+			return refused("refused", err)
+		}
+		if err := signed.verify("request", request.Sign); err != nil {
+			return refused("refused", err)
+		}
+		return sweepVerdict{Verdict: "verified", State: sweepRequest{request.id(), request.Account, request.Root, request.Name, request.Created, confirmation(signed)}}
 	}
 	var state State
 	var vault Vault

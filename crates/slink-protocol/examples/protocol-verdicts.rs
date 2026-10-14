@@ -1,14 +1,18 @@
 //! The Rust side of `scripts/protocol-diff.mjs`. Each line on stdin is one
 //! case as JSON: an envelope and a key, a signed statement and a public key,
-//! or a history with or without its vault. Each line on stdout is what this
-//! crate makes of it.
+//! a box, a key wrapper, a device request, or a history with or without its
+//! vault. Each line on stdout is what this crate makes of it.
 
 use std::io::{self, BufRead, Write};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
-use slink_protocol::{Error, Kind, Record, Signed, State, envelope, verify_history, verify_record};
+use slink_protocol::encoding::decode_exact;
+use slink_protocol::{
+    AgreementKey, Error, Kind, Record, Request, Signed, State, confirmation, envelope, unseal,
+    unwrap, verify_history, verify_record,
+};
 
 fn main() -> io::Result<()> {
     let mut out = io::BufWriter::new(io::stdout().lock());
@@ -38,6 +42,42 @@ fn judge(case: &Value) -> Value {
             match verified {
                 Ok(()) => json!({ "verdict": "verified" }),
                 Err(error) => json!({ "verdict": "refused", "error": error.to_string() }),
+            }
+        }
+        "box" => {
+            let opened = decode_exact(text("key"))
+                .and_then(|key| unseal(&key, text("box"), text("context")));
+            match opened {
+                Ok(plain) => json!({ "verdict": "opens", "plaintext": STANDARD.encode(plain) }),
+                Err(error) => json!({ "verdict": "refused", "error": error.to_string() }),
+            }
+        }
+        "wrapper" => {
+            let opened = decode_exact(text("private")).and_then(|private| {
+                let private = AgreementKey::from_bytes(private);
+                unwrap(&private, text("wrapper"), text("context"))
+            });
+            match opened {
+                Ok(key) => json!({ "verdict": "opens", "plaintext": STANDARD.encode(key) }),
+                Err(error) => json!({ "verdict": "refused", "error": error.to_string() }),
+            }
+        }
+        "request" => {
+            let statement = signed(case);
+            let verified = Request::verify(&statement)
+                .and_then(|request| Ok((confirmation(&statement)?, request)));
+            match verified {
+                Ok((code, request)) => json!({ "verdict": "verified", "state": {
+                    "id": request.id(),
+                    "account": request.account,
+                    "root": request.root,
+                    "name": request.name,
+                    "created": request.created,
+                    "code": code,
+                } }),
+                Err(error) => {
+                    json!({ "verdict": "refused", "rule": rule(error), "error": error.to_string() })
+                }
             }
         }
         _ => {
@@ -101,5 +141,9 @@ fn rule(error: Error) -> &'static str {
         Error::SigningKey => "key",
         Error::Encoding | Error::TooLarge => "signed",
         Error::Envelope | Error::ContentKey | Error::Decrypt => "envelope",
+        Error::Request => "request",
+        // What a box, a wrapper or a recovery key is refused with; no
+        // history, record or request is.
+        _ => "keys",
     }
 }

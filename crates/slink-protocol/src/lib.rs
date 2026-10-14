@@ -1,31 +1,45 @@
-//! The session.link protocol in Rust, as far as checking goes: the encrypted
-//! document envelope, signed statements, an account's signed device history
-//! and the vault record that hangs off it.
+//! The session.link protocol in Rust: the encrypted document envelope, signed
+//! statements, an account's signed device history and the vault record that
+//! hangs off it, and the keys, boxes and wrappers those are made of.
 //!
 //! Every function here is deterministic and takes its input as untrusted. It
-//! returns what was verified or one [`Error`], and never part of a result.
-//! Nothing here makes a key, a nonce or a signature, reads a clock or touches
-//! the network or the filesystem; those arrive with the client.
+//! returns what was verified or made, or one [`Error`], and never part of a
+//! result. Nothing here reads a random source or a clock, or touches the
+//! network or the filesystem: a function that needs a key, a nonce or the
+//! time is handed it, and the client takes those from the operating system.
 //!
 //! The Go CLI (`go/internal/sealed`, `go/internal/identity`), the viewer
 //! (`packages/viewer`) and the hosted service each have these rules too.
 //! `testdata/protocol` holds the cases all of them are held to.
 
 mod crypto;
-mod encoding;
+pub mod encoding;
 pub mod envelope;
 mod history;
+mod keys;
+mod named;
 mod payload;
 mod record;
+mod recovery;
+mod request;
 mod signed;
+mod wrap;
 
 use std::fmt;
 
 pub use history::{
     Device, History, MAX_DEVICE_NAME, MAX_DEVICES, MAX_EVENTS, Operation, State, verify_history,
 };
+pub use keys::{AgreementKey, SigningKey, device_id};
+pub use named::{
+    Accepted, Claim, Grant, Invitation, Invite, Offer, binding_proof, commitment, named_context,
+    verify_claim,
+};
 pub use record::{MAX_VAULT_DATA, Record, Vault, Verified, verify_record};
+pub use recovery::{Recovery, open_recovery, recovery_token, recovery_token_matches};
+pub use request::{REQUEST_LIFETIME_MS, Request, code_matches, confirmation};
 pub use signed::{Kind, Signed};
+pub use wrap::{seal, unseal, unwrap, wrap};
 
 /// Why something was not accepted. The text is what the Go CLI says.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +63,45 @@ pub enum Error {
     History(Refusal),
     /// The vault broke the rule named.
     Vault(Refusal),
+    /// A document longer than an envelope holds.
+    Plaintext,
+    /// A box that is too short to be one, or that did not open under the key
+    /// and context.
+    Unseal,
+    /// An agreement key of small order, to which nothing can be wrapped.
+    AgreementKey,
+    /// Not a key wrapper: its two halves are not a key and a box of one.
+    Wrapper,
+    /// A wrapper that is not for this key in this context.
+    Unwrap,
+    /// The vault did not open under the vault key for its state.
+    VaultKey,
+    /// A recovery key that is for another account or another identity.
+    RecoveryToken,
+    /// A recovery key that does not open the recovery package.
+    RecoveryKey,
+    /// The recovery package holds keys other than the ones the history names.
+    RecoveryIdentity,
+    /// A device request that is not one, or not signed by the device it is
+    /// for.
+    Request,
+    /// An account with no incoming-share key, to which no share's key can
+    /// be wrapped.
+    Inbox,
+    /// A recipient's claim that cannot be read.
+    Claim,
+    /// A claim without the proof of its invitation's secret, or one made
+    /// for another invitation, share or sender.
+    ClaimProof,
+    /// The recipient's history is another identity's than the claim names,
+    /// or one that does not share.
+    RecipientIdentity,
+    /// The recipient's history does not hold the event the claim was signed
+    /// at.
+    RecipientHistory,
+    /// The claim was not signed by a device its history held then, for the
+    /// incoming-share key it had then.
+    ClaimSigner,
 }
 
 impl fmt::Display for Error {
@@ -63,6 +116,28 @@ impl fmt::Display for Error {
             Error::Signature(kind) => write!(f, "invalid {} signature", kind.as_str()),
             Error::History(_) => f.write_str("invalid signed device history"),
             Error::Vault(_) => f.write_str("invalid signed vault"),
+            Error::Plaintext => f.write_str("session exceeds the 25 MiB limit"),
+            Error::Unseal => f.write_str("cannot unlock encrypted keys"),
+            Error::AgreementKey => f.write_str("invalid encryption key"),
+            Error::Wrapper => f.write_str("invalid key wrapper"),
+            Error::Unwrap => f.write_str("cannot unlock vault key"),
+            Error::VaultKey => f.write_str("cannot decrypt encrypted key vault"),
+            Error::RecoveryToken => {
+                f.write_str("recovery key does not match this account's recovery identity")
+            }
+            Error::RecoveryKey => f.write_str("incorrect recovery key"),
+            Error::RecoveryIdentity => f.write_str("recovery identity verification failed"),
+            Error::Request => f.write_str("invalid device request"),
+            Error::Inbox => f.write_str("incoming-share key is missing"),
+            Error::Claim => f.write_str("invalid recipient identity binding"),
+            Error::ClaimProof => {
+                f.write_str("recipient verification failed; no decryption key was released")
+            }
+            Error::RecipientIdentity => f.write_str("recipient's encryption identity changed"),
+            Error::RecipientHistory => {
+                f.write_str("recipient history conflicts with its invitation")
+            }
+            Error::ClaimSigner => f.write_str("recipient request is not from an approved device"),
         }
     }
 }

@@ -15,6 +15,11 @@ base64 = "0.22"
 ring = "0.17"
 serde = "1"
 serde_json = "1"
+# X25519 with a key that is used more than once, which ring does not offer.
+# Without the precomputed tables: a public key is derived a handful of times.
+x25519-dalek = { version = "3", default-features = false, features = ["static_secrets", "zeroize"] }
+# Clears a private key when it is dropped. Already linked for TLS.
+zeroize = "1"
 
 [lints]
 workspace = true

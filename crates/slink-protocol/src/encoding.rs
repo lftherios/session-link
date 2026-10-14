@@ -8,18 +8,18 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use crate::Error;
 use crate::crypto::sha256;
 
-pub(crate) fn encode(bytes: &[u8]) -> String {
+pub fn encode(bytes: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
 /// The bytes `text` spells. Padding, the `+/` alphabet, white space and bits
 /// left over in the last character are all refused.
-pub(crate) fn decode(text: &str) -> Result<Vec<u8>, Error> {
+pub fn decode(text: &str) -> Result<Vec<u8>, Error> {
     URL_SAFE_NO_PAD.decode(text).map_err(|_| Error::Encoding)
 }
 
 /// The same, for a value of one length: a key, a signature, a hash.
-pub(crate) fn decode_exact<const N: usize>(text: &str) -> Result<[u8; N], Error> {
+pub fn decode_exact<const N: usize>(text: &str) -> Result<[u8; N], Error> {
     // Checked first, so that no hostile length is ever decoded.
     if text.len() != (N * 4).div_ceil(3) {
         return Err(Error::Encoding);
@@ -33,7 +33,7 @@ pub(crate) fn decode_exact<const N: usize>(text: &str) -> Result<[u8; N], Error>
 
 /// SHA-256 as the protocol writes it: the hash of an event, the id of a
 /// device.
-pub(crate) fn digest(bytes: &[u8]) -> String {
+pub fn digest(bytes: &[u8]) -> String {
     encode(&sha256(bytes))
 }
 

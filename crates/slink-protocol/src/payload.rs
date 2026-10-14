@@ -1,9 +1,10 @@
-//! Reading a signed payload's JSON. A payload is read only where the Go CLI
-//! and the JavaScript verifiers would read the same thing from it: a field is
-//! taken by its exact name and in its exact type, nothing is filled in, and
-//! no object says a thing twice.
+//! A signed payload's JSON. A payload is read only where the Go CLI and the
+//! JavaScript verifiers would read the same thing from it: a field is taken
+//! by its exact name and in its exact type, nothing is filled in, and no
+//! object says a thing twice. One is written as the Go CLI writes it, byte
+//! for byte.
 
-use std::fmt;
+use std::fmt::{self, Write as _};
 
 use serde::de::{Deserialize, Deserializer, Error, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Number, Value};
@@ -136,6 +137,82 @@ impl<'a> Fields<'a> {
     }
 }
 
+/// A JSON object being written: its fields in the order they are given, with
+/// nothing between them, and text escaped as Go's `encoding/json` escapes it.
+/// A statement is signed as bytes, so no reader depends on the spelling; it
+/// is Go's so that the two clients write one statement the same way.
+pub(crate) struct Object(String);
+
+impl Object {
+    pub(crate) fn new() -> Object {
+        Object(String::from("{"))
+    }
+
+    fn name(&mut self, name: &str) {
+        if self.0.len() > 1 {
+            self.0.push(',');
+        }
+        write_text(&mut self.0, name);
+        self.0.push(':');
+    }
+
+    pub(crate) fn text(mut self, name: &str, value: &str) -> Object {
+        self.name(name);
+        write_text(&mut self.0, value);
+        self
+    }
+
+    pub(crate) fn count(mut self, name: &str, value: u64) -> Object {
+        self.name(name);
+        write!(self.0, "{value}").expect("writing to a string");
+        self
+    }
+
+    /// A field whose value is JSON already: an object, or a list of them.
+    pub(crate) fn json(mut self, name: &str, value: &str) -> Object {
+        self.name(name);
+        self.0.push_str(value);
+        self
+    }
+
+    pub(crate) fn finish(mut self) -> String {
+        self.0.push('}');
+        self.0
+    }
+}
+
+/// A list of values that are JSON already.
+pub(crate) fn list(items: impl IntoIterator<Item = String>) -> String {
+    let items: Vec<String> = items.into_iter().collect();
+    format!("[{}]", items.join(","))
+}
+
+/// Text as Go writes a JSON string: the short escapes it has, `\u00xx` for
+/// the other control characters, and the same for `<`, `>`, `&` and the two
+/// line separators, which Go escapes for the sake of HTML.
+fn write_text(out: &mut String, text: &str) {
+    out.push('"');
+    for character in text.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '<' | '>' | '&' | '\u{2028}' | '\u{2029}' => {
+                write!(out, "\\u{:04x}", character as u32).expect("writing to a string");
+            }
+            control if (control as u32) < 0x20 => {
+                write!(out, "\\u{:04x}", control as u32).expect("writing to a string");
+            }
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+}
+
 /// How Go's `encoding/json` folds a key before matching it to a field: ASCII
 /// case, and the two other characters whose simple case folding is an ASCII
 /// letter.
@@ -225,6 +302,34 @@ mod tests {
             let fields = Fields::of(&value, NAMES).unwrap();
             assert_eq!(fields.integer("seq"), want, "{text}");
         }
+    }
+
+    #[test]
+    fn an_object_is_written_as_go_writes_it() {
+        let inner = Object::new().text("id", "a").finish();
+        let text = Object::new()
+            .text(
+                "name",
+                "a\"b\\c\u{1}\u{8}\u{c}\n\r\t<>&\u{2028}\u{2029}\u{7f}\u{e9}\u{1f4bb}",
+            )
+            .count("seq", 0)
+            .count("epoch", (1 << 53) - 1)
+            .json("devices", &list([inner.clone(), inner]))
+            .json("none", &list([]))
+            .finish();
+        assert_eq!(
+            text,
+            "{\"name\":\"a\\\"b\\\\c\\u0001\\b\\f\\n\\r\\t\\u003c\\u003e\\u0026\\u2028\\u2029\u{7f}\u{e9}\u{1f4bb}\",\
+             \"seq\":0,\"epoch\":9007199254740991,\
+             \"devices\":[{\"id\":\"a\"},{\"id\":\"a\"}],\"none\":[]}"
+        );
+        assert_eq!(Object::new().finish(), "{}");
+        // What is written reads back as what was given.
+        let value = parse(text.as_bytes()).unwrap();
+        assert_eq!(
+            value["name"],
+            "a\"b\\c\u{1}\u{8}\u{c}\n\r\t<>&\u{2028}\u{2029}\u{7f}\u{e9}\u{1f4bb}"
+        );
     }
 
     #[test]

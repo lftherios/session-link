@@ -2,7 +2,9 @@
 /**
  * Writes the protocol cases in testdata/protocol: the envelopes, signed
  * statements, device histories and vault records that the Go CLI, the viewer
- * and the Rust crate must all judge alike (testdata/protocol/README.md).
+ * and the Rust crate must all judge alike, and the boxes, wrappers, device
+ * requests and recovery keys they must all open alike
+ * (testdata/protocol/README.md).
  *
  *   node scripts/protocol-cases.mjs --check    the files are what this writes
  *   node scripts/protocol-cases.mjs --update   write them
@@ -21,6 +23,7 @@
 import {
   createCipheriv,
   createHash,
+  createHmac,
   createPrivateKey,
   createPublicKey,
   diffieHellman,
@@ -104,6 +107,9 @@ export function envelope(plain, label, header = {}) {
 
 /* -------------------------------------------------------------- accounts */
 
+/** What a vault holds before anything is shared. */
+const EMPTY_VAULT = Buffer.from(JSON.stringify({ version: 1, shares: [] }));
+
 // Go writes a state's fields in this order, with `inbox` first when there is
 // one. The order is not a rule; it is only what a real event looks like.
 const ordered = ({ inbox, ...rest }) => (inbox === undefined ? rest : { inbox, ...rest });
@@ -136,7 +142,11 @@ export function account(name = "usr_fixture") {
     wrap: wrap(d.box.public, vaultKey(epoch), context(epoch), `${name}/${d.label}/${epoch}`),
   });
   const recoveryWrap = (epoch) => wrap(recovery.public, vaultKey(epoch), context(epoch), `${name}/recovery/${epoch}`);
-  const inbox = (label) => keyPair("x", `${name}/inbox/${label}`).public;
+  const recoverySecret = material(`${name}/recovery secret`);
+  /** The recovery key a person holds for this account. */
+  const recoveryKey = `slr1.${digest(`${name}\0${rootKey.public}`)}.${b64(recoverySecret)}`;
+  const inboxKey = (label) => keyPair("x", `${name}/inbox/${label}`);
+  const inbox = (label) => inboxKey(label).public;
   const keyOf = (signer) => (signer === "root" ? rootKey : known.get(signer).sign);
 
   const chain = (states, events) => ({ states, events, state: states.at(-1), head: hash(events.at(-1)) });
@@ -150,7 +160,7 @@ export function account(name = "usr_fixture") {
       root: rootKey.public,
       recovery: recovery.public,
       recovery_box: seal(
-        material(`${name}/recovery secret`),
+        recoverySecret,
         Buffer.concat([rootKey.seed, recovery.seed]),
         `slink/recovery/v1/${name}/${rootKey.public}`,
         `${name}/recovery box`,
@@ -198,7 +208,7 @@ export function account(name = "usr_fixture") {
     return [...c.events.slice(0, -1), event];
   };
   /** The vault statement a client writes for the chain's last state. */
-  const vault = (c, by, revision = 1, change = (value) => value, { key, kind = "vault" } = {}) => {
+  const vault = (c, by, revision = 1, change = (value) => value, { key, kind = "vault", contents = EMPTY_VAULT } = {}) => {
     const epoch = c.state.epoch;
     const value = change({
       account: name,
@@ -206,17 +216,12 @@ export function account(name = "usr_fixture") {
       head: c.head,
       epoch,
       signer: by === "root" ? "root" : by.id,
-      data: seal(
-        vaultKey(epoch),
-        Buffer.from(JSON.stringify({ version: 1, shares: [] })),
-        `slink/vault/v1/${context(epoch)}`,
-        `${name}/vault/${epoch}/${revision}`,
-      ),
+      data: seal(vaultKey(epoch), contents, `slink/vault/v1/${context(epoch)}`, `${name}/vault/${epoch}/${revision}`),
     });
     const signer = key ?? (by === "root" ? rootKey : by.sign);
     return Buffer.isBuffer(value) ? signBytes(kind, value, signer) : sign(kind, value, signer);
   };
-  return { name, root: rootKey, recovery, vaultKey, context, device, entry, recoveryWrap, inbox, keyOf, init, extend, approve, recover, sharing, revoke, amend, vault };
+  return { name, root: rootKey, recovery, recoverySecret, recoveryKey, vaultKey, context, device, entry, recoveryWrap, inbox, inboxKey, keyOf, init, extend, approve, recover, sharing, revoke, amend, vault };
 }
 
 /** What a verifier must report of a history it accepts. */
@@ -472,7 +477,10 @@ function collector() {
     cases,
     /** A chain every implementation accepts, and the state it must report. */
     valid(name, c, { vault, revision, account: of } = {}) {
-      push({ name, account: of ?? c.state.account, events: c.events.map(ref), ...record(vault), expect: "valid", state: { ...summary(c), ...(vault ? { revision } : {}) } });
+      // Spelt as a client spells it, in every statement: the Go CLI and the
+      // Rust crate must then write the same bytes for what they read.
+      const client = c.events.every((event) => asWritten(event, writtenState)) && (!vault || asWritten(vault, writtenVault));
+      push({ name, account: of ?? c.state.account, events: c.events.map(ref), ...record(vault), expect: "valid", ...(client ? { client } : {}), state: { ...summary(c), ...(vault ? { revision } : {}) } });
     },
     /** Events every implementation refuses; `rule` is what the Rust crate names. */
     invalid(name, rule, events, { vault, account: of = "usr_fixture" } = {}) {
@@ -1003,6 +1011,533 @@ function historyCases() {
   return { signed: out.signed, cases: out.cases };
 }
 
+/* ------------------------------------------------------------------ keys */
+
+const backslashed = (c) => `${String.fromCharCode(0x5c)}u${c.charCodeAt(0).toString(16).padStart(4, "0")}`;
+/**
+ * JSON as the Go CLI writes it: what JSON.stringify writes, with the five
+ * characters Go also escapes, for the sake of HTML.
+ */
+const HTML_ESCAPED = new RegExp(`[<>&${String.fromCodePoint(0x2028)}${String.fromCodePoint(0x2029)}]`, "g");
+export const goJSON = (value) => JSON.stringify(value).replace(HTML_ESCAPED, backslashed);
+/** A state as the Go CLI writes it: the incoming-share key first when there is one. */
+export const writtenState = (s) =>
+  goJSON({
+    ...(s.inbox ? { inbox: s.inbox } : {}),
+    account: s.account,
+    seq: s.seq,
+    prev: s.prev,
+    kind: s.kind,
+    signer: s.signer,
+    root: s.root,
+    recovery: s.recovery,
+    recovery_box: s.recovery_box,
+    recovery_wrap: s.recovery_wrap,
+    epoch: s.epoch,
+    devices: s.devices.map((d) => ({ id: d.id, name: d.name, sign: d.sign, box: d.box, wrap: d.wrap })),
+  });
+export const writtenVault = (v) => goJSON({ account: v.account, revision: v.revision, head: v.head, epoch: v.epoch, signer: v.signer, data: v.data });
+export const writtenRequest = (r) => goJSON({ account: r.account, root: r.root, name: r.name, sign: r.sign, box: r.box, nonce: r.nonce, created: r.created });
+/** Whether a statement's payload is, byte for byte, what a client writes for the value it holds. */
+const asWritten = (signed, write) => {
+  const raw = unb64(signed.payload);
+  try {
+    return raw.equals(Buffer.from(write(JSON.parse(raw.toString()))));
+  } catch {
+    return false;
+  }
+};
+
+const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+/** The code a device request is confirmed with: sixty bits of its hash. */
+export function confirmation(signed) {
+  const bits = Array.from(createHash("sha256").update(unb64(signed.payload)).digest().subarray(0, 8), (byte) => byte.toString(2).padStart(8, "0")).join("");
+  const code = Array.from({ length: 12 }, (_, i) => BASE32[parseInt(bits.slice(i * 5, i * 5 + 5), 2)]).join("");
+  return `${code.slice(0, 4)}-${code.slice(4, 8)}-${code.slice(8)}`;
+}
+
+const le32 = (hex) => Buffer.from(hex, "hex");
+const FIELD_SIZE = "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f";
+/**
+ * The X25519 points of small order, by the seven numbers that spell them.
+ * Whatever private key meets one, the two agree on 32 zero bytes, so a
+ * wrapper under one can be made by anyone and opened by anyone.
+ */
+const SMALL_POINTS = [
+  ["zero", "00".repeat(32)],
+  ["one", `01${"00".repeat(31)}`],
+  ["a point of order eight", "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800"],
+  ["the other point of order eight", "5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157"],
+  ["one less than the field's size", `ec${"ff".repeat(30)}7f`],
+  ["the field's size", FIELD_SIZE],
+  ["one more than the field's size", `ee${"ff".repeat(30)}7f`],
+].map(([name, hex]) => [name, le32(hex)]);
+
+/** A wrapper under a one-time public key given as bytes, sealed under what `secret` derives. */
+function wrapperUnder(ephemeralPublic, secret, recipient, key, context, label) {
+  const info = `slink/wrap/v1/${context}/${b64(ephemeralPublic)}/${recipient}`;
+  const derived = Buffer.from(hkdfSync("sha256", secret, Buffer.alloc(0), info, 32));
+  return `${b64(ephemeralPublic)}.${seal(derived, key, info, label)}`;
+}
+
+function keyCases() {
+  const named = (list) => (item) => {
+    if (list.some((other) => other.name === item.name)) throw new Error(`two cases are named ${item.name}`);
+    list.push(item);
+  };
+  const std = (bytes) => Buffer.from(bytes).toString("base64");
+  const flipped = (text, at) => {
+    const raw = unb64(text);
+    raw[at < 0 ? raw.length + at : at] ^= 1;
+    return b64(raw);
+  };
+
+  /* Boxes: bytes under a key, bound to a context. */
+  const boxes = [];
+  {
+    const add = named(boxes);
+    const key = material("box/key");
+    const context = "slink/vault/v1/usr_fixture/root/1";
+    const opens = (name, plain, context, label) => add({ name, key: b64(key), context, box: seal(key, plain, context, label), expect: "opens", plaintext: std(plain) });
+    const refused = (name, box, change = {}) => add({ name, key: b64(key), context, box, expect: "refused", ...change });
+    opens("a box", EMPTY_VAULT, context, "box/plain");
+    opens("a box of nothing", Buffer.alloc(0), context, "box/nothing");
+    opens("a box of one byte", Buffer.from([0]), context, "box/one byte");
+    opens("a box of 64 bytes that are not text", material("box/bytes", 64), context, "box/bytes");
+    opens("a box with no context", EMPTY_VAULT, "", "box/no context");
+    opens("a box whose context is not ASCII", EMPTY_VAULT, `usr_${String.fromCodePoint(0xe9)}/${String.fromCodePoint(0x1f4bb)}`, "box/unicode");
+    const good = boxes[0].box;
+    const size = unb64(good).length;
+    for (const [where, at] of [["the nonce's first byte", 0], ["the nonce's last byte", 11], ["the first byte after the nonce", 12], ["the last byte before the tag", -17], ["the tag's first byte", -16], ["the tag's last byte", -1]]) {
+      refused(`one bit changed in ${where}`, flipped(good, at));
+    }
+    refused("another key", good, { key: b64(material("box/other key")) });
+    refused("a context one character longer", good, { context: `${context}0` });
+    refused("a context one character shorter", good, { context: context.slice(0, -1) });
+    refused("a context in capitals", good, { context: context.toUpperCase() });
+    refused("no context where there was one", good, { context: "" });
+    refused("a context where there was none", boxes[4].box);
+    refused("the last byte missing", b64(unb64(good).subarray(0, size - 1)));
+    refused("one byte added", b64(Buffer.concat([unb64(good), Buffer.from([0])])));
+    refused("a nonce and a tag with nothing between, from a box that held something", b64(Buffer.concat([unb64(good).subarray(0, 12), unb64(good).subarray(-16)])));
+    refused("one byte short of a nonce and a tag", b64(unb64(boxes[1].box).subarray(0, 27)));
+    refused("a nonce alone", b64(unb64(good).subarray(0, 12)));
+    refused("nothing", "");
+    if (!/[-_]/.test(good) || good.length % 4 === 0) throw new Error("the box lost a character the two alphabets differ on, or its odd length");
+    refused("a box with padding", `${good}=`);
+    refused("a box in the other base64 alphabet", otherAlphabet(good));
+    refused("a box with stray bits in its last character", strayBits(good));
+    refused("a box that ends with a line break", `${good}\n`);
+    refused("a box with a space in it", `${good.slice(0, 8)} ${good.slice(8)}`);
+  }
+
+  /* Wrappers: a key in a box only one X25519 key opens. */
+  const wrappers = [];
+  const recipients = [];
+  const A = account("usr_fixture");
+  {
+    const add = named(wrappers);
+    const recipient = keyPair("x", "wrapper/recipient");
+    const other = keyPair("x", "wrapper/other");
+    const key = material("wrapper/key");
+    const context = A.context(1);
+    const base = { private: b64(recipient.seed), public: recipient.public, context };
+    /** One made the way a client makes it, with the one-time key it used. */
+    const made = (name, label, to = recipient, context = base.context, wrapped = key) =>
+      add({ name, private: b64(to.seed), public: to.public, context, wrapper: wrap(to.public, wrapped, context, label), expect: "opens", key: b64(wrapped), ephemeral: b64(keyPair("x", `ephemeral/${label}`).seed) });
+    made("a wrapper", "wrapper/plain");
+    made("a wrapper to another key", "wrapper/other", other);
+    made("a wrapper at the next epoch", "wrapper/epoch", recipient, A.context(2));
+    made("a wrapper for a share's key", "wrapper/named", recipient, `named/${"ab".repeat(32)}/usr_fixture/${A.root.public}/3`);
+    made("a wrapper with no context", "wrapper/no context", recipient, "");
+    made("a wrapper of a key of zeros", "wrapper/zeros", recipient, context, Buffer.alloc(32));
+    const good = wrappers[0].wrapper;
+    const [half, box] = good.split(".");
+    const refused = (name, wrapper, change = {}) => add({ name, ...base, wrapper, expect: "refused", ...change });
+
+    // The same point spelt two other ways. Every library reads both as the
+    // point, so the wrapper opens; the spelling is part of what the key is
+    // derived from, so it is not the same wrapper.
+    const ephemeral = keyPair("x", "ephemeral/wrapper/spelling");
+    const secret = diffieHellman({ privateKey: ephemeral.private, publicKey: publicKey("x", unb64(recipient.public)) });
+    const topBit = unb64(ephemeral.public);
+    topBit[31] |= 0x80;
+    add({ name: "a one-time key with its unused top bit set", ...base, wrapper: wrapperUnder(topBit, secret, recipient.public, key, context, "wrapper/top bit"), expect: "opens", key: b64(key) });
+    // Nine is the base point, and so is the field's size and nine: what a
+    // private key agrees on with it is its own public key.
+    const basePoint = le32(`f6${"ff".repeat(30)}7f`);
+    add({ name: "the base point spelt past the field's size as the one-time key", ...base, wrapper: wrapperUnder(basePoint, unb64(recipient.public), recipient.public, key, context, "wrapper/base point"), expect: "opens", key: b64(key) });
+
+    refused("a wrapper opened with another key", good, { private: b64(other.seed), public: other.public });
+    refused("a wrapper opened with the one-time key it was made with", good, { private: wrappers[0].ephemeral, public: half });
+    refused("a wrapper opened at the next epoch", good, { context: A.context(2) });
+    refused("a wrapper opened for another account", good, { context: account("usr_other").context(1) });
+    refused("a wrapper opened with no context", good, { context: "" });
+    refused("one bit changed in the one-time key", `${flipped(half, 0)}.${box}`);
+    refused("one bit changed in the nonce", `${half}.${flipped(box, 0)}`);
+    refused("one bit changed in the wrapped key", `${half}.${flipped(box, 12)}`);
+    refused("one bit changed in the tag", `${half}.${flipped(box, -1)}`);
+    refused("another wrapper's one-time key", `${wrappers[1].wrapper.split(".")[0]}.${box}`);
+    refused("the two halves the other way round", `${box}.${half}`);
+    refused("a wrapper one character short", good.slice(0, -1));
+    refused("a wrapper one character long", `${good}A`);
+    refused("a wrapper with its dot one place late", `${good.slice(0, 43)}A.${good.slice(45)}`);
+    refused("a wrapper with no dot", good.replace(".", "A"));
+    refused("a wrapper with padding", `${good}=`);
+    refused("a wrapper in the other base64 alphabet", `${"+".repeat(43)}.${"/".repeat(80)}`);
+    refused("no wrapper", "");
+    const info = `slink/wrap/v1/${context}/${half}/${recipient.public}`;
+    const derived = Buffer.from(hkdfSync("sha256", secret0(recipient, half), Buffer.alloc(0), info, 32));
+    refused("a wrapper around 31 bytes", `${half}.${seal(derived, key.subarray(0, 31), info, "wrapper/31")}`);
+    refused("a wrapper around 33 bytes", `${half}.${seal(derived, Buffer.concat([key, Buffer.from([0])]), info, "wrapper/33")}`);
+
+    // A point of small order as the one-time key, with the box sealed under
+    // what it agrees on with every key: 32 zero bytes. A reader that did not
+    // refuse the point would open it.
+    for (const [what, point] of SMALL_POINTS) {
+      const zero = agreed(recipient, point);
+      if (zero && !zero.equals(Buffer.alloc(32))) throw new Error(`${what} is not a point of small order`);
+      refused(`${what} as the one-time key, sealed under what it agrees on`, wrapperUnder(point, Buffer.alloc(32), recipient.public, key, context, `wrapper/small/${what}`));
+    }
+    const signed = Buffer.from(SMALL_POINTS[1][1]);
+    signed[31] |= 0x80;
+    refused("one with its top bit set as the one-time key, sealed under what it agrees on", wrapperUnder(signed, Buffer.alloc(32), recipient.public, key, context, "wrapper/small/top bit"));
+
+    /* Keys nothing is wrapped to. */
+    const never = named(recipients);
+    for (const [what, point] of SMALL_POINTS) never({ name: `${what} as the key to wrap to`, public: b64(point), expect: "refused" });
+    never({ name: "a key of 31 bytes to wrap to", public: b64(unb64(recipient.public).subarray(0, 31)), expect: "refused" });
+    never({ name: "a key with padding to wrap to", public: `${recipient.public}=`, expect: "refused" });
+    never({ name: "no key to wrap to", public: "", expect: "refused" });
+    never({ name: "a key to wrap to", public: recipient.public, expect: "wraps" });
+  }
+
+  /* Signatures: a seed and a payload have one. */
+  const signatures = [];
+  {
+    const add = named(signatures);
+    const key = keyPair("ed", "signature/key");
+    for (const kind of KINDS) {
+      const signed = sign(kind, { statement: "fixture", kind }, key);
+      add({ name: `a statement signed as ${kind}`, kind, seed: b64(key.seed), public: key.public, ...signed });
+    }
+    const other = keyPair("ed", "signature/other key");
+    add({ name: "a statement signed by another key", kind: "event", seed: b64(other.seed), public: other.public, ...sign("event", { statement: "fixture", kind: "event" }, other) });
+    add({ name: "an empty object, signed", kind: "event", seed: b64(key.seed), public: key.public, ...sign("event", {}, key) });
+  }
+
+  /* Device requests. */
+  const requests = [];
+  {
+    const add = named(requests);
+    const device = (label) => ({ sign: keyPair("ed", `request/${label}/sign`), box: keyPair("x", `request/${label}/box`) });
+    const phone = device("phone");
+    const value = (d, name = "Phone") => ({ account: "usr_fixture", root: A.root.public, name, sign: d.sign.public, box: d.box.public, nonce: b64(material("request/nonce", 24)), created: 1760000000000 });
+    const good = value(phone);
+    /** One a client writes: its id, its code, and the seed that signs it again. */
+    const verified = (name, request, d = phone) => {
+      const signed = signBytes("request", Buffer.from(writtenRequest(request)), d.sign);
+      add({ name, ...signed, expect: "verified", id: digest(`${request.sign}.${request.box}`), code: confirmation(signed), seed: b64(d.sign.seed) });
+      return signed;
+    };
+    const first = verified("a device request", good);
+    verified("a request from a device with no name", value(phone, ""));
+    verified("a request with a name of 80 bytes", value(phone, String.fromCodePoint(0x1f4bb).repeat(20)));
+    verified("a request whose name holds what Go escapes", value(phone, `<Phone & "tablet">${String.fromCodePoint(0x2028)}`));
+    verified("a request dated at the first millisecond", { ...good, created: 0 });
+    verified("a request from another device", value(device("tablet"), "Tablet"), device("tablet"));
+    // Not what a client writes, and read the same by all three.
+    const other = (name, bytes, expect, why, key = phone.sign, kind = "request") => {
+      const signed = signBytes(kind, Buffer.from(bytes), key);
+      add({ name, ...signed, expect, ...(expect === "verified" ? { id: digest(`${good.sign}.${good.box}`), code: confirmation(signed) } : {}), ...(why ? { why } : {}) });
+    };
+    const text = JSON.stringify(good);
+    other("a request with a field no reader knows", JSON.stringify({ ...good, platform: "unknown" }), "verified");
+    other("a request with its fields in another order", JSON.stringify(Object.fromEntries(Object.entries(good).reverse())), "verified");
+    other("a request with white space around it", `\n ${JSON.stringify(good, null, 1)}\n`, "verified");
+    other("a request signed by another device's key", text, "refused", null, device("tablet").sign);
+    other("a request signed as an event", text, "refused", null, phone.sign, "event");
+    add({ name: "a request changed after it was signed", payload: b64(text.replace('"Phone"', '"Phonf"')), signature: first.signature, expect: "refused" });
+    add({ name: "a request with a signature one byte short", payload: first.payload, signature: b64(unb64(first.signature).subarray(0, 63)), expect: "refused" });
+    add({ name: "a request whose payload has padding", payload: `${first.payload}=`, signature: first.signature, expect: "refused" });
+    other("a request that is not JSON", "not json", "refused");
+    other("a request that is a list", JSON.stringify(Object.values(good)), "refused");
+    other("a request with no signing key", JSON.stringify({ ...good, sign: undefined }), "refused");
+    other("a request with a signing key of 31 bytes", JSON.stringify({ ...good, sign: b64(unb64(good.sign).subarray(0, 31)) }), "refused");
+    // The identity point as the device's key: the signature that fits every
+    // payload under it. A device that could be enrolled this way would be
+    // anyone's.
+    const identity = b64(Buffer.concat([Buffer.from([1]), Buffer.alloc(31)]));
+    add({ name: "a request in the name of the identity point, signed by no one", payload: b64(JSON.stringify({ ...good, sign: identity })), signature: b64(Buffer.concat([Buffer.from([1]), Buffer.alloc(63)])), expect: "refused" });
+
+    // What the hosted service refuses when a request is uploaded. Go and the
+    // viewer leave it to the service and take the request as signed.
+    const service = "The hosted service refuses the request when it is uploaded. Go and the viewer leave that to the service; Rust keeps to the service's rule.";
+    const lenient = { js: "verified", go: "verified", rust: "refused" };
+    other("a request with a name of 81 bytes", JSON.stringify(value(phone, "n".repeat(81))), lenient, service);
+    other("a request with a nonce of 23 bytes", JSON.stringify({ ...good, nonce: b64(material("request/nonce", 23)) }), lenient, service);
+    other("a request with an agreement key of 31 bytes", JSON.stringify({ ...good, box: b64(unb64(good.box).subarray(0, 31)) }), lenient, service);
+    other("a request with a root key that is a word", JSON.stringify({ ...good, root: "root" }), lenient, service);
+    other("a request with a fraction for its time", text.replace('"created":1760000000000', '"created":1760000000000.5'), { js: "verified", go: "refused", rust: "refused" }, "JavaScript reads any number. The service refuses a time that is not a whole number, as Go and Rust do.");
+    other("a request with its time in quotes", text.replace('"created":1760000000000', '"created":"1760000000000"'), { js: "verified", go: "refused", rust: "refused" }, "JavaScript compares the text as a number. The service refuses it, as Go and Rust do.");
+    other("a request without a name", JSON.stringify({ ...good, name: undefined }), lenient, "Go reads a field that is left out as empty and the viewer does not look. The service refuses a name that is not text.");
+    other("a request without a time", JSON.stringify({ ...good, created: undefined }), { js: "verified", go: "verified", rust: "refused" }, "Go reads a field that is left out as zero and the viewer compares nothing with a number. The service refuses it.");
+    const folded = "Go matches a field's name without regard to case and JavaScript takes the exact name. Rust refuses a payload the two would read differently.";
+    other("a request with its signing key under a name in capitals", text.replace('"sign":', '"SIGN":'), { js: "refused", go: "verified", rust: "refused" }, folded);
+    other("a request with a second name, capitalized", text.replace('"name":"Phone"', '"name":"Phone","Name":"Other"'), { js: "verified", go: "verified", rust: "refused" }, "JavaScript reads the device as Phone and Go as Other: the same signed bytes, two names. Rust refuses them.");
+    other("a request with a field given twice", `{"created":1,${text.slice(1)}`, { js: "verified", go: "verified", rust: "refused" }, "JavaScript and Go take the last of two. Rust refuses a payload that says a thing twice.");
+    const bulky = JSON.stringify({ ...good, padding: "p".repeat(3200) });
+    if (b64(bulky).length <= 4096) throw new Error("the oversized request is no longer oversized");
+    other("a request longer than the hosted service stores", bulky, lenient, "The service refuses a request of more than 4 KiB as text. Go and the viewer have no limit of their own.");
+  }
+
+  /* A device unlocks an account: its wrapper, then the vault. */
+  const devices = [];
+  const recoveries = [];
+  {
+    const add = named(devices);
+    const laptop = A.device("laptop", "Laptop");
+    const phone = A.device("phone", "Phone");
+    const first = A.init(laptop);
+    const approved = A.approve(first, laptop, phone);
+    const revoked = A.revoke(approved, laptop, phone);
+    const shared = A.sharing(first, laptop, "a");
+    const recovered = A.recover(first, phone);
+    const keyring = Buffer.from(JSON.stringify({ inboxes: { [A.inbox("a")]: b64(keyPair("x", "usr_fixture/inbox/a").seed) }, version: 2, shares: [] }));
+    const record = (c, by, revision, options) => ({ account: A.name, events: c.events, vault: A.vault(c, by, revision, (value) => value, options) });
+    const unlock = (name, c, by, revision, device, expect, { contents = EMPTY_VAULT, record: given, private: own = device.box.seed } = {}) =>
+      add({
+        name,
+        ...(given ?? record(c, by, revision, { contents })),
+        device: device.id,
+        private: b64(own),
+        expect,
+        ...(expect === "opens" ? { vault_key: b64(A.vaultKey(c.state.epoch)), contents: std(contents) } : {}),
+      });
+    unlock("the first device opens the vault the root key wrote", first, "root", 1, laptop, "opens");
+    unlock("the first device opens the vault it wrote", first, laptop, 2, laptop, "opens");
+    unlock("the second device opens the vault the first wrote", approved, laptop, 3, phone, "opens");
+    unlock("the first device opens the vault the second wrote", approved, phone, 4, laptop, "opens");
+    unlock("the device that stays opens the vault after a revocation", revoked, laptop, 5, laptop, "opens");
+    unlock("a device the recovery key enrolled opens the vault", recovered, "root", 2, phone, "opens");
+    unlock("a vault that holds an incoming-share key", shared, laptop, 2, laptop, "opens", { contents: keyring });
+    unlock("a vault of nothing", first, laptop, 6, laptop, "opens", { contents: Buffer.alloc(0) });
+    unlock("the revoked device after its revocation", revoked, laptop, 5, phone, "refused");
+    unlock("a device the history never held", first, laptop, 2, phone, "refused");
+    unlock("the first device's entry with another device's key", approved, laptop, 3, laptop, "refused", { private: phone.box.seed });
+    unlock("the first device's entry with the recovery key", first, laptop, 2, laptop, "refused", { private: A.recovery.seed });
+    // The record verifies: a vault's ciphertext is not opened to verify it.
+    const sealedFor = (context, label) => (value) => ({ ...value, data: seal(A.vaultKey(1), EMPTY_VAULT, context, label) });
+    const moved = (name, change) => unlock(name, first, laptop, 2, laptop, "refused", { record: { account: A.name, events: first.events, vault: A.vault(first, laptop, 2, change) } });
+    moved("a vault sealed for the next epoch", sealedFor(`slink/vault/v1/${A.context(2)}`, "device/epoch"));
+    moved("a vault sealed for another account", sealedFor(`slink/vault/v1/${account("usr_other").context(1)}`, "device/account"));
+    moved("a vault sealed as a recovery package", sealedFor(`slink/recovery/v1/${A.name}/${A.root.public}`, "device/purpose"));
+    moved("a vault sealed under the next epoch's key", (value) => ({ ...value, data: seal(A.vaultKey(2), EMPTY_VAULT, `slink/vault/v1/${A.context(1)}`, "device/key") }));
+    moved("a vault with one bit of its ciphertext changed", (value) => ({ ...value, data: flipped(value.data, 20) }));
+
+    /* A recovery key unlocks an account: the package, the wrapper, the vault. */
+    const recover = named(recoveries);
+    const opened = { root: b64(A.root.seed), agreement: b64(A.recovery.seed) };
+    const recovers = (name, c, by, revision, token = A.recoveryKey) =>
+      recover({ name, ...record(c, by, revision), token, expect: "opens", ...opened, vault_key: b64(A.vaultKey(c.state.epoch)), contents: std(EMPTY_VAULT) });
+    const lost = (name, token, given = record(first, laptop, 2)) => recover({ name, ...given, token, expect: "refused" });
+    recovers("the recovery key opens a new account", first, "root", 1);
+    recovers("the recovery key opens an account with two devices", approved, phone, 4);
+    recovers("the recovery key opens an account after a revocation", revoked, laptop, 5);
+    recovers("the recovery key opens an account it has recovered before", recovered, "root", 2);
+    recovers("a recovery key with white space around it", first, laptop, 2, `  ${A.recoveryKey}\n`);
+    const [version, fingerprint, secret] = A.recoveryKey.split(".");
+    const stranger = account("usr_other");
+    lost("another account's recovery key", stranger.recoveryKey);
+    lost("a recovery key with another account's fingerprint", `${version}.${stranger.recoveryKey.split(".")[1]}.${secret}`);
+    lost("a recovery key with another secret", `${version}.${fingerprint}.${b64(material("recovery/other secret"))}`);
+    lost("a recovery key of another version", `slr2.${fingerprint}.${secret}`);
+    lost("a recovery key in capitals", A.recoveryKey.toUpperCase());
+    lost("a recovery key without its version", `${fingerprint}.${secret}`);
+    lost("a recovery key with a fourth part", `${A.recoveryKey}.${secret}`);
+    lost("a recovery key whose secret has padding", `${A.recoveryKey}=`);
+    lost("a recovery key whose secret is one byte short", `${version}.${fingerprint}.${b64(unb64(secret).subarray(0, 31))}`);
+    lost("a recovery key with a space in it", `${version}.${fingerprint}. ${secret}`);
+    lost("no recovery key", "");
+    // A history whose package or wrapper is not what the key should find.
+    // Each is signed by the root key and verifies: neither is opened to
+    // verify a history.
+    const context = `slink/recovery/v1/${A.name}/${A.root.public}`;
+    const rebuilt = (change) => {
+      const events = A.amend(first, change);
+      const c = { events, state: change(structuredClone(first.state)), head: hash(events.at(-1)) };
+      return { account: A.name, events, vault: A.vault(c, laptop, 2) };
+    };
+    const packaged = (plain, context, label) => (state) => ({ ...state, recovery_box: seal(A.recoverySecret, plain, context, label) });
+    const both = Buffer.concat([A.root.seed, A.recovery.seed]);
+    lost("a package sealed for another account", A.recoveryKey, rebuilt(packaged(both, `slink/recovery/v1/usr_other/${A.root.public}`, "recovery/account")));
+    lost("a package sealed as a vault", A.recoveryKey, rebuilt(packaged(both, `slink/vault/v1/${A.context(1)}`, "recovery/purpose")));
+    lost("a package that holds another root key", A.recoveryKey, rebuilt(packaged(Buffer.concat([stranger.root.seed, A.recovery.seed]), context, "recovery/root")));
+    lost("a package that holds another agreement key", A.recoveryKey, rebuilt(packaged(Buffer.concat([A.root.seed, stranger.recovery.seed]), context, "recovery/agreement")));
+    lost("a package with its two keys the other way round", A.recoveryKey, rebuilt(packaged(Buffer.concat([A.recovery.seed, A.root.seed]), context, "recovery/order")));
+    lost("a recovery wrapper made for the next epoch", A.recoveryKey, rebuilt((state) => ({ ...state, recovery_wrap: A.recoveryWrap(2) })));
+    lost("a recovery wrapper made for the device", A.recoveryKey, rebuilt((state) => ({ ...state, recovery_wrap: state.devices[0].wrap })));
+  }
+  return { boxes, wrappers, recipients, signatures, requests, devices, recoveries, shares: shareCases() };
+}
+
+export const writtenInvite = (v) =>
+  goJSON({ account: v.account, root: v.root, head: v.head, signer: v.signer, sha256: v.sha256, inbox: v.inbox, epoch: v.epoch, wrap: v.wrap, invitation: { id: v.invitation.id, email: v.invitation.email, commitment: v.invitation.commitment } });
+export const writtenGrant = (v) =>
+  goJSON({ account: v.account, root: v.root, head: v.head, signer: v.signer, share_id: v.share_id, invite_id: v.invite_id, sha256: v.sha256, recipient: v.recipient, recipient_root: v.recipient_root, inbox: v.inbox, epoch: v.epoch, wrap: v.wrap, claim_hash: v.claim_hash });
+/** The proof a recipient sends with a claim: that its signer held the invitation's secret. */
+export const bindingProof = (secret, claim) => b64(createHmac("sha256", secret).update("slink/recipient-binding/v1\0").update(unb64(claim.payload)).digest());
+
+/**
+ * Shares for named people: the sender's invitation, the recipient's claim
+ * with its proof, and the grant that answers it. A case is what a sender
+ * holds when it decides whether to release the share's key.
+ */
+function shareCases() {
+  const shares = [];
+  const push = (item) => {
+    if (shares.some((other) => other.name === item.name)) throw new Error(`two cases are named ${item.name}`);
+    shares.push(item);
+  };
+  const S = account("usr_fixture");
+  const laptop = S.device("laptop", "Laptop");
+  const desktop = S.device("desktop", "Desktop");
+  const sender = S.sharing(S.init(laptop), laptop, "a");
+  const R = account("usr_recipient");
+  const phone = R.device("phone", "Phone");
+  const tablet = R.device("tablet", "Tablet");
+  const alone = R.sharing(R.init(phone), phone, "a");
+  const two = R.approve(alone, phone, tablet);
+
+  const sealed = envelope(Buffer.from('{"schema":"session/v0"}'), "share");
+  const share = { id: "sharefxtvr2345", sha256: createHash("sha256").update(sealed.data).digest("hex") };
+  const key = unb64(sealed.key);
+  const secret = material("share/invitation secret");
+  const invitation = { id: b64(material("share/invitation id", 24)), email: "recipient@example.com", commitment: digest(secret) };
+  const context = (c) => `named/${share.sha256}/${c.state.account}/${c.state.root}/${c.state.epoch}`;
+  const inboxes = (who, ...labels) => Object.fromEntries(labels.map((label) => [who.inbox(label), b64(who.inboxKey(label).seed)]));
+
+  /** The sender's statement for the invitation, signed when its history stood at `c`. */
+  const invite = (c, label = "share/invite") => ({
+    statement: signBytes("named-invite", Buffer.from(writtenInvite({ account: S.name, root: S.root.public, head: c.head, signer: laptop.id, sha256: share.sha256, inbox: c.state.inbox, epoch: c.state.epoch, wrap: wrap(c.state.inbox, key, context(c), label), invitation })), laptop.sign),
+    ephemeral: b64(keyPair("x", `ephemeral/${label}`).seed),
+  });
+  /** What the recipient's device signs, when its history stood at `c`. */
+  const binding = (c, signer) => ({ account: R.name, root: R.root.public, head: c.head, signer: signer.id, share_id: share.id, invite_id: invitation.id, sha256: share.sha256, owner: S.name, owner_root: S.root.public, inbox: c.state.inbox ?? "", epoch: c.state.epoch });
+  const claimed = (value, signer, { kind = "recipient-claim", by = secret } = {}) => {
+    const signed = Buffer.isBuffer(value) ? signBytes(kind, value, signer.sign) : sign(kind, value, signer.sign);
+    return { ...signed, proof: bindingProof(by, signed) };
+  };
+  /** The grant for a claim, wrapped for the recipient as its history stands at `now`. */
+  const grant = (claim, now, at, label) => ({
+    statement: signBytes("named-grant", Buffer.from(writtenGrant({ account: S.name, root: S.root.public, head: at.head, signer: laptop.id, share_id: share.id, invite_id: invitation.id, sha256: share.sha256, recipient: R.name, recipient_root: R.root.public, inbox: now.state.inbox, epoch: now.state.epoch, wrap: wrap(now.state.inbox, key, context(now), label), claim_hash: hash(claim) })), laptop.sign),
+    ephemeral: b64(keyPair("x", `ephemeral/${label}`).seed),
+  });
+  const base = (name, claim, now, { invited = sender, at = sender, keys = ["a"] } = {}) => {
+    const made = invite(invited);
+    return {
+      name,
+      share,
+      key: b64(key),
+      invitation: { ...invitation, secret: b64(secret) },
+      owner: { account: S.name, root: S.root.public, head: at.head, signer: laptop.id, seed: b64(laptop.sign.seed), history: at.events, invited: invited.events.length, inboxes: inboxes(S, "a") },
+      invite: made.statement,
+      invite_ephemeral: made.ephemeral,
+      claim,
+      recipient: { account: R.name, history: now.events, inboxes: inboxes(R, ...keys) },
+    };
+  };
+  const granted = (name, claim, now, options = {}) => {
+    const made = grant(claim, now, options.at ?? sender, `share/grant/${name}`);
+    push({ ...base(name, claim, now, options), expect: "granted", grant: made.statement, grant_ephemeral: made.ephemeral });
+  };
+  const refused = (name, claim, now = alone, { expect = "refused", why, ...options } = {}) => push({ ...base(name, claim, now, options), expect, ...(why ? { why } : {}) });
+
+  /* What a sender grants. */
+  const honest = claimed(binding(alone, phone), phone);
+  granted("a claim from the recipient's only device", honest, alone);
+  granted("a claim from the second of two devices", claimed(binding(two, tablet), tablet), two);
+  granted("a recipient that approved a device after claiming", honest, two);
+  const rotated = R.revoke(two, phone, tablet, "b");
+  granted("a recipient that revoked a device after claiming, wrapped to its new key", claimed(binding(two, phone), phone), rotated, { keys: ["a", "b"] });
+  granted("a claim by a device that was revoked since", claimed(binding(two, tablet), tablet), rotated, { keys: ["a", "b"] });
+  granted("a sender that approved a device between inviting and granting", honest, alone, { at: S.approve(sender, laptop, desktop) });
+  granted("a claim with a field no reader knows", claimed({ ...binding(alone, phone), note: "unknown" }, phone), alone);
+
+  /* The proof. */
+  refused("a proof made with another secret", claimed(binding(alone, phone), phone, { by: material("share/other secret") }));
+  refused("another claim's proof", { ...honest, proof: claimed(binding(two, tablet), tablet).proof });
+  refused("a proof one byte short", { ...honest, proof: b64(unb64(honest.proof).subarray(0, 31)) });
+  refused("a proof with padding", { ...honest, proof: `${honest.proof}=` });
+  refused("no proof", { ...honest, proof: "" });
+  refused("the signature where the proof belongs", { ...honest, proof: honest.signature });
+
+  /* What the claim is for. Each is signed by the device and proven with the secret. */
+  for (const [what, change] of [
+    ["another share", { share_id: "sharefxtvr2346" }],
+    ["another invitation", { invite_id: b64(material("share/other invitation id", 24)) }],
+    ["another ciphertext", { sha256: "ab".repeat(32) }],
+    ["another sender", { owner: "usr_other" }],
+    ["a sender with another root key", { owner_root: account("usr_other").root.public }],
+  ]) {
+    refused(`a claim for ${what}`, claimed({ ...binding(alone, phone), ...change }, phone));
+  }
+
+  /* Who signed it, and when. */
+  const stranger = account("usr_other").device("phone", "Phone");
+  refused("a claim signed by a device the history never held", claimed({ ...binding(alone, phone), signer: stranger.id }, stranger));
+  refused("a claim signed by another device in the first one's name", claimed(binding(two, phone), tablet), two);
+  refused("a claim signed as a grant", claimed(binding(alone, phone), phone, { kind: "named-grant" }));
+  refused("a claim changed after it was signed", { ...honest, payload: b64(unb64(honest.payload).toString().replace(share.id, "sharefxtvr2346")) });
+  refused("a claim by a device that had been revoked", claimed(binding(rotated, tablet), tablet), rotated, { keys: ["a", "b"] });
+  refused("a claim by a device before it was approved", claimed({ ...binding(alone, phone), signer: tablet.id }, tablet), two);
+  refused("a claim signed at a head the history does not hold", claimed({ ...binding(alone, phone), head: sender.head }, phone));
+  refused("a claim that names a key the account did not have then", claimed({ ...binding(alone, phone), inbox: R.inbox("b") }, phone));
+  refused("a claim that names the key of a later epoch", claimed({ ...binding(two, phone), inbox: R.inbox("b"), epoch: 2 }, phone), rotated, { keys: ["a", "b"] });
+  refused("a claim at another epoch than the account was at", claimed({ ...binding(alone, phone), epoch: 2 }, phone));
+
+  /* The recipient's history. */
+  const before = R.init(phone);
+  refused("a recipient whose history has lost its last event", claimed(binding(alone, phone), phone), before);
+  refused("a recipient whose history is another account's", honest, { events: sender.events });
+  refused("a recipient whose history starts at its second event", honest, { events: alone.events.slice(1) });
+  refused("a recipient with no history", honest, { events: [] });
+  refused("a claim under another root key than the history's", claimed({ ...binding(alone, phone), root: S.root.public }, phone));
+  refused("a recipient that does not share", claimed(binding(before, phone), phone), before);
+
+  /* The payload. */
+  const text = JSON.stringify(binding(alone, phone));
+  refused("a claim that is not JSON", claimed(Buffer.from("not json"), phone));
+  refused("a claim that is a list of its values", claimed(Buffer.from(JSON.stringify(Object.values(binding(alone, phone)))), phone));
+  refused("a claim with its epoch in quotes", claimed(Buffer.from(text.replace('"epoch":1', '"epoch":"1"')), phone));
+  refused("a claim without an epoch", claimed(Buffer.from(text.replace(',"epoch":1', "")), phone));
+  refused("a claim without a signer", claimed(Buffer.from(text.replace(/"signer":"[^"]*",/, "")), phone));
+  const goOnly = { go: "granted", rust: "refused" };
+  refused("a claim with a field's name in capitals", claimed(Buffer.from(text.replace('"owner":', '"OWNER":')), phone), alone, {
+    expect: goOnly,
+    why: "Go matches a field's name without regard to case. Rust refuses a payload the viewer and the service would read differently.",
+  });
+  refused("a claim with a field given twice", claimed(Buffer.from(`{"epoch":7,${text.slice(1)}`), phone), alone, {
+    expect: goOnly,
+    why: "Go takes the last of two. Rust refuses a payload that says a thing twice.",
+  });
+  refused("a claim made before the recipient shared, naming no key", claimed(binding(before, phone), phone), alone, {
+    expect: goOnly,
+    why: "Go reads an account with no incoming-share key as having the empty one, which a claim can then name. The service refuses a claim from an account that does not share, and Rust reads no key as none.",
+  });
+  return shares;
+}
+
+/** What a private key and a point agree on, or nothing where the library refuses the point. */
+function agreed(key, point) {
+  try {
+    return diffieHellman({ privateKey: key.private, publicKey: publicKey("x", point) });
+  } catch {
+    return null;
+  }
+}
+const secret0 = (key, half) => diffieHellman({ privateKey: key.private, publicKey: publicKey("x", unb64(half)) });
+
 /**
  * The limits. They take long histories to reach, a megabyte of them, so they
  * are not written to a file: scripts/protocol-diff.mjs builds them and hands
@@ -1035,11 +1570,15 @@ const list = (items) => `[\n${items.map(line).join(",\n")}\n]\n`;
 const table = ({ signed, cases }) =>
   `{\n"signed": {\n${Object.keys(signed).sort().map((id) => `${JSON.stringify(id)}: ${line(signed[id])}`).join(",\n")}\n},\n"cases": [\n${cases.map(line).join(",\n")}\n]\n}\n`;
 
+const sections = (value) =>
+  `{\n${Object.entries(value).map(([name, items]) => `${JSON.stringify(name)}: [\n${items.map(line).join(",\n")}\n]`).join(",\n")}\n}\n`;
+
 export function files() {
   return {
     "envelopes.json": list(envelopeCases()),
     "statements.json": list(statementCases()),
     "histories.json": table(historyCases()),
+    "keys.json": sections(keyCases()),
   };
 }
 

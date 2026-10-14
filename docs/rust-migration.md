@@ -210,8 +210,8 @@ are in P7, where they apply to the new store.
   consumption against the current JS/Go validators.
 - [x] Implement envelope and signed-history verification against Go/Web
   Crypto vectors.
-- [ ] Then wrapping, recovery and named statement codecs against the same
-  vectors.
+- [x] Then wrapping, recovery and named statement codecs against the same
+  vectors, with signing and device requests.
 - [ ] Add injectable clocks/randomness for deterministic tests; production uses
   operating-system randomness. Inject crashes/I/O failures at persistence seams.
 - [ ] Build the viewer into a neutral artifact directory with an asset manifest
