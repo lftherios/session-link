@@ -1,6 +1,6 @@
 # Rust protocol crate: verifying and making
 
-2026-10-12, extended 2026-10-13 · Implemented slices of the [Rust migration](rust-migration.md), backlog item 5 and the first part of item 8 · `crates/slink-protocol` opens envelopes and verifies signed statements, device histories and vault records, and makes what a client makes: keys, boxes, wrappers, signatures, device requests, the recovery package and a named share's statements. Go, the viewer and Rust agree on 539 shared cases with 53 recorded differences. The verifying slice has passed on all six targets and its sweep on Linux in CI; the making slice has run on macOS arm64 and meets the other targets when its branch is pushed.
+2026-10-12, extended 2026-10-13 · Implemented slices of the [Rust migration](rust-migration.md), backlog item 5 and the first part of item 8 · `crates/slink-protocol` opens envelopes and verifies signed statements, device histories and vault records, and makes what a client makes: keys, boxes, wrappers, signatures, device requests, the recovery package and a named share's statements. Go, the viewer and Rust agree on 539 shared cases with 53 recorded differences. Both slices have passed on all six targets and the sweep on Linux in CI; for the making slice, each target's release binary made and opened a wrapper in `build-check`.
 
 What the Rust side of the protocol is so far, how it is held to the three
 implementations that already exist, and what comparing them found. The first
@@ -434,9 +434,6 @@ release binary ran `build-check` with its protocol step.
   here; the rule for an email address is the client's.
 - Claims in the sweep. The 42 cases are the only ones Go and Rust have
   judged together, and the viewer could not be a third.
-- The six targets for the making slice. x25519-dalek chooses its arithmetic
-  by target, and only macOS arm64 has run it; `build-check` wraps and unwraps
-  a key so that each release binary will show it.
 - What a vault holds: the JSON under the vault key, with its receipts,
   incoming-share private keys and outbox. Here it is bytes. It belongs with
   the client, which is also where the next state is put together: this crate

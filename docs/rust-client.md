@@ -1,6 +1,6 @@
 # Rust client: signing in, publishing and deleting
 
-2026-10-14 · Implemented slice of the [Rust migration](rust-migration.md), the first part of P3 (backlog item 8) · `slink-rs` signs in, publishes a session as an encrypted link from the terminal and from the local viewer, sends a lost upload again as the same ciphertext, and takes a link offline. Against the hosted service's smoke server it signs in by email approval, and a browser opens what it published. Device keys, the vault and named shares are not ported yet. Run on macOS arm64 only; the six targets run it when the branch is pushed.
+2026-10-14 · Implemented slice of the [Rust migration](rust-migration.md), the first part of P3 (backlog item 8) · `slink-rs` signs in, publishes a session as an encrypted link from the terminal and from the local viewer, sends a lost upload again as the same ciphertext, and takes a link offline. Against the hosted service's smoke server it signs in by email approval, and a browser opens what it published. Device keys, the vault and named shares are not ported yet. Its tests pass on all six targets in CI; the smoke server and the browser checks have run on macOS arm64.
 
 `crates/slink-client` is the hosted service as the CLI reaches it. It
 composes the [protocol crate](rust-protocol.md), which seals the document,
@@ -86,6 +86,7 @@ Each difference is a refusal or a request not made.
 | The same with `SLINK_BROWSER_SCRIPT=`[check-publish-browser.mjs](../scripts/check-publish-browser.mjs) | Passes with `slink-rs` and with Go: `slink login` approved through email, `push` with the saved key, the link opened in headless Chromium with its wrong-key and missing-key cases, `delete`, then 410 |
 | [check-viewer-browser.mjs](../scripts/check-viewer-browser.mjs), [check-security-browser.mjs](../scripts/check-security-browser.mjs) against `slink-rs` | Both pass |
 | `cargo test` | 270 pass |
+| `rust.yml` at `579f589` | Lint, the format, protocol and viewer jobs, and the build, tests and `build-check` on each of the six targets pass |
 
 ## Cost
 
@@ -104,4 +105,3 @@ client but never sent a request over TLS.
 - The terminal's questions: `Publish? [y/N]`, `--pick`, and the sign-in
   `share` starts. They need a terminal, so no test answers them; the code that
   asks is a port of Go's line by line.
-- The six targets. These tests have run on macOS arm64 only.
