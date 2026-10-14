@@ -626,8 +626,9 @@ struct Sent {
 }
 
 /// A stand-in for the hosted service on loopback. It acknowledges every
-/// envelope as the share `23456789abcdef`, takes shares offline, and keeps
-/// what it was sent.
+/// envelope as the share `23456789abcdef`, and every share for named people
+/// as `k7qm2xrw9tbn4c`, takes shares offline and revokes invitations, and
+/// keeps what it was sent.
 struct Service {
     url: String,
     sent: std::sync::Arc<std::sync::Mutex<Vec<Sent>>>,
@@ -644,10 +645,17 @@ impl Service {
         // The account's identity record, as the last write left it. Each
         // write is taken as sent: the client verifies what it reads back.
         let identity = std::sync::Arc::new(std::sync::Mutex::new(serde_json::Value::Null));
+        // The share for named people: its hash and its people, as listed.
+        let named = std::sync::Arc::new(std::sync::Mutex::new(serde_json::Value::Null));
         let app = axum::Router::new().fallback(move |request: Request| {
-            let (record, identity) = (record.clone(), identity.clone());
+            let (record, identity, named) = (record.clone(), identity.clone(), named.clone());
             async move {
                 let (parts, body) = request.into_parts();
+                let invitations: usize = parts
+                    .headers
+                    .get("x-slink-invitations")
+                    .and_then(|value| value.to_str().ok()?.parse().ok())
+                    .unwrap_or_default();
                 let body = axum::body::to_bytes(body, 64 * 1024 * 1024)
                     .await
                     .unwrap()
@@ -677,6 +685,48 @@ impl Service {
                         )
                     }
                     ("DELETE", "/api/shares/23456789abcdef") => (204, String::new()),
+                    ("POST", "/api/named-shares") => {
+                        use base64::Engine;
+                        let (prefix, envelope) = request.body.split_at(invitations);
+                        let statements: Vec<serde_json::Value> =
+                            serde_json::from_slice(prefix).unwrap();
+                        let people: Vec<serde_json::Value> = statements
+                            .iter()
+                            .map(|statement| {
+                                let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                                    .decode(statement["payload"].as_str().unwrap())
+                                    .unwrap();
+                                let invite: serde_json::Value =
+                                    serde_json::from_slice(&payload).unwrap();
+                                let invitation = &invite["invitation"];
+                                serde_json::json!({"id": invitation["id"], "email": invitation["email"], "status": "waiting"})
+                            })
+                            .collect();
+                        let sum: String = sha2::Sha256::digest(envelope)
+                            .iter()
+                            .map(|byte| format!("{byte:02x}"))
+                            .collect();
+                        *named.lock().unwrap() = serde_json::json!({"id": "k7qm2xrw9tbn4c", "owner": true, "sha256": sum, "recipients": people});
+                        (
+                            201,
+                            serde_json::json!({"id": "k7qm2xrw9tbn4c", "sha256": sum, "account_id": "acct_1"})
+                                .to_string(),
+                        )
+                    }
+                    ("GET", "/api/named-shares/k7qm2xrw9tbn4c") => {
+                        (200, named.lock().unwrap().to_string())
+                    }
+                    ("POST", "/api/named-shares/k7qm2xrw9tbn4c") => {
+                        let action: serde_json::Value =
+                            serde_json::from_slice(&request.body).unwrap();
+                        let mut held = named.lock().unwrap();
+                        for person in held["recipients"].as_array_mut().unwrap() {
+                            if action["action"] == "revoke" && person["id"] == action["invite_id"] {
+                                person["status"] = "revoked".into();
+                            }
+                        }
+                        (200, "{\"ok\":true}".to_owned())
+                    }
                     (method, "/api/identity") => {
                         let mut held = identity.lock().unwrap();
                         if method == "POST" {
@@ -791,12 +841,52 @@ fn a_session_is_published_encrypted_and_taken_offline() {
     assert_eq!(signed["signed_in"], true);
     assert_eq!(signed["server"], service.url.as_str());
     let endpoint = viewer.page.replace("/p/", "/api/publish-preview/");
-    let (status, named) = viewer.json("POST", &endpoint, r#"{"recipients":["a@example.test"]}"#);
-    assert_eq!(status, 501, "{named}");
+    // Named people need recovery set up first; the account is read and
+    // nothing is uploaded.
+    for (people, message) in [
+        (
+            r#"{"recipients":["a@example.test"]}"#,
+            "set up recovery in Recovery and devices before sharing with people",
+        ),
+        (
+            r#"{"recipients":["not an address"]}"#,
+            "enter a valid email address for each recipient",
+        ),
+        (
+            r#"{"recipients":[]}"#,
+            "choose between one and ten email recipients",
+        ),
+    ] {
+        let (status, named) = viewer.json("POST", &endpoint, people);
+        assert_eq!(
+            (status, named["error"]["message"].as_str()),
+            (422, Some(message)),
+            "{named}"
+        );
+    }
     assert_eq!(viewer.ask("POST", &endpoint, "[").0, 400);
     assert_eq!(
-        service.sent().len(),
-        2,
+        viewer.ask("POST", &endpoint, r#"{"recipients":[1]}"#).0,
+        400
+    );
+    // The page that lists them asks nothing of the service while there are
+    // none, and a revocation must name a share and an invitation.
+    let (status, listed) = viewer.json("POST", "/api/named", r#"{"action":"status"}"#);
+    assert_eq!((status, listed), (200, serde_json::json!({"shares": []})));
+    for body in [
+        r#"{"action":"revoke"}"#,
+        r#"{"action":"revoke","id":"k7qm2xrw9tbn4c"}"#,
+        r#"{"action":"revoke","invite_id":"x"}"#,
+        r#"{"action":"forward"}"#,
+        r#"{"action":1}"#,
+        "[",
+        "",
+    ] {
+        assert_eq!(viewer.ask("POST", "/api/named", body).0, 400, "{body}");
+    }
+    assert_eq!(viewer.ask("GET", "/api/named", "").0, 403);
+    assert!(
+        service.sent()[2..].iter().all(|sent| sent.method == "GET"),
         "a refused publish reached the service"
     );
     let (status, published) = viewer.json("POST", &endpoint, "");
@@ -804,7 +894,11 @@ fn a_session_is_published_encrypted_and_taken_offline() {
     assert_eq!(published["backup"], "setup");
     let link = published["url"].as_str().unwrap();
     assert!(link.starts_with(&format!("{}/s/23456789abcdef#key=", service.url)));
-    let upload = &service.sent()[2];
+    let upload = service
+        .sent()
+        .into_iter()
+        .rfind(|sent| sent.path == "/api/shares")
+        .unwrap();
     let preview = fs::read(
         home.0
             .join(".slink")
@@ -857,6 +951,116 @@ fn a_session_is_published_encrypted_and_taken_offline() {
     assert_eq!(again["backup"], "synced");
     let (_, synced) = viewer.json("POST", "/api/identity", r#"{"action":"status"}"#);
     assert_eq!(synced["shares"].as_array().unwrap().len(), 3, "{synced}");
+
+    // Shared with named people: the account's sharing key made, then the
+    // ciphertext uploaded behind one invitation each, kept here until each
+    // person has the key, and its link to send each of them.
+    let (status, shared) = viewer.json(
+        "POST",
+        &endpoint,
+        r#"{"recipients":[" Reader@Example.test ","second@example.test","reader@example.test"]}"#,
+    );
+    assert_eq!(status, 200, "{shared}");
+    let named_url = format!("{}/n/k7qm2xrw9tbn4c", service.url);
+    assert_eq!(shared["url"], named_url.as_str());
+    assert_eq!(shared["warning"], "", "the vault holds the share");
+    let people = shared["recipients"].as_array().unwrap().clone();
+    let emails: Vec<&str> = people
+        .iter()
+        .map(|p| p["email"].as_str().unwrap())
+        .collect();
+    assert_eq!(emails, ["reader@example.test", "second@example.test"]);
+    let outboxes: Vec<String> = home
+        .files()
+        .into_iter()
+        .filter(|file| file.starts_with("named-shares/"))
+        .collect();
+    assert_eq!(outboxes.len(), 1, "{outboxes:?}");
+    let outbox: serde_json::Value =
+        serde_json::from_slice(&fs::read(home.0.join(".slink").join(&outboxes[0])).unwrap())
+            .unwrap();
+    for person in &people {
+        let id = person["id"].as_str().unwrap();
+        let secret = outbox["secrets"][id].as_str().unwrap();
+        assert_eq!(person["status"], "waiting");
+        assert_eq!(
+            person["url"],
+            format!(
+                "{named_url}?invite={id}#invite={secret}&sender={}",
+                outbox["root"].as_str().unwrap()
+            )
+        );
+    }
+    let upload = service
+        .sent()
+        .into_iter()
+        .find(|sent| sent.method == "POST" && sent.path == "/api/named-shares")
+        .unwrap();
+    let mut values =
+        serde_json::Deserializer::from_slice(&upload.body).into_iter::<serde_json::Value>();
+    let statements = values.next().unwrap().unwrap();
+    let envelope = &upload.body[values.byte_offset()..];
+    assert_eq!(statements.as_array().unwrap().len(), 2);
+    assert_eq!(
+        slink_protocol::envelope::decrypt(envelope, outbox["key"].as_str().unwrap()).unwrap(),
+        preview
+    );
+    let published: serde_json::Value = serde_json::from_slice(
+        &fs::read(home.0.join(format!(
+            ".slink/drafts/published/{}.json",
+            viewer_id(&endpoint)
+        )))
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        (published["url"].as_str(), published["recipients"].as_u64()),
+        (Some(named_url.as_str()), Some(2))
+    );
+    // The page lists it and revokes one person; the other still waits.
+    let (status, listed) = viewer.json("POST", "/api/named", r#"{"action":"status"}"#);
+    assert_eq!(status, 200, "{listed}");
+    assert_eq!(
+        listed["shares"][0]["recipients"],
+        serde_json::Value::Array(people.clone())
+    );
+    let revoke = serde_json::json!({"action": "revoke", "id": "k7qm2xrw9tbn4c", "invite_id": people[0]["id"]});
+    let (status, revoked) = viewer.json("POST", "/api/named", &revoke.to_string());
+    assert_eq!(status, 200, "{revoked}");
+    let after = &revoked["shares"][0]["recipients"];
+    assert_eq!(
+        (after[0]["status"].as_str(), after[1]["status"].as_str()),
+        (Some("revoked"), Some("waiting"))
+    );
+    assert_eq!(
+        after[0]["url"],
+        format!("{named_url}?invite={}", people[0]["id"].as_str().unwrap())
+    );
+    let missing = serde_json::json!({"action": "revoke", "id": "23456789abcdef", "invite_id": "x"});
+    let (status, failed) = viewer.json("POST", "/api/named", &missing.to_string());
+    assert_eq!(
+        status, 422,
+        "a revocation the service refused is not reported done: {failed}"
+    );
+    let mut named_secrets = vec![outbox["key"].as_str().unwrap().to_owned()];
+    named_secrets.extend(
+        outbox["secrets"]
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|v| v.as_str().unwrap().to_owned()),
+    );
+    let everything: Vec<u8> = service
+        .sent()
+        .iter()
+        .flat_map(|sent| sent.body.clone())
+        .collect();
+    for secret in &named_secrets {
+        assert!(
+            !String::from_utf8_lossy(&everything).contains(secret.as_str()),
+            "a share's key or secret reached the service"
+        );
+    }
     let writes = service.sent();
     let stored: String = writes
         .iter()
@@ -904,10 +1108,11 @@ fn a_session_is_published_encrypted_and_taken_offline() {
         "{:?}",
         sent.iter().map(|sent| &sent.path).collect::<Vec<_>>()
     );
-    assert!(
-        sent.iter()
-            .all(|sent| sent.path.starts_with("/api/shares") || sent.path == "/api/identity")
-    );
+    assert!(sent.iter().all(|sent| {
+        sent.path.starts_with("/api/shares")
+            || sent.path.starts_with("/api/named-shares")
+            || sent.path == "/api/identity"
+    }));
     home.assert_contained();
 }
 

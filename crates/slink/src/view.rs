@@ -212,6 +212,7 @@ pub fn run(parsed: &Parsed, args: &[String]) -> Run {
             open_browser(&url, address.port(), parsed.bool("no-browser"));
         }
         let app = axum::Router::new().fallback(handle).with_state(viewer.clone());
+        tokio::spawn(crate::server::resume_named(viewer.clone()));
         let stopped = viewer.clone();
         axum::serve(listener, app)
             .with_graceful_shutdown(async move {

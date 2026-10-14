@@ -254,7 +254,7 @@ and what the six targets have yet to run.
   acknowledgement, and keep successful links when backup fails.
 - [x] Port native setup, approval, recovery, revocation, unfinished-setup discard,
   vault merge/CAS retries and account-scoped receipts.
-- [ ] Port named invitations, claims, grant verification, outbox recovery,
+- [x] Port named invitations, claims, grant verification, outbox recovery,
   recipient revocation and the existing viewer-driven resume loop.
 - [ ] Review the Rust protocol port independently and resolve release-blocking
   findings before stable distribution; retain the broader protocol review task.
@@ -273,8 +273,17 @@ client's tests, and its journey passes against the service's own identity
 store. Tampered statements are the protocol crate's shared cases, and every
 answer is verified by that crate. No content key, recovery key or text
 reached a request to the service or its storage in those runs. The client's
-tests pass on all six targets in CI. Named shares remain. [rust-client.md](rust-client.md) has the evidence and where Rust
-refuses what Go accepts.
+tests pass on all six targets in CI. [rust-client.md](rust-client.md) has the
+evidence and where Rust refuses what Go accepts.
+
+The fourth item followed the same day, on macOS arm64: a Rust viewer shares
+an excerpt with two people, a browser recipient signs up by email and
+accepts, the restarted viewer grants on its own, and the recipient's
+recovery, key rotation and revocation hold, through the service's named
+browser check against its smoke server. Claims without the invitation's
+secret, from a device the recipient's history never approved, or for another
+invitation get no key, in the client's tests. What remains of P3 is the
+independent review.
 
 ### P4 Complete recording and operating-system integration
 

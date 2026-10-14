@@ -12,7 +12,7 @@
 //! actions and messages are its.
 
 use std::fmt;
-use std::fs::{self, OpenOptions, TryLockError};
+use std::fs::{self, File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -25,7 +25,7 @@ use slink_protocol::{
     AgreementKey, Kind, Operation, Record, Recovery, Request, Signed, SigningKey, State, Vault,
     Verified, code_matches, confirmation, open_recovery, recovery_token, verify_record, wrap,
 };
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 
 use crate::device::{self, Device};
 use crate::origin::origin;
@@ -34,7 +34,7 @@ use crate::vault::{Contents, MAX_PLAINTEXT, Receipt};
 
 /// The most an answer may hold: the record and its pending requests, with
 /// room for the list of shares the account owns.
-const LIMIT: usize = 12 * 1024 * 1024;
+pub(crate) const LIMIT: usize = 12 * 1024 * 1024;
 /// The longest device name, in bytes.
 const MAX_NAME: usize = 80;
 
@@ -247,9 +247,9 @@ pub(crate) fn signed_json(signed: &Signed) -> Value {
 
 /// What the service answers: the account the key is for, the record it
 /// holds for it, if any, and the approval requests waiting.
-struct Remote {
-    account: String,
-    record: Option<Record>,
+pub(crate) struct Remote {
+    pub(crate) account: String,
+    pub(crate) record: Option<Record>,
     requests: Vec<Signed>,
 }
 
@@ -275,7 +275,7 @@ impl Remote {
     }
 }
 
-fn random<const N: usize>() -> Result<[u8; N], Error> {
+pub(crate) fn random<const N: usize>() -> Result<[u8; N], Error> {
     let mut bytes = [0; N];
     SystemRandom::new()
         .fill(&mut bytes)
@@ -283,7 +283,7 @@ fn random<const N: usize>() -> Result<[u8; N], Error> {
     Ok(bytes)
 }
 
-fn now() -> u64 {
+pub(crate) fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_millis() as u64)
@@ -351,9 +351,16 @@ fn prepare(
 
 /// This machine's part in one account on one server.
 pub struct Identity {
-    home: PathBuf,
+    pub(crate) home: PathBuf,
     server: Option<String>,
-    api_key: String,
+    pub(crate) api_key: String,
+}
+
+/// Held while this process changes the keys of a home: the lock in the
+/// process and the one on `identity/.lock`, released together.
+pub(crate) struct Exclusive {
+    _process: MutexGuard<'static, ()>,
+    _file: File,
 }
 
 impl Identity {
@@ -367,24 +374,27 @@ impl Identity {
         }
     }
 
-    fn server(&self) -> Result<&str, Error> {
+    pub(crate) fn server(&self) -> Result<&str, Error> {
         self.server
             .as_deref()
             .ok_or_else(|| refused("invalid encrypted identity server"))
     }
 
-    /// Takes `action` with what a page sent: `status`, `setup`,
-    /// `confirm-recovery`, `discard-setup`, `request`, `recover`, `approve`,
-    /// `revoke`, `sharing` or `sync`.
-    pub async fn handle(&self, action: &str, input: &Input) -> Result<Status, Error> {
-        let server = self.server()?;
+    /// Refuses before anything is sent when there is no key to send.
+    pub(crate) fn signed_in(&self) -> Result<(), Error> {
         if self.api_key.is_empty() {
             return Err(Error::Service {
                 status: 401,
                 message: "run slink login first".to_owned(),
             });
         }
-        let _one = OPERATIONS.lock().await;
+        Ok(())
+    }
+
+    /// Waits for this process's other actions, then takes the lock file
+    /// without waiting; `busy` is what another process holding it is told.
+    pub(crate) async fn exclusive(&self, busy: &str) -> Result<Exclusive, Error> {
+        let process = OPERATIONS.lock().await;
         let dir = self.home.join("identity");
         create_private_dir(&dir).map_err(|error| refused(&error.to_string()))?;
         let mut options = OpenOptions::new();
@@ -394,18 +404,28 @@ impl Identity {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let lock = options
+        let file = options
             .open(dir.join(".lock"))
             .map_err(|error| refused(&error.to_string()))?;
-        match lock.try_lock() {
-            Ok(()) => {}
-            Err(TryLockError::WouldBlock) => {
-                return Err(refused(
-                    "another slink process is updating device keys; retry shortly",
-                ));
-            }
-            Err(TryLockError::Error(error)) => return Err(refused(&error.to_string())),
+        match file.try_lock() {
+            Ok(()) => Ok(Exclusive {
+                _process: process,
+                _file: file,
+            }),
+            Err(TryLockError::WouldBlock) => Err(refused(busy)),
+            Err(TryLockError::Error(error)) => Err(refused(&error.to_string())),
         }
+    }
+
+    /// Takes `action` with what a page sent: `status`, `setup`,
+    /// `confirm-recovery`, `discard-setup`, `request`, `recover`, `approve`,
+    /// `revoke`, `sharing` or `sync`.
+    pub async fn handle(&self, action: &str, input: &Input) -> Result<Status, Error> {
+        let server = self.server()?;
+        self.signed_in()?;
+        let _held = self
+            .exclusive("another slink process is updating device keys; retry shortly")
+            .await?;
         // A backup that lost a race is made again from the newer vault.
         for _ in 0..3 {
             match self.once(server, action, input).await {
@@ -441,7 +461,7 @@ impl Identity {
 
     /// The record the service holds, or, with `body`, the record after it
     /// took the write or the request in `body`.
-    async fn request(&self, server: &str, body: Option<Value>) -> Result<Remote, Error> {
+    pub(crate) async fn request(&self, server: &str, body: Option<Value>) -> Result<Remote, Error> {
         let unreachable = || refused("cannot reach encrypted key backup");
         let http = client(Duration::from_secs(45)).map_err(|_| unreachable())?;
         let url = format!("{server}/api/identity");
@@ -513,7 +533,7 @@ impl Identity {
         state.recovery_wrap = wrap_to(&context, &state.recovery, &key)?;
         let event = Signed::sign(Kind::Event, &state.encode(), &recovery.root)?;
         let head = event.hash(Kind::Event)?;
-        let data = Contents::default().merge(&self.home, server, account)?;
+        let data = Contents::default().merge(&self.home, server, account, &root)?;
         let update = prepare(
             server,
             None,
@@ -532,7 +552,13 @@ impl Identity {
         Ok(())
     }
 
-    async fn once(&self, server: &str, action: &str, input: &Input) -> Result<Status, Error> {
+    /// One attempt at `action`, under the locks [`Identity::handle`] takes.
+    pub(crate) async fn once(
+        &self,
+        server: &str,
+        action: &str,
+        input: &Input,
+    ) -> Result<Status, Error> {
         let mut remote = self.request(server, None).await?;
         let file = device::file(&self.home, server, &remote.account);
         let mut device = device::load(&file)?;
@@ -690,7 +716,7 @@ impl Identity {
             "sharing" => Some(Operation::Sharing),
             _ => return Err(refused("unknown device action")),
         };
-        data = data.merge(&self.home, server, &state.account)?;
+        data = data.merge(&self.home, server, &state.account, &state.root)?;
         let mut next = state.clone();
         next.signer = own.id.clone();
         match kind {
@@ -779,8 +805,12 @@ impl Identity {
         let state = &verified.state;
         let recovery = open_recovery(&input.recovery_key, state)?;
         let key = state.unwrap_key(&recovery.agreement, &state.recovery_wrap)?;
-        let data =
-            Contents::open(&key, verified, server)?.merge(&self.home, server, &state.account)?;
+        let data = Contents::open(&key, verified, server)?.merge(
+            &self.home,
+            server,
+            &state.account,
+            &state.root,
+        )?;
         let mut device = Device::new(random()?, random()?);
         device.pin(record, verified)?;
         device::save(file, &device)?;
@@ -808,7 +838,7 @@ impl Identity {
 }
 
 /// The whole answer, unless it is longer than `limit`.
-async fn read(mut response: Response, limit: usize) -> Option<Vec<u8>> {
+pub(crate) async fn read(mut response: Response, limit: usize) -> Option<Vec<u8>> {
     let mut body = Vec::new();
     while let Some(chunk) = response.chunk().await.ok()? {
         body.extend_from_slice(&chunk);

@@ -5,20 +5,21 @@
 //! The vault is read as Go's client reads it and held to the same rules: a
 //! receipt is for this server and this account, an incoming-share key opens
 //! to the public key it is filed under, and a named share is one Go would
-//! accept. A vault that breaks one is refused whole, so a device never
-//! writes back less than it was given.
+//! accept for this identity. A vault that breaks one is refused whole, so a
+//! device never writes back less than it was given.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::Path;
 
-use serde_json::{Map, Value, json};
+use serde_json::Value;
 use slink_local::write_private;
 use slink_protocol::encoding::{decode_exact, digest, encode};
 use slink_protocol::{AgreementKey, State, Verified};
 
 use crate::identity::{Error, refused};
+use crate::named::{Outbox, read_outbox};
 use crate::publish::share_id;
 
 /// The most links, and named shares, a vault holds.
@@ -98,9 +99,8 @@ pub struct Contents {
     pub shares: Vec<Receipt>,
     /// Incoming-share private keys by their public keys, base64url.
     pub inboxes: BTreeMap<String, String>,
-    /// Named shares still being granted, as Go writes them. This build does
-    /// not make them; it checks them and keeps them.
-    pub named: Vec<Value>,
+    /// Named shares still being granted, one for each ciphertext.
+    pub named: Vec<Outbox>,
 }
 
 fn invalid() -> Error {
@@ -148,7 +148,7 @@ impl Contents {
         if !data
             .named
             .iter()
-            .all(|item| valid_outbox(item, server, &state.account, &state.root))
+            .all(|item| item.valid(server, &state.account, &state.root))
         {
             return Err(refused("invalid private sharing backup"));
         }
@@ -159,8 +159,7 @@ impl Contents {
         {
             return Err(refused("invalid share key in vault"));
         }
-        let named = data.named.iter().map(go_fields).collect();
-        Ok(Contents { named, ..data })
+        Ok(data)
     }
 
     /// The fields Go's client reads, with the types it reads them as.
@@ -179,10 +178,10 @@ impl Contents {
             .iter()
             .map(Receipt::read)
             .collect::<Option<Vec<_>>>()?;
-        let named = list("named")?;
-        if !named.iter().all(Value::is_object) {
-            return None;
-        }
+        let named = list("named")?
+            .iter()
+            .map(Outbox::read)
+            .collect::<Option<Vec<_>>>()?;
         let inboxes = match fields.get("inboxes") {
             None | Some(Value::Null) => BTreeMap::new(),
             Some(Value::Object(keys)) => keys
@@ -204,10 +203,8 @@ impl Contents {
     pub fn encode(&self) -> Vec<u8> {
         let mut fields = Vec::new();
         if !self.named.is_empty() {
-            fields.push(format!(
-                "\"named\":{}",
-                slink_format::encode(&Value::Array(self.named.clone()))
-            ));
+            let named: Vec<String> = self.named.iter().map(Outbox::encode).collect();
+            fields.push(format!("\"named\":[{}]", named.join(",")));
         }
         if !self.inboxes.is_empty() {
             let inboxes = self
@@ -235,13 +232,21 @@ impl Contents {
             && self
                 .named
                 .iter()
-                .all(|item| valid_outbox(item, server, &state.account, &state.root))
+                .all(|item| item.valid(server, &state.account, &state.root))
     }
 
-    /// The vault with every link this machine keeps for the account added:
-    /// the receipts in `home`'s `shares` that are whole links on `server`
-    /// for this account. Any other file there stays local and blocks nothing.
-    pub fn merge(mut self, home: &Path, server: &str, account: &str) -> Result<Contents, Error> {
+    /// The vault with every link and named share this machine keeps for the
+    /// account added: the receipts in `home`'s `shares` that are whole links
+    /// on `server` for this account, and the shares in its `named-shares`
+    /// made under this root key. Any other file there stays local and
+    /// blocks nothing.
+    pub fn merge(
+        mut self,
+        home: &Path,
+        server: &str,
+        account: &str,
+        root: &str,
+    ) -> Result<Contents, Error> {
         let dir = home.join("shares");
         let entries = match fs::read_dir(&dir) {
             Ok(entries) => entries.collect::<io::Result<Vec<_>>>().map_err(io_error)?,
@@ -275,11 +280,12 @@ impl Contents {
         if self.version == 0 {
             self.version = 1;
         }
-        // One entry for each ciphertext, in the order Go writes them.
+        // One entry for each ciphertext, this machine's over the vault's, in
+        // the order Go writes them.
+        let saved = read_outbox(home, server, account, root)?;
         let mut named = BTreeMap::new();
-        for item in self.named.drain(..) {
-            let hash = item["sha256"].as_str().unwrap_or_default().to_owned();
-            named.insert(hash, item);
+        for item in self.named.drain(..).chain(saved) {
+            named.insert(item.sha256.clone(), item);
         }
         self.named = named.into_values().collect();
         self.shares = by_url.into_values().collect();
@@ -289,9 +295,11 @@ impl Contents {
         Ok(self)
     }
 
-    /// Writes each link into `home`'s `shares`, so that a device that joins
-    /// the account keeps them. A file that already holds the receipt as it
-    /// would be written is left alone.
+    /// Writes each link into `home`'s `shares`, and each named share this
+    /// machine does not have into `named-shares`, so that a device that
+    /// joins the account keeps the links and goes on granting. A file that
+    /// already holds the receipt as it would be written is left alone, and
+    /// a named share already here is this machine's to keep.
     pub fn import(&self, home: &Path) -> Result<(), Error> {
         for receipt in &self.shares {
             let name = digest(
@@ -303,6 +311,15 @@ impl Contents {
                 continue;
             }
             write_private(&file, text.as_bytes()).map_err(io_error)?;
+        }
+        for item in &self.named {
+            // The hash was checked as 64 hex digits when the vault opened.
+            let file = home
+                .join("named-shares")
+                .join(format!("{}.json", item.sha256));
+            if !file.exists() {
+                write_private(&file, item.encode().as_bytes()).map_err(io_error)?;
+            }
         }
         Ok(())
     }
@@ -333,177 +350,9 @@ fn io_error(error: io::Error) -> Error {
     refused(&error.to_string())
 }
 
-/// Whether `item` is a named share Go would keep for this identity: for this
-/// server, account and root key, one to ten invitations to addresses, each
-/// with the secret its commitment was made from, and no ciphertext.
-pub fn valid_outbox(item: &Value, server: &str, account: &str, root: &str) -> bool {
-    let Some(fields) = item.as_object() else {
-        return false;
-    };
-    let text = |name: &str| match fields.get(name) {
-        None | Some(Value::Null) => Some(""),
-        Some(Value::String(text)) => Some(text.as_str()),
-        Some(_) => None,
-    };
-    let strings = |value: Option<&Value>| match value {
-        None | Some(Value::Null) => Some(serde_json::Map::new()),
-        Some(Value::Object(map)) if map.values().all(Value::is_string) => Some(map.clone()),
-        Some(_) => None,
-    };
-    // Go reads `status` as text by recipient and keeps it; only its type
-    // matters here.
-    let (Some(_), Some(secrets)) = (
-        strings(fields.get("status")),
-        strings(fields.get("secrets")),
-    ) else {
-        return false;
-    };
-    let (Some(item_server), Some(item_account), Some(item_root), Some(id), Some(hash), Some(key)) = (
-        text("server"),
-        text("account"),
-        text("root"),
-        text("id"),
-        text("sha256"),
-        text("key"),
-    ) else {
-        return false;
-    };
-    // Go reads the envelope as bytes; only an empty one is kept.
-    if text("envelope") != Some("") {
-        return false;
-    }
-    let Some(Value::Array(invitations)) = fields.get("invitations") else {
-        return false;
-    };
-    if item_server != server
-        || item_account != account
-        || item_root != root
-        || !share_id(id)
-        || hash.len() != 64
-        || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
-        || decode_exact::<32>(key).is_err()
-        || !(1..=10).contains(&invitations.len())
-    {
-        return false;
-    }
-    let mut seen = Vec::new();
-    for invitation in invitations {
-        let Some(fields) = invitation.as_object() else {
-            return false;
-        };
-        let field = |name: &str| match fields.get(name) {
-            None | Some(Value::Null) => Some(""),
-            Some(Value::String(text)) => Some(text.as_str()),
-            Some(_) => None,
-        };
-        let (Some(id), Some(email), Some(commitment)) =
-            (field("id"), field("email"), field("commitment"))
-        else {
-            return false;
-        };
-        if seen.contains(&id) || email.len() > 254 || !email_address(email) {
-            return false;
-        }
-        seen.push(id);
-        if decode_exact::<24>(id).is_err() {
-            return false;
-        }
-        let secret = secrets.get(id).and_then(Value::as_str).unwrap_or_default();
-        match decode_exact::<32>(secret) {
-            Ok(secret) if digest(&secret) == commitment => {}
-            _ => return false,
-        }
-    }
-    true
-}
-
-/// A named share with the fields Go reads and nothing else, as Go writes it
-/// back: a device that writes the vault keeps what it can check.
-fn go_fields(item: &Value) -> Value {
-    let pick = |from: &Value, names: &[&str]| -> Map<String, Value> {
-        names
-            .iter()
-            .map(|name| {
-                (
-                    (*name).to_owned(),
-                    from.get(*name).cloned().unwrap_or(json!("")),
-                )
-            })
-            .collect()
-    };
-    let mut kept = pick(item, &["server", "account", "root", "id", "sha256", "key"]);
-    if let Some(Value::Object(status)) = item
-        .get("status")
-        .filter(|status| status.as_object().is_some_and(|status| !status.is_empty()))
-    {
-        kept.insert("status".to_owned(), Value::Object(status.clone()));
-    }
-    let invitations = item["invitations"].as_array().map_or(Vec::new(), |list| {
-        list.iter()
-            .map(|invitation| Value::Object(pick(invitation, &["id", "email", "commitment"])))
-            .collect()
-    });
-    kept.insert("invitations".to_owned(), Value::Array(invitations));
-    kept.insert("secrets".to_owned(), item["secrets"].clone());
-    Value::Object(kept)
-}
-
-/// Go's pattern for an address a share is for, lower case only:
-/// `^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,63}$`.
-fn email_address(text: &str) -> bool {
-    let alnum = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
-    let Some((local, domain)) = text.split_once('@') else {
-        return false;
-    };
-    // The top-level name has no dot, so it follows the last one.
-    let Some((name, top)) = domain.rsplit_once('.') else {
-        return false;
-    };
-    !local.is_empty()
-        && local
-            .bytes()
-            .all(|byte| alnum(byte) || b".!#$%&'*+/=?^_`{|}~-".contains(&byte))
-        && name.bytes().next().is_some_and(alnum)
-        && name.bytes().last().is_some_and(alnum)
-        && name
-            .bytes()
-            .all(|byte| alnum(byte) || matches!(byte, b'.' | b'-'))
-        && (2..=63).contains(&top.len())
-        && top.bytes().all(|byte| byte.is_ascii_lowercase())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn addresses_are_held_to_gos_pattern() {
-        for good in [
-            "a@b.cd",
-            "first.last+tag@mail.example.test",
-            "x@1-2.io",
-            "o'neil@example.org",
-        ] {
-            assert!(email_address(good), "{good}");
-        }
-        for bad in [
-            "",
-            "@b.cd",
-            "a@b",
-            "a@.cd",
-            "a@b-.cd",
-            "a@-b.cd",
-            "a@b.c",
-            "a@b.c0",
-            "A@b.cd",
-            "a@B.cd",
-            "a b@c.de",
-            "a@b@c.de",
-            &format!("a@b.{}", "c".repeat(64)),
-        ] {
-            assert!(!email_address(bad), "{bad}");
-        }
-    }
 
     fn receipt(server: &str) -> Receipt {
         let key = encode(&[1; 32]);
@@ -598,50 +447,5 @@ mod tests {
             Contents::read(&serde_json::from_str("{}").unwrap()),
             Some(Contents::default())
         );
-    }
-}
-
-#[cfg(test)]
-mod named {
-    use super::*;
-
-    /// A named share Go would keep, with fields it does not read.
-    fn item() -> Value {
-        let secret = [5; 32];
-        let id = encode(&[6; 24]);
-        json!({
-            "server": "https://h", "account": "usr_a", "root": "r", "id": "23456789abcdef",
-            "sha256": "A".repeat(64), "key": encode(&[7; 32]), "envelope": "", "extra": 1,
-            "invitations": [{"id": id, "email": "b@c.de", "commitment": digest(&secret), "note": "x"}],
-            "secrets": {id.clone(): encode(&secret)}, "status": {},
-        })
-    }
-
-    #[test]
-    fn a_named_share_is_checked_and_kept_with_gos_fields() {
-        let good = item();
-        assert!(valid_outbox(&good, "https://h", "usr_a", "r"));
-        assert!(!valid_outbox(&good, "https://h", "usr_b", "r"));
-        assert!(!valid_outbox(&good, "https://h", "usr_a", "other"));
-        let kept = go_fields(&good);
-        assert!(kept.get("extra").is_none() && kept.get("envelope").is_none());
-        assert!(kept.get("status").is_none(), "an empty status is left out");
-        assert!(kept["invitations"][0].get("note").is_none());
-        assert!(valid_outbox(&kept, "https://h", "usr_a", "r"));
-        for (field, value) in [
-            ("envelope", json!("AAAA")),
-            ("status", json!({"x": 1})),
-            ("secrets", json!({})),
-            ("invitations", json!([])),
-            ("id", json!("23456789abcde1")),
-        ] {
-            let mut bad = good.clone();
-            bad[field] = value;
-            assert!(!valid_outbox(&bad, "https://h", "usr_a", "r"), "{field}");
-        }
-        let mut twice = good.clone();
-        let invitation = twice["invitations"][0].clone();
-        twice["invitations"] = json!([invitation.clone(), invitation]);
-        assert!(!valid_outbox(&twice, "https://h", "usr_a", "r"));
     }
 }

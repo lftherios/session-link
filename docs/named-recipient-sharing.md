@@ -163,7 +163,9 @@ SLINK_BROWSER_SCRIPT=../session-link/scripts/check-named-browser.mjs \
 npm run smoke:encrypted
 ```
 
-This uses a loopback mailbox and isolated browser profiles. It checks the exact
+`slink-rs`, the Rust port, passes it too as `SLINK_BINARY` (2026-10-14;
+[rust-client.md](rust-client.md)). This uses a loopback mailbox and isolated
+browser profiles. It checks the exact
 prepared bytes, first-account acceptance, sender restart, forwarded-link denial,
 native-to-browser approval, browser recovery, incoming-key rotation, old grants,
 recipient revocation, mobile layout and plaintext/key absence in hosted requests

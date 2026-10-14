@@ -8,7 +8,7 @@ and imported, read in a browser from a server on loopback, and cut down to an
 excerpt that leaves out what was not chosen. When this slice was written
 nothing in the binary published; signing in, publishing a link and deleting
 one have since been ported, and [rust-client.md](rust-client.md) describes
-them. What reaches device keys or named shares still says it cannot.
+them, with device keys and named shares.
 
 ## What works
 
@@ -266,9 +266,8 @@ there for the build check and now has callers.
   [protocol](spool-protocol.md) together. Until then `list` shows finished
   captures only and the server has no `/r/<id>`.
 - `prune`, `on`, `off`, `status`, `doctor`, `setup`, `tap`, `record`.
-- Named shares, the rest of backlog item 8. The server's named-share
-  endpoint answers 501 with one message; publishing a link, signing in and
-  device keys are in [rust-client.md](rust-client.md).
+  Publishing, signing in, device keys and named shares are in
+  [rust-client.md](rust-client.md).
 - The runner in CI, and on Linux and Windows at all.
 - The browser checks and the opt-in handoff test in CI. They were run by
   hand.

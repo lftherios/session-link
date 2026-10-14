@@ -108,7 +108,7 @@ impl Receipt {
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
@@ -129,7 +129,7 @@ fn pending_file(dir: &Path, prefix: &str) -> Option<PathBuf> {
 }
 
 /// A new envelope for `text`, under a key made for it alone.
-fn seal(text: &str) -> Result<(Vec<u8>, String), String> {
+pub(crate) fn seal(text: &str) -> Result<(Vec<u8>, String), String> {
     let random = SystemRandom::new();
     let (mut key, mut nonce) = ([0; 32], [0; 12]);
     random

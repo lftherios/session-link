@@ -41,10 +41,8 @@ const LOCAL_ACCESS_JS: &str = include_str!("../../../go/internal/open/local-acce
 const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'none'";
 /// The name an excerpt carries its selection under.
 const EXCERPT: &str = "session_link.share.v1";
-/// What the outbox page, and publishing to named people, are told until
-/// named shares are ported.
-const NO_NAMED_SHARES: &str =
-    "slink-rs cannot share with named people yet — nothing was uploaded. The Go slink can.";
+/// How often a running viewer goes on granting shares for named people.
+const RESUME_EVERY: std::time::Duration = std::time::Duration::from_secs(15);
 
 pub struct Viewer {
     pub access: String,
@@ -464,25 +462,52 @@ fn host(target: &str) -> &str {
         .unwrap_or(target)
 }
 
-/// Whether a publish request names people to share with. Anything but no
+/// The people a publish request names, when it names any. Anything but no
 /// body, `null`, or an object whose `recipients` is absent, `null` or a list
 /// of text is not a publish request.
-fn named(body: &[u8]) -> Result<bool, ()> {
+fn named(body: &[u8]) -> Result<Option<Vec<String>>, ()> {
     let Some(first) = serde_json::Deserializer::from_slice(body)
         .into_iter::<Value>()
         .next()
     else {
-        return Ok(false);
+        return Ok(None);
     };
     match first.map_err(drop)? {
-        Value::Null => Ok(false),
+        Value::Null => Ok(None),
         Value::Object(fields) => match fields.get("recipients") {
-            None | Some(Value::Null) => Ok(false),
-            Some(Value::Array(people)) if people.iter().all(Value::is_string) => Ok(true),
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::Array(people)) => people
+                .iter()
+                .map(|person| person.as_str().map(str::to_owned))
+                .collect::<Option<_>>()
+                .map(Some)
+                .ok_or(()),
             Some(_) => Err(()),
         },
         _ => Err(()),
     }
+}
+
+/// A page's answer for a failed action on keys: the message, and the
+/// status Go's client gives it.
+fn identity_error(error: &slink_client::identity::Error) -> Response {
+    let mut failure = json!({"message": error.to_string()});
+    // The settings page offers to discard the unfinished setup.
+    if let Some(code) = error.code() {
+        failure["code"] = json!(code);
+    }
+    let status = StatusCode::from_u16(error.status()).unwrap_or(StatusCode::UNPROCESSABLE_ENTITY);
+    send(
+        status,
+        "application/json",
+        slink_format::encode(&json!({"error": failure})),
+    )
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis() as i64)
 }
 
 impl Viewer {
@@ -527,8 +552,24 @@ impl Viewer {
                 }}),
             );
         }
-        if named {
-            return json_error(StatusCode::NOT_IMPLEMENTED, NO_NAMED_SHARES);
+        if let Some(people) = named {
+            let identity = Identity::new(&home(), &self.target, &self.api_key());
+            let shared = match identity.publish_named(&inspection.text, &people).await {
+                Ok(shared) => shared,
+                Err(error) => return identity_error(&error),
+            };
+            eprintln!("Published: {}", shared.url);
+            if preview {
+                let count = shared.recipients.len();
+                let _ = self
+                    .drafts
+                    .record_published(id, &shared.url, count, now_ms());
+            }
+            let recipients: Vec<Value> = shared.recipients.iter().map(|r| r.to_json()).collect();
+            return reply(
+                StatusCode::OK,
+                json!({"id": shared.id, "url": shared.url, "recipients": recipients, "warning": shared.error}),
+            );
         }
         let upload =
             slink_client::upload(&home(), &inspection.text, &self.target, &self.api_key()).await;
@@ -540,10 +581,7 @@ impl Viewer {
         let url = upload.body["url"].as_str().unwrap_or_default();
         eprintln!("Published: {url}");
         if preview {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |since| since.as_millis() as i64);
-            let _ = self.drafts.record_published(id, url, 0, now);
+            let _ = self.drafts.record_published(id, url, 0, now_ms());
         }
         reply(
             StatusCode::OK,
@@ -586,20 +624,74 @@ impl Viewer {
     /// when it is asked to show it.
     async fn identity(&self, action: &str, input: &Input) -> Response {
         let identity = Identity::new(&home(), &self.target, &self.api_key());
-        let (status, body) = match identity.handle(action, input).await {
-            Ok(status) => (StatusCode::OK, status.to_json()),
-            Err(error) => {
-                let mut failure = json!({"message": error.to_string()});
-                // The settings page offers to discard the unfinished setup.
-                if let Some(code) = error.code() {
-                    failure["code"] = json!(code);
-                }
-                let status = StatusCode::from_u16(error.status())
-                    .unwrap_or(StatusCode::UNPROCESSABLE_ENTITY);
-                (status, json!({"error": failure}))
-            }
+        match identity.handle(action, input).await {
+            Ok(status) => send(
+                StatusCode::OK,
+                "application/json",
+                slink_format::encode(&status.to_json()),
+            ),
+            Err(error) => identity_error(&error),
+        }
+    }
+
+    /// The shares for named people this machine is granting, for the
+    /// "Shared with people" page, after revoking one person's access when
+    /// the page asks to.
+    async fn named(&self, body: &[u8]) -> Response {
+        let input = serde_json::Deserializer::from_slice(body)
+            .into_iter::<Value>()
+            .next()
+            .and_then(Result::ok)
+            .filter(|value| value.is_object() || value.is_null())
+            .and_then(|value| {
+                let text = |name: &str| match &value[name] {
+                    Value::Null => Some(String::new()),
+                    Value::String(text) => Some(text.clone()),
+                    _ => None,
+                };
+                Some((text("action")?, text("id")?, text("invite_id")?))
+            });
+        let Some((action, id, invitation)) = input else {
+            return json_error(StatusCode::BAD_REQUEST, "invalid request");
         };
-        send(status, "application/json", slink_format::encode(&body))
+        let revoke = match action.as_str() {
+            "status" => "",
+            // A revocation missing either id is not a listing.
+            "revoke" if id.is_empty() || invitation.is_empty() => {
+                return json_error(
+                    StatusCode::BAD_REQUEST,
+                    "share and invitation ids are required",
+                );
+            }
+            "revoke" => &id,
+            _ => return json_error(StatusCode::BAD_REQUEST, "unknown sharing action"),
+        };
+        let identity = Identity::new(&home(), &self.target, &self.api_key());
+        match identity.named_shares(revoke, &invitation, true).await {
+            Ok(shares) => {
+                let shares: Vec<Value> = shares.iter().map(|shared| shared.to_json()).collect();
+                send(
+                    StatusCode::OK,
+                    "application/json",
+                    slink_format::encode(&json!({"shares": shares})),
+                )
+            }
+            Err(error) => identity_error(&error),
+        }
+    }
+}
+
+/// Goes on granting shares for named people while the viewer runs: a person
+/// who accepts gets their key at the next pass. Only an invitation this
+/// machine made, and a claim proven with its secret, releases a key.
+pub async fn resume_named(viewer: Arc<Viewer>) {
+    let mut every =
+        tokio::time::interval_at(tokio::time::Instant::now() + RESUME_EVERY, RESUME_EVERY);
+    every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        every.tick().await;
+        let identity = Identity::new(&home(), &viewer.target, &viewer.api_key());
+        let _ = identity.named_shares("", "", false).await;
     }
 }
 
@@ -983,12 +1075,14 @@ pub async fn handle(State(viewer): State<Arc<Viewer>>, request: Request) -> Resp
         };
         return viewer.identity(&action, &input).await;
     }
-    // Named shares are the next part of the port.
     if path == "/api/named" {
-        if !local_action {
-            return blocked();
+        if !post || !local_action {
+            return json_error(StatusCode::FORBIDDEN, "local action required");
         }
-        return json_error(StatusCode::NOT_IMPLEMENTED, NO_NAMED_SHARES);
+        let Ok(body) = axum::body::to_bytes(body, 4096).await else {
+            return json_error(StatusCode::BAD_REQUEST, "invalid request");
+        };
+        return viewer.named(&body).await;
     }
     send(
         StatusCode::NOT_FOUND,

@@ -1,6 +1,6 @@
-# Rust client: signing in, publishing, deleting and device keys
+# Rust client: signing in, publishing, deleting, device keys and named shares
 
-2026-10-14, extended the same day · Implemented slices of the [Rust migration](rust-migration.md), the first three items of P3 (backlog item 8) · `slink-rs` signs in, publishes a session as an encrypted link from the terminal and from the local viewer, sends a lost upload again as the same ciphertext, and takes a link offline. It sets up recovery, asks for approval and gives it, recovers with the recovery key, revokes a device, and backs each new link up to the account's vault. Against the hosted service's smoke server it signs in by email approval, a browser opens what it published, and three machines share one account through the settings page. Named shares are not ported. The tests of both slices pass on all six targets in CI.
+2026-10-14, extended twice the same day · Implemented slices of the [Rust migration](rust-migration.md), the first four items of P3 (backlog item 8) · `slink-rs` signs in, publishes a session as an encrypted link from the terminal and from the local viewer, sends a lost upload again as the same ciphertext, and takes a link offline. It sets up recovery, asks for approval and gives it, recovers with the recovery key, revokes a device, and backs each new link up to the account's vault. From the local viewer it shares an excerpt with named people and grants each their key once they accept. Against the hosted service's smoke server it signs in by email approval, a browser opens what it published, three machines share one account through the settings page, and a browser recipient accepts a named share and reads it. The tests of the first two slices pass on all six targets in CI; named shares have run on macOS arm64.
 
 `crates/slink-client` is the hosted service as the CLI reaches it. It
 composes the [protocol crate](rust-protocol.md), which seals the document and
@@ -22,9 +22,9 @@ protocol the device keys follow.
 | `share` | The newest local session or the agent's newest for this project, whichever was active last, a session named by id or transcript, or `--pick`; imported first when it is a transcript. Signs in through the browser when there is no key and a person is at the terminal |
 | `delete` | A link, `s/<id>` or a bare id; a bare id is tried as a pre-encryption session first, as Go tries it |
 | Local viewer | `POST /api/publish-preview/<id>` and `/api/publish/<id>` publish a link; `/api/login/status`, `start` and `cancel` run the browser sign-in for a page; an excerpt's page has the publish control and says where it encrypts to; a published view keeps its link in `drafts/published/` |
-| Recovery and devices | `/settings` and its `POST /api/identity`, with Go's actions: `status`; `setup`, which shows the recovery key until `confirm-recovery`; `discard-setup`; `request` and `approve` by code; `recover` with the key; `revoke`; `sharing`, which adds the incoming-share key named shares will use; and `sync`. Errors carry Go's messages and statuses, and `setup_conflict` for the page's discard offer |
+| Recovery and devices | `/settings` and its `POST /api/identity`, with Go's actions: `status`; `setup`, which shows the recovery key until `confirm-recovery`; `discard-setup`; `request` and `approve` by code; `recover` with the key; `revoke`; `sharing`, which adds the incoming-share key named shares are wrapped to; and `sync`. Errors carry Go's messages and statuses, and `setup_conflict` for the page's discard offer |
 | Backup | A link `push`, `share` or a page publishes goes into the account's vault when this machine is an approved device. The answer says `synced`, `locked`, `setup` or `failed`, as Go's does, and the link and its receipt are kept whatever it says |
-| Not yet | Sharing with named people: `/api/named` and a publish with recipients answer 501 with one message, and `/shared` loads and shows it |
+| Named people | A page's publish with `recipients`: one to ten addresses, sharing turned on for the account if it is not, the excerpt sealed here and uploaded behind one signed invitation each, and each person's link, with the invitation's secret while they are still to accept. `/shared` and its `POST /api/named` list the shares with each person's status and revoke one person. While the viewer runs it looks every 15 seconds at up to eight unfinished shares and grants each person who has accepted, once their claim holds. Go's messages and statuses |
 
 ## Layout
 
@@ -37,9 +37,10 @@ protocol the device keys follow.
 | [login.rs](../crates/slink-client/src/login.rs), [delete.rs](../crates/slink-client/src/delete.rs) | Signing in by key or browser; deleting a share or a pre-encryption session |
 | [identity.rs](../crates/slink-client/src/identity.rs) | The device actions. Each reads the account's record, verifies it whole, checks it against this device's pins, and writes one event and its vault against the head and revision it read |
 | [device.rs](../crates/slink-client/src/device.rs) | This machine's device for an account: its two keys and its pins in `identity/<hash of server and account>.json`, mode 0600, with the exact setup request until the service holds it |
-| [vault.rs](../crates/slink-client/src/vault.rs) | What the vault holds and Go's rules for it; this machine's receipts merged in, and the vault's written out to `shares/` |
+| [vault.rs](../crates/slink-client/src/vault.rs) | What the vault holds and Go's rules for it; this machine's receipts and named shares merged in, and the vault's written out to `shares/` and `named-shares/` |
+| [named.rs](../crates/slink-client/src/named.rs) | Named shares: the outbox, `named-shares/<hash of the ciphertext>.json` in Go's shape; publishing with invitations; listing, granting and revoking |
 | [publish.rs](../crates/slink/src/publish.rs), [account.rs](../crates/slink/src/account.rs) | The five commands, with Go's messages |
-| [server.rs](../crates/slink/src/server.rs) | The local viewer's publish, sign-in and identity endpoints |
+| [server.rs](../crates/slink/src/server.rs) | The local viewer's publish, sign-in, identity and named endpoints, and the pass that goes on granting |
 
 ## Choices
 
@@ -53,7 +54,11 @@ protocol the device keys follow.
 | One action at a time | An async lock in the process, then an advisory lock on `identity/.lock` taken without waiting, as Go takes it, with the standard library's `File::try_lock` | Two processes must not pin from one answer and write from another; the service's compare-and-swap keeps other machines out |
 | A backup that loses a race | Made again from the vault the service then holds, three times in all, for `sync` only | Go's rule. An approval or a revocation that loses is reported, and the person decides again |
 | Setup | The identity is made, pinned and kept with the exact signed request before anything is sent | A retry sends the same request, so the recovery key shown is the one that works, and an answer that holds another root is refused from the first |
-| Named shares in the vault | Checked by Go's rules and written back with Go's fields | This build makes none, and must not drop or change another device's |
+| Named shares in the vault | Read as Go reads them, checked by its rules, and written with its fields; this machine's merged in at each write, and the vault's written out where this machine has none | Another of the account's machines, or one recovered, goes on granting a share this one made |
+| A share whose answer was lost | Its ciphertext, key and secrets kept in `named-shares/pending-<hash of server, account, text and people>.json` before upload, and sent again unchanged | The service takes the same ciphertext for the same people as the same share. A share it deleted answers 410, and the pending copy goes, so the next publish seals afresh |
+| A claim's proof | Checked before the person's history is asked for, and the history asked for one person at a time | Go's order. A claim without the secret costs the service no second read, and ten people do not make one answer ten times as long |
+| Granting while the viewer runs | A task on the viewer's runtime, first after 15 seconds, under the same two locks as every key action | Go's resume loop. The first pass after a restart is when a person who accepted meanwhile gets their key |
+| Nothing shared yet | Listing with no `named-shares/` asks nothing and writes nothing | The viewer of someone who never shares leaves their home as it was. Go takes the lock first, so every Go viewer writes `identity/.lock` within 15 seconds of starting |
 | Device file | Go's fields: the two keys in standard base64, the pins, the pending setup and recovery key | Nobody uses the software yet, so Rust need not read Go's files; the shape is kept so that the two stay easy to compare |
 | Clipboard | `pbcopy`, `clip`, then `wl-copy` or `xclip`, as Go | The link is printed either way |
 
@@ -69,14 +74,13 @@ Each difference is a refusal or a request not made.
 | `slink delete` against a plain-HTTP server that is not on this machine | Sends the API key | Refused with the publishing rule's message |
 | Deleting a pre-encryption session | Its client follows redirects | Follows none |
 | A transport failure | Go's error text | Go's words for a refused connection, a reset, a timeout and an unknown host; reqwest's text for anything else |
-| The identity endpoint, `/api/identity` | Its own URL check, which takes `https://host/?` as Go's publishing check does and then asks `/` with `/api/identity` as the query | The publishing rule above |
+| The identity endpoint, `/api/identity`, which named shares read first | Its own URL check, which takes `https://host/?` as Go's publishing check does and then asks `/` with `/api/identity` as the query | The publishing rule above |
 | No API key | The request is sent with an empty key, and the service refuses it | 401 with `run slink login first`, and nothing sent |
 | A pending approval request | Listed with its code | Listed without it. The code is what the person types from the other device, so the approving page is not given it; the settings page never showed it |
 | A request dated more than a minute ahead | Listed | Not listed; the service does not keep one either |
 | A link in the vault | Its URL parsed and compared by scheme, host and path | Compared as the text `<server>/s/<id>#key=<key>`, which is how every client writes it |
 | A receipt with no account, from before receipts named one | Backed up when the service lists that ciphertext as the account's | Stays on this machine. Rust writes none, and the port reads no state Go wrote |
 | A device file from an older Go client: a recovery key, no pinned root and no pending setup | Offered for discarding when the account's identity is another's | Refused with the pins' message. Rust never writes one |
-| Sharing with named people | Works | Refused with 501 and nothing sent |
 | A capture still being recorded | Its spool is assembled before publishing | Read as the file it is: the recorder, which writes spools, is not ported |
 
 ## What building it found
@@ -105,15 +109,17 @@ Each difference is a refusal or a request not made.
 | Check | Result |
 | --- | --- |
 | [tests/service.rs](../crates/slink-client/tests/service.rs) against a stand-in service | A lost acknowledgement sent again as the same bytes and recovered as the link; a session that is not valid or holds a credential never sent, and no key made for it; no plaintext to an old server; servers refused before any request; no redirect followed by publishing or deleting; answers that do not acknowledge this envelope not taken as a link; a pending receipt that no longer opens to the text not sent; the browser sign-in polled to its grant and saved for the configured server; delete's requests and answers. Go's own tests of the same are among them |
-| [tests/cli.rs](../crates/slink/tests/cli.rs) | Every refusal before a byte is sent, with Go's messages; a key saved and removed; `push` to a stand-in, the envelope opened with the printed key, the receipt kept, `delete` sent; the local viewer's publish, its 501 for named people, recovery set up through `/api/identity` and the next link backed up, and its refusals from another origin |
+| [tests/cli.rs](../crates/slink/tests/cli.rs) | Every refusal before a byte is sent, with Go's messages; a key saved and removed; `push` to a stand-in, the envelope opened with the printed key, the receipt kept, `delete` sent; the local viewer's publish, recovery set up through `/api/identity` and the next link backed up, and its refusals from another origin; a publish for named people refused before recovery and for a bad address, then sent with sharing turned on, the excerpt opened with the outbox's key, each person's link, the listing and a revocation, a revocation the service refused not reported done, and no key or secret in any request |
+| [tests/named.rs](../crates/slink-client/tests/named.rs) against a stand-in that holds each invitation and grant to the sender's current head and approved devices, as the service's named store does | Two people invited, each statement naming only its own; a person accepts, another machine recovered with the key has the share from the vault and grants it, and the person opens the text with their incoming-share key; the other still waits until revoked; no key, secret or text in a request. Go's tests: no grant for a proof made without the secret, another invitation's secret, a signature from elsewhere, a payload for another account or a device the history never approved, and no history asked for when the proof fails; a claimed invitation's link without its secret; a stale local status making no second grant; a person never invited stopping the pass after the grant before it is written down; a revocation with nothing kept here still sent; shares of a replaced identity and broken files left out of listings and the vault. Also a lost answer sent again as the same ciphertext and invitations, and a deleted share sealed afresh |
 | [tests/identity.rs](../crates/slink-client/tests/identity.rs) against a stand-in that verifies each write with the protocol crate and takes it only against the head and revision it holds | Three machines on one account: setup, the recovery key shown until confirmed, links backed up and another account's left out, sharing turned on, approval refused with a wrong code and given with the right one, revocation with a new epoch, vault key and incoming-share key that the revoked device's old key does not open, recovery on a machine that never had a device, and no secret in what the service stored. Go's setup tests: an identity the service substituted refused from the setup on, with nothing backed up to it; an interrupted setup sent again unchanged; a setup lost to another device reported on every action until discarded, then joined by approval or recovery with fresh keys; only an unfinished setup discarded. Also an older vault and a replaced root refused with the pins unchanged, a backup that loses a race made again, and the lock between processes |
 | The same journey with `SLINK_IDENTITY_BRIDGE` set to the server checkout's `scripts/identity-bridge.mjs` | Passes against the service's own identity store, which verifies each statement and applies its compare-and-swap |
 | `SLINK_BINARY=go/slink SLINK_CANDIDATE=target/release/slink-rs node scripts/compat.mjs` | 87 of 104, from 86. The `share` steps of the discovery case now agree |
 | Server smoke, `SLINK_BINARY=target/release/slink-rs npm run smoke:encrypted` | Passes: the smoke's own `push`, decrypted with Web Crypto after the sender exits |
 | The same with `SLINK_BROWSER_SCRIPT=`[check-publish-browser.mjs](../scripts/check-publish-browser.mjs) | Passes with `slink-rs` and with Go: `slink login` approved through email, `push` with the saved key, the link opened in headless Chromium with its wrong-key and missing-key cases, `delete`, then 410 |
 | The same with `SLINK_BROWSER_SCRIPT=`[check-identity-browser.mjs](../scripts/check-identity-browser.mjs) and `slink-rs` | Passes: a first share through email sign-in, recovery set up on the settings page, a second machine locked until approved by its code, a wrong code refused, revocation, recovery on a third machine that restores the exact link, and no recovery key, content key or text in any request to the service |
+| The same with `SLINK_BROWSER_SCRIPT=`[check-named-browser.mjs](../scripts/check-named-browser.mjs) and `slink-rs` | Passes: an excerpt shared with two people from the viewer, recovery set up there, the exact bytes behind the link, a browser recipient signed up by email who accepts, the sender's viewer restarted and granting on its own, a forwarded link refused to another account, the sender's browser approved from the native settings page, recovery and key rotation in the recipient's browser with the old grant still open, the person revoked from `/shared`, and no text, key or secret in a request or in the browser's storage |
 | [check-viewer-browser.mjs](../scripts/check-viewer-browser.mjs), [check-security-browser.mjs](../scripts/check-security-browser.mjs) against `slink-rs` | Both pass |
-| `cargo test` | 289 pass |
+| `cargo test` | 298 pass |
 | `rust.yml` at `579f589`, and again at `073ad8a` with device keys | Lint, the format, protocol and viewer jobs, and the build, tests and `build-check` on each of the six targets pass |
 
 ## Cost
@@ -128,11 +134,12 @@ It is the device actions, and the parts of the protocol crate that make
 statements, which `build-check` did not call: the recovery package, requests,
 events and vaults signed here.
 
+Named shares take it to 9,016,800 bytes, another 129 KiB, again with no new
+package: the outbox, the requests, and the protocol crate's invitations,
+claim checks and grants, which nothing called before.
+
 ## Not done
 
-- Named invitations, claims, grants, the outbox and its resume loop. The
-  vault's named shares are kept but not written to `named-shares/`, and none
-  made here go into it, until then.
 - The terminal's questions: `Publish? [y/N]`, `--pick`, and the sign-in
   `share` starts. They need a terminal, so no test answers them; the code that
   asks is a port of Go's line by line.
