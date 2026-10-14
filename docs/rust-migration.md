@@ -282,8 +282,8 @@ accepts, the restarted viewer grants on its own, and the recipient's
 recovery, key rotation and revocation hold, through the service's named
 browser check against its smoke server. Claims without the invitation's
 secret, from a device the recipient's history never approved, or for another
-invitation get no key, in the client's tests. What remains of P3 is the
-independent review.
+invitation get no key, in the client's tests, which pass on all six targets
+in CI. What remains of P3 is the independent review.
 
 ### P4 Complete recording and operating-system integration
 

@@ -1,6 +1,6 @@
 # Rust client: signing in, publishing, deleting, device keys and named shares
 
-2026-10-14, extended twice the same day · Implemented slices of the [Rust migration](rust-migration.md), the first four items of P3 (backlog item 8) · `slink-rs` signs in, publishes a session as an encrypted link from the terminal and from the local viewer, sends a lost upload again as the same ciphertext, and takes a link offline. It sets up recovery, asks for approval and gives it, recovers with the recovery key, revokes a device, and backs each new link up to the account's vault. From the local viewer it shares an excerpt with named people and grants each their key once they accept. Against the hosted service's smoke server it signs in by email approval, a browser opens what it published, three machines share one account through the settings page, and a browser recipient accepts a named share and reads it. The tests of the first two slices pass on all six targets in CI; named shares have run on macOS arm64.
+2026-10-14, extended twice the same day · Implemented slices of the [Rust migration](rust-migration.md), the first four items of P3 (backlog item 8) · `slink-rs` signs in, publishes a session as an encrypted link from the terminal and from the local viewer, sends a lost upload again as the same ciphertext, and takes a link offline. It sets up recovery, asks for approval and gives it, recovers with the recovery key, revokes a device, and backs each new link up to the account's vault. From the local viewer it shares an excerpt with named people and grants each their key once they accept. Against the hosted service's smoke server it signs in by email approval, a browser opens what it published, three machines share one account through the settings page, and a browser recipient accepts a named share and reads it. The tests of all three slices pass on all six targets in CI.
 
 `crates/slink-client` is the hosted service as the CLI reaches it. It
 composes the [protocol crate](rust-protocol.md), which seals the document and
@@ -120,7 +120,7 @@ Each difference is a refusal or a request not made.
 | The same with `SLINK_BROWSER_SCRIPT=`[check-named-browser.mjs](../scripts/check-named-browser.mjs) and `slink-rs` | Passes: an excerpt shared with two people from the viewer, recovery set up there, the exact bytes behind the link, a browser recipient signed up by email who accepts, the sender's viewer restarted and granting on its own, a forwarded link refused to another account, the sender's browser approved from the native settings page, recovery and key rotation in the recipient's browser with the old grant still open, the person revoked from `/shared`, and no text, key or secret in a request or in the browser's storage |
 | [check-viewer-browser.mjs](../scripts/check-viewer-browser.mjs), [check-security-browser.mjs](../scripts/check-security-browser.mjs) against `slink-rs` | Both pass |
 | `cargo test` | 298 pass |
-| `rust.yml` at `579f589`, and again at `073ad8a` with device keys | Lint, the format, protocol and viewer jobs, and the build, tests and `build-check` on each of the six targets pass |
+| `rust.yml` at `579f589`, again at `073ad8a` with device keys and at `f99ee41` with named shares | Lint, the format, protocol and viewer jobs, and the build, tests and `build-check` on each of the six targets pass |
 
 ## Cost
 
