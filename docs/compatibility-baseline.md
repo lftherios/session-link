@@ -90,10 +90,11 @@ every one of those ways.
 The first real candidate is `slink-rs`, the binary of the
 [Rust workspace](rust-build.md). On 2026-10-12, with every importer ported,
 86 of the 104 cases agree: usage, help, flags, completion, and every
-import with the bytes and mode of the capture it leaves. The rest fail with a
-"not ported yet" message or a refusal to publish, which is the runner
-reporting the port's progress as intended. [rust-cli.md](rust-cli.md) has the
-count by group.
+import with the bytes and mode of the capture it leaves. On 2026-10-14, with
+publishing ported, 87 do. The rest fail with a "not ported yet" message from
+`record`, `on`, `off` or `prune`, which is the runner reporting the port's
+progress as intended. [rust-cli.md](rust-cli.md) has the count by group and
+[rust-client.md](rust-client.md) what publishing changed.
 
 Nothing in a run reaches the network or the real `~/.slink`. `HOME` and
 `SLINK_HOME` point into the throwaway root, `PATH` is an empty directory so

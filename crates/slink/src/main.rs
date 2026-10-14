@@ -8,12 +8,14 @@ use std::process::ExitCode;
 use commands::{Command, USAGE};
 use flags::{Exit, Run};
 
+mod account;
 mod check;
 mod commands;
 mod flags;
 mod import;
 mod list;
 mod picker;
+mod publish;
 mod server;
 mod text;
 mod tls;
@@ -103,12 +105,11 @@ fn dispatch(command: &Command, args: &[String]) -> Run {
             }
             None => Err(Exit::usage("which shell? slink completion <bash|zsh|fish>")),
         },
-        // Nothing leaves the machine from this binary until publishing is
-        // ported whole: there is no half of it that would be safe to have.
-        "share" | "push" | "login" | "logout" | "delete" => Err(Exit::failure(format!(
-            "slink-rs cannot publish yet — `{}` is not ported, and nothing was uploaded\n  the Go slink publishes: https://session.link/docs",
-            command.name
-        ))),
+        "push" => publish::push(&parsed),
+        "share" => publish::share(&parsed),
+        "login" => account::login(&parsed),
+        "logout" => account::logout(&parsed),
+        "delete" => account::delete(&parsed),
         name => Err(Exit::failure(format!(
             "slink-rs: `{name}` is not ported yet"
         ))),

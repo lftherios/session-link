@@ -215,6 +215,47 @@ impl Drafts {
             .filter(|source| file_id(source))
     }
 
+    /// Where this viewer last published a saved preview, so the share panel
+    /// can offer the link again: its `url`, `published_at` in milliseconds,
+    /// and how many people it was shared with, when it was.
+    pub fn published(&self, id: &str) -> Option<Value> {
+        if !file_id(id) {
+            return None;
+        }
+        let record = self.read_json(&["published", &format!("{id}.json")])?;
+        let url = record["url"].as_str().filter(|url| !url.is_empty())?;
+        let mut published =
+            json!({"url": url, "published_at": record["published_at"].as_i64().unwrap_or(0)});
+        if let Some(recipients) = record["recipients"].as_u64().filter(|count| *count > 0) {
+            published["recipients"] = json!(recipients);
+        }
+        Some(published)
+    }
+
+    /// Keeps the newest link a saved preview was published as. Losing it
+    /// loses only the reminder: the publish happened and was reported.
+    pub fn record_published(
+        &self,
+        id: &str,
+        url: &str,
+        recipients: usize,
+        at: i64,
+    ) -> io::Result<()> {
+        if url.is_empty() || !file_id(id) {
+            return Ok(());
+        }
+        let text = slink_format::encode(&Value::String(url.to_owned()));
+        let count = if recipients > 0 {
+            format!(",\"recipients\":{recipients}")
+        } else {
+            String::new()
+        };
+        write_private(
+            &self.dir.join("published").join(format!("{id}.json")),
+            format!("{{\"url\":{text}{count},\"published_at\":{at}}}").as_bytes(),
+        )
+    }
+
     /// The excerpts made from one session whose previews are still saved,
     /// newest first.
     pub fn saved_views(&self, source: &str) -> Vec<SavedView> {

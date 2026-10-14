@@ -164,6 +164,7 @@ pub fn run(parsed: &Parsed, args: &[String]) -> Run {
     SystemRandom::new().fill(&mut key).map_err(|_| {
         Exit::failure("cannot start the local viewer: no randomness for its access key")
     })?;
+    let (target, api_key) = slink_client::resolve_target(&slink_local::home(), "", "");
     let viewer = Arc::new(Viewer {
         access: URL_SAFE_NO_PAD.encode(key),
         drafts: Drafts::beside(&previews),
@@ -173,6 +174,9 @@ pub fn run(parsed: &Parsed, args: &[String]) -> Run {
         warning,
         stop: Notify::new(),
         saving: std::sync::Mutex::new(()),
+        target,
+        api_key,
+        login: tokio::sync::Mutex::new(None),
     });
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -369,6 +373,16 @@ fn open_browser(url: &str, port: u16, disabled: bool) {
     if disabled {
         return;
     }
+    if let Err(error) = launch(url) {
+        eprintln!(
+            "Could not open a browser: {error}\nOpen the printed URL manually; the preview is ready."
+        );
+    }
+}
+
+/// Opens `url` in the system's browser, and returns once the opener has
+/// started.
+pub fn launch(url: &str) -> std::io::Result<()> {
     let mut command = if cfg!(target_os = "macos") {
         std::process::Command::new("open")
     } else if cfg!(windows) {
@@ -385,11 +399,7 @@ fn open_browser(url: &str, port: u16, disabled: bool) {
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
-    if let Err(error) = command.spawn() {
-        eprintln!(
-            "Could not open a browser: {error}\nOpen the printed URL manually; the preview is ready."
-        );
-    }
+    command.spawn().map(drop)
 }
 
 fn modified(file: &Path) -> i64 {

@@ -248,9 +248,9 @@ and what the six targets have yet to run.
 
 ### P3 Complete publication and private identity
 
-- [ ] Implement `login`, `logout`, `push`, `share` and `delete`, with exact
+- [x] Implement `login`, `logout`, `push`, `share` and `delete`, with exact
   server-origin rules, redirect behavior, caps, confirmation and error handling.
-- [ ] Write a durable pending receipt before upload, resume it after a lost
+- [x] Write a durable pending receipt before upload, resume it after a lost
   acknowledgement, and keep successful links when backup fails.
 - [ ] Port native setup, approval, recovery, revocation, unfinished-setup discard,
   vault merge/CAS retries and account-scoped receipts.
@@ -263,6 +263,12 @@ and what the six targets have yet to run.
 result, and a second device recovers Rust-created links. An interrupted upload
 resumes. Rotation, substitution, rollback, tampering and concurrent-vault cases
 pass. Content keys never enter HTTP requests, logs or plaintext server storage.
+
+On 2026-10-14 the first two items hold on macOS arm64: Rust publishes to the
+existing Node server, a browser opens the result, and an interrupted upload
+resumes. Backup reports `setup` until device keys are ported, so nothing yet
+recovers a link on a second device. [rust-client.md](rust-client.md) has the
+evidence and where Rust refuses what Go accepts.
 
 ### P4 Complete recording and operating-system integration
 

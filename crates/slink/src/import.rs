@@ -149,9 +149,17 @@ fn resolve(from: &str, session: &str, arg: &str) -> Result<Resolved, Exit> {
     Err(Exit::failure(no_session_hint(from, &cwd)))
 }
 
+/// The newest session of an agent for this directory or the nearest of its
+/// parents that has one, and that directory.
+pub fn latest_with_walk_up(from: &str, cwd: &Path) -> Option<(Found, PathBuf)> {
+    slink_import::project_dirs(cwd)
+        .into_iter()
+        .find_map(|dir| slink_import::latest(from, &dir).map(|found| (found, dir)))
+}
+
 /// Import's empty state. "Nothing to import here" is three situations, and
 /// the binary can tell which one this is, so it says so with one next step.
-fn no_session_hint(from: &str, cwd: &Path) -> String {
+pub fn no_session_hint(from: &str, cwd: &Path) -> String {
     let record = "  or record fresh here:  slink record -- <your agent command>";
     if let Some(elsewhere) = slink_import::newest_anywhere(from) {
         // History exists, only not for this project: point at the newest
@@ -218,7 +226,7 @@ fn no_session_hint(from: &str, cwd: &Path) -> String {
 }
 
 /// A time in seconds as RFC 3339, for the one function that words an age.
-fn rfc3339(unix: i64) -> String {
+pub fn rfc3339(unix: i64) -> String {
     let stamp = stamp(unix);
     format!(
         "{}-{}-{}T{}:{}:{}Z",

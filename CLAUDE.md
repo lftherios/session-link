@@ -12,7 +12,9 @@ A Rust port of the CLI is under way in `crates/`, following
 `docs/rust-migration.md`. Its binary, `slink-rs`, is not the product yet, and
 Go remains the reference until the plan's P5. It knows every command, imports
 from all eight harnesses, lists captures, serves the local viewer and exports
-excerpts, and refuses to publish; `docs/rust-cli.md` has what is ported.
+excerpts, and signs in, publishes encrypted links and deletes them; device
+keys and named shares are not ported. `docs/rust-cli.md` and
+`docs/rust-client.md` have what is.
 Nobody uses the software yet, so the port migrates nothing and need not read
 state Go wrote.
 
@@ -101,6 +103,10 @@ touches before finishing.
 - `SLINK_HANDOFF_BINARY=<a built slink> node --test test/pi-handoff.test.mjs`
   runs the pi extension's `/slink view` against that binary. Without the
   variable that case is skipped and the others use a stand-in.
+- `scripts/check-publish-browser.mjs` is run from the server checkout with
+  `SLINK_BINARY=<a built slink> SLINK_BROWSER_SCRIPT=<path to it> npm run
+  smoke:encrypted`: the binary signs in by email approval, publishes, a
+  browser opens its link, and it deletes the link. Either binary passes.
 - `node scripts/check-protocol-browser.mjs` runs the protocol cases through the
   viewer's code in a browser, whose Web Crypto is not Node's. It needs no
   binary and no server, and reads `BROWSER_BINARY`.

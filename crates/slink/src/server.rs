@@ -4,8 +4,8 @@
 //! A page is given only to a request that carries the key, which is made
 //! for each run and travels in the URL's fragment, where no server log,
 //! proxy or other local port sees it. Composing an excerpt stays on this
-//! machine too; publishing is not in this binary yet, so nothing here
-//! uploads.
+//! machine too. Publishing one is the only thing that leaves it, as
+//! ciphertext, and only on a request from a page this server gave out.
 
 use std::fs;
 use std::path::PathBuf;
@@ -17,14 +17,18 @@ use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::response::Response;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use serde_json::{Value, json};
+use ring::rand::{SecureRandom, SystemRandom};
+use serde_json::{Map, Value, json};
+use slink_client::{login, resolve_target};
 use slink_local::share::{Catalog, Draft, build_catalog, export};
 use slink_local::{
-    Drafts, READING_SUFFIX, SaveError, display_path, save_preview, session_title_key, unix_now,
+    Drafts, READING_SUFFIX, SaveError, capture_dir, display_path, home, save_preview,
+    session_title_key, unix_now,
 };
-use tokio::sync::Notify;
+use tokio::sync::{Mutex, Notify};
 
 use crate::picker::{self, Row, escape};
+use crate::publish::inspect;
 use crate::view::Source;
 use crate::viewer;
 
@@ -36,6 +40,9 @@ const LOCAL_ACCESS_JS: &str = include_str!("../../../go/internal/open/local-acce
 const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'none'";
 /// The name an excerpt carries its selection under.
 const EXCERPT: &str = "session_link.share.v1";
+/// What the settings and outbox pages, and sharing with named people, are
+/// told until device keys are ported.
+const NO_DEVICE_KEYS: &str = "slink-rs keeps no device keys yet, so recovery, devices and sharing with named people are not here — nothing was uploaded. The Go slink has them.";
 
 pub struct Viewer {
     pub access: String,
@@ -48,6 +55,39 @@ pub struct Viewer {
     pub stop: Notify,
     /// Held while a draft's revision is read and the next one written.
     pub saving: std::sync::Mutex<()>,
+    /// Where publishing goes, and the key it had when this viewer started.
+    pub target: String,
+    pub api_key: String,
+    /// A sign-in started from a page, while the person confirms it.
+    pub login: Mutex<Option<Login>>,
+}
+
+/// A sign-in a page started.
+pub struct Login {
+    id: String,
+    state: &'static str,
+    url: String,
+    user_code: String,
+    error: String,
+    waiting: Option<tokio::task::AbortHandle>,
+}
+
+impl Login {
+    fn to_json(&self) -> Map<String, Value> {
+        let mut fields = Map::new();
+        fields.insert("id".to_owned(), json!(self.id));
+        fields.insert("state".to_owned(), json!(self.state));
+        for (name, value) in [
+            ("url", &self.url),
+            ("user_code", &self.user_code),
+            ("error", &self.error),
+        ] {
+            if !value.is_empty() {
+                fields.insert(name.to_owned(), json!(value));
+            }
+        }
+        fields
+    }
 }
 
 fn asset(name: &str) -> &'static str {
@@ -77,6 +117,18 @@ fn error_page(title: &str, headline: &str, detail: &str) -> String {
 }
 
 impl Viewer {
+    /// The key to publish with: the one saved now when it is for this
+    /// viewer's server, since a sign-in in a terminal or a page can save
+    /// one while the viewer runs, else the one it started with.
+    fn api_key(&self) -> String {
+        let (target, key) = resolve_target(&home(), "", "");
+        if target == self.target && !key.is_empty() {
+            key
+        } else {
+            self.api_key.clone()
+        }
+    }
+
     /// The page for a saved preview, or `None` when there is no such file.
     fn preview_page(&self, id: &str) -> Option<Result<String, &'static str>> {
         let file = self.previews.join(format!("{id}.json"));
@@ -102,7 +154,7 @@ impl Viewer {
         // Escaping `<` keeps a trace's own text inert inside the tag.
         let embedded = text.replace('<', "\\u003c");
         let publish = slink_format::encode(&json!({
-            "hasKey": false,
+            "hasKey": !self.api_key().is_empty(),
             "file": display_path(&file),
             "endpoint": format!("/api/publish-preview/{id}"),
             "title": name,
@@ -129,7 +181,9 @@ impl Viewer {
             });
             (
                 format!(
-                    "<div class=\"top\">\n       <p class=\"eyebrow\" style=\"margin:0\"><a href=\"/\">← sessions</a></p>\n       <div class=\"pub\">\n         {edit}\n         <button class=\"btn\" id=\"copy\" title=\"Copy this page's address on this computer. Publish to share with a colleague.\">Copy local URL</button>\n         <button class=\"btn\" id=\"dl\" title=\"save the run document as {id}.json\">Download excerpt</button>\n       </div>\n     </div>\n     <div class=\"result-row\"><span class=\"result\" id=\"out\"></span></div><p class=\"note\">Excerpt preview · only the selected material and the author note are included.</p>"
+                    "<div class=\"top\">\n       <p class=\"eyebrow\" style=\"margin:0\"><a href=\"/\">← sessions</a></p>\n       <div class=\"pub\">\n         {edit}\n         <button class=\"btn\" id=\"copy\" title=\"Copy this page's address on this computer. Publish to share with a colleague.\">Copy local URL</button>\n         <button class=\"btn\" id=\"dl\" title=\"save the run document as {id}.json\">Download excerpt</button>\n         <span class=\"note\" title=\"{}\">Encrypted before upload to {}</span>\n         <div id=\"publish-control\"></div>\n       </div>\n     </div>\n     <div class=\"result-row\"><span class=\"result\" id=\"out\"></span></div><p class=\"note\">Excerpt preview · only the selected material and the author note are included. Publishing encrypts this excerpt locally.</p>",
+                    escape(&self.target),
+                    escape(host(&self.target)),
                 ),
                 String::new(),
             )
@@ -275,7 +329,14 @@ impl Viewer {
                     .drafts
                     .saved_views(id)
                     .into_iter()
-                    .map(|view| json!({"title": view.title, "url": format!("/p/{}", view.id)}))
+                    .map(|view| {
+                        let mut link =
+                            json!({"title": view.title, "url": format!("/p/{}", view.id)});
+                        if let Some(published) = self.drafts.published(&view.id) {
+                            link["published"] = published;
+                        }
+                        link
+                    })
                     .collect();
                 reply(
                     StatusCode::OK,
@@ -392,6 +453,201 @@ impl Viewer {
     }
 }
 
+/// The host a server's URL names, as the page says where it publishes.
+fn host(target: &str) -> &str {
+    target
+        .split_once("://")
+        .and_then(|(_, rest)| rest.split('/').next())
+        .filter(|host| !host.is_empty())
+        .unwrap_or(target)
+}
+
+/// Whether a publish request names people to share with. Anything but no
+/// body, `null`, or an object whose `recipients` is absent, `null` or a list
+/// of text is not a publish request.
+fn named(body: &[u8]) -> Result<bool, ()> {
+    let Some(first) = serde_json::Deserializer::from_slice(body)
+        .into_iter::<Value>()
+        .next()
+    else {
+        return Ok(false);
+    };
+    match first.map_err(drop)? {
+        Value::Null => Ok(false),
+        Value::Object(fields) => match fields.get("recipients") {
+            None | Some(Value::Null) => Ok(false),
+            Some(Value::Array(people)) if people.iter().all(Value::is_string) => Ok(true),
+            Some(_) => Err(()),
+        },
+        _ => Err(()),
+    }
+}
+
+impl Viewer {
+    /// Publishes a saved preview, or with `preview` false a capture, as an
+    /// encrypted link, once it is a valid session with no credential in it.
+    async fn publish(&self, id: &str, preview: bool, body: &[u8]) -> Response {
+        let reply = |status: StatusCode, value: Value| {
+            send(status, "application/json", slink_format::encode(&value))
+        };
+        let Ok(named) = named(body) else {
+            return json_error(StatusCode::BAD_REQUEST, "invalid publish request");
+        };
+        let file = if preview {
+            self.previews.join(format!("{id}.json"))
+        } else {
+            capture_dir().join(format!("{id}.json"))
+        };
+        let inspection = match inspect(&file) {
+            Ok(inspection) => inspection,
+            Err(message) => return json_error(StatusCode::BAD_REQUEST, &message),
+        };
+        if !inspection.errors.is_empty() {
+            return reply(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({"error": {"message": "not a valid session/v0 document", "details": inspection.errors}}),
+            );
+        }
+        if !inspection.secrets.is_empty() {
+            let whole = std::path::absolute(&file).unwrap_or_else(|_| file.clone());
+            let hits: Vec<Value> = inspection
+                .secrets
+                .iter()
+                .map(|hit| json!({"pattern": hit.pattern, "preview": hit.preview}))
+                .collect();
+            return reply(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({"error": {
+                    "code": "secrets_detected",
+                    "message": "publish blocked — credentials detected; redact the local file first",
+                    "path": display_path(&whole),
+                    "details": hits,
+                }}),
+            );
+        }
+        if named {
+            return json_error(StatusCode::NOT_IMPLEMENTED, NO_DEVICE_KEYS);
+        }
+        let upload =
+            slink_client::upload(&home(), &inspection.text, &self.target, &self.api_key()).await;
+        if !upload.ok {
+            // No answer, or nothing sent, is a gateway's failure to the page.
+            let status = StatusCode::from_u16(upload.status).unwrap_or(StatusCode::BAD_GATEWAY);
+            return reply(status, Value::Object(upload.body));
+        }
+        let url = upload.body["url"].as_str().unwrap_or_default();
+        eprintln!("Published: {url}");
+        if preview {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_millis() as i64);
+            let _ = self.drafts.record_published(id, url, 0, now);
+        }
+        reply(
+            StatusCode::OK,
+            json!({
+                "url": url,
+                "deduplicated": upload.body.get("deduplicated").cloned().unwrap_or(Value::Null),
+                "backup": upload.body.get("backup").cloned().unwrap_or(Value::Null),
+            }),
+        )
+    }
+}
+
+/// The sign-in a page can start, follow and cancel. The key the service
+/// grants goes into the home's config and never to the page.
+async fn login_api(viewer: Arc<Viewer>, action: &str, method: &Method) -> Response {
+    let reply = |value: Map<String, Value>| {
+        send(
+            StatusCode::OK,
+            "application/json",
+            format!("{}\n", slink_format::encode(&Value::Object(value))),
+        )
+    };
+    let with_account = |mut fields: Map<String, Value>| {
+        fields.insert("signed_in".to_owned(), json!(!viewer.api_key().is_empty()));
+        fields.insert("server".to_owned(), json!(viewer.target));
+        fields
+    };
+    let mut current = viewer.login.lock().await;
+    match (action, method) {
+        ("status", &Method::GET) => match current.as_ref() {
+            Some(login) => reply(with_account(login.to_json())),
+            None => {
+                let mut idle = Map::new();
+                idle.insert("state".to_owned(), json!("idle"));
+                reply(with_account(idle))
+            }
+        },
+        ("cancel", &Method::POST) => {
+            if let Some(waiting) = current.take().and_then(|login| login.waiting) {
+                waiting.abort();
+            }
+            send(StatusCode::OK, "application/json", "{\"ok\":true}")
+        }
+        ("start", &Method::POST) => {
+            if let Some(login) = current.as_ref().filter(|login| login.state == "pending") {
+                return reply(with_account(login.to_json()));
+            }
+            let attempt = match login::begin(&viewer.target, "viewer").await {
+                Ok(attempt) => attempt,
+                Err(message) => {
+                    return send(
+                        StatusCode::BAD_GATEWAY,
+                        "application/json",
+                        format!(
+                            "{}\n",
+                            slink_format::encode(&json!({"error": {"message": message}}))
+                        ),
+                    );
+                }
+            };
+            let mut token = [0; 24];
+            if SystemRandom::new().fill(&mut token).is_err() {
+                return json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "no randomness for the sign-in",
+                );
+            }
+            let id: String = token.iter().map(|byte| format!("{byte:02x}")).collect();
+            let (url, user_code) = (attempt.url.clone(), attempt.user_code.clone());
+            let (watching, mine) = (viewer.clone(), id.clone());
+            let waiting = tokio::spawn(async move {
+                let done = login::wait(&home(), &attempt, std::time::Duration::from_secs(2)).await;
+                let mut current = watching.login.lock().await;
+                let Some(login) = current.as_mut().filter(|login| login.id == mine) else {
+                    return;
+                };
+                login.url.clear();
+                login.user_code.clear();
+                match done {
+                    Ok(_) => login.state = "complete",
+                    Err(message) => {
+                        login.state = "error";
+                        login.error = message;
+                    }
+                }
+            });
+            let started = Login {
+                id,
+                state: "pending",
+                url,
+                user_code,
+                error: String::new(),
+                waiting: Some(waiting.abort_handle()),
+            };
+            let body = started.to_json();
+            *current = Some(started);
+            reply(body)
+        }
+        _ => send(
+            StatusCode::NOT_FOUND,
+            "text/plain; charset=utf-8",
+            "404 page not found\n",
+        ),
+    }
+}
+
 /// The name a title typed for this document's session is kept under.
 fn title_key(document: &Value) -> String {
     session_title_key(
@@ -482,7 +738,9 @@ pub async fn handle(State(viewer): State<Arc<Viewer>>, request: Request) -> Resp
         // An ordinary navigation gets a public shell, which fetches the page
         // itself with the key from the fragment. Without the key, nothing
         // of a session or the list of them is ever sent.
-        let page = path == "/" || path.starts_with("/p/") || path.starts_with("/compose/");
+        let page = matches!(path, "/" | "/settings" | "/shared")
+            || path.starts_with("/p/")
+            || path.starts_with("/compose/");
         return if get && header_text("sec-fetch-mode") == "navigate" && page {
             send(StatusCode::OK, "text/html", ACCESS_SHELL)
         } else {
@@ -624,32 +882,48 @@ pub async fn handle(State(viewer): State<Arc<Viewer>>, request: Request) -> Resp
             ),
         };
     }
-    // Whether anyone is signed in is a question this binary can answer
-    // truthfully: no one is, because it cannot sign anyone in yet.
-    if path == "/api/login/status" && get {
+    // The account pages are the bundle's; what they ask of this server is
+    // below.
+    if get && (path == "/settings" || path == "/shared") {
+        let (title, flag) = if path == "/settings" {
+            ("Recovery and devices", "__IDENTITY__")
+        } else {
+            ("Shared with people", "__NAMED_OUTBOX__")
+        };
+        return send(
+            StatusCode::OK,
+            "text/html",
+            page(
+                title,
+                &format!(
+                    "<a href=\"/\">← Sessions</a><div id=\"root\"></div><script>window.{flag}=true</script><script src=\"/assets/viewer.js\"></script>"
+                ),
+            ),
+        );
+    }
+    for (prefix, preview) in [("/api/publish-preview/", true), ("/api/publish/", false)] {
+        if let Some(id) = id_of(prefix).filter(|_| post) {
+            if !local_action {
+                return json_error(StatusCode::FORBIDDEN, "cross-origin publish blocked");
+            }
+            let Ok(body) = axum::body::to_bytes(body, 4096).await else {
+                return json_error(StatusCode::BAD_REQUEST, "invalid publish request");
+            };
+            return viewer.publish(id, preview, &body).await;
+        }
+    }
+    if let Some(action) = path.strip_prefix("/api/login/") {
         if !local_action {
             return blocked();
         }
-        let server = std::env::var("SLINK_SERVER")
-            .ok()
-            .filter(|server| !server.is_empty());
-        return send(
-            StatusCode::OK,
-            "application/json",
-            slink_format::encode(&json!({
-                "state": "idle",
-                "signed_in": false,
-                "server": server.as_deref().unwrap_or("https://session.link"),
-            })),
-        );
+        return login_api(viewer.clone(), action, method).await;
     }
-    // Everything the Go viewer does through an account or the service.
-    let hosted = ["/api/publish", "/api/login/", "/api/identity", "/api/named"];
-    if hosted.iter().any(|prefix| path.starts_with(prefix)) {
-        return json_error(
-            StatusCode::NOT_IMPLEMENTED,
-            "slink-rs cannot publish yet — nothing was uploaded. The Go slink publishes.",
-        );
+    // Device keys, recovery and named shares are the next part of the port.
+    if path == "/api/identity" || path == "/api/named" {
+        if !local_action {
+            return blocked();
+        }
+        return json_error(StatusCode::NOT_IMPLEMENTED, NO_DEVICE_KEYS);
     }
     send(
         StatusCode::NOT_FOUND,

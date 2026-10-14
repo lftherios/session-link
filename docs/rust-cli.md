@@ -1,14 +1,14 @@
 # Rust CLI: importers, the local viewer and excerpts
 
-2026-10-12 · Implemented slices of the [Rust migration](rust-migration.md), backlog items 6 and 7 · `slink-rs` imports all eight harnesses, serves the local viewer with its sessions page, and composes and exports excerpts; 86 of the 104 runner cases agree with Go, and both browser checks pass against it. The tests of both pass on all six targets in CI.
+2026-10-12, updated 2026-10-14 · Implemented slices of the [Rust migration](rust-migration.md), backlog items 6 and 7 · `slink-rs` imports all eight harnesses, serves the local viewer with its sessions page, and composes and exports excerpts; 86 of the 104 runner cases agree with Go, and both browser checks pass against it. The tests of both pass on all six targets in CI. Publishing came later and is in [rust-client.md](rust-client.md).
 
 Everything a person does with a session before publishing it now runs in the
 Rust binary, in a home of its own: a session of any supported agent is found
 and imported, read in a browser from a server on loopback, and cut down to an
-excerpt that leaves out what was not chosen. Nothing in this binary
-publishes. The commands that would say so and stop, and so does every
-endpoint of the local server that the Go viewer uses to reach an account or
-the hosted service.
+excerpt that leaves out what was not chosen. When this slice was written
+nothing in the binary published; signing in, publishing a link and deleting
+one have since been ported, and [rust-client.md](rust-client.md) describes
+them. What reaches device keys or named shares still says it cannot.
 
 ## What works
 
@@ -20,7 +20,7 @@ the hosted service.
 | `list`, `ls`, `list --json`, `--limit` | Captures in the home. A capture still being recorded is not listed; see "Not done" |
 | `import` | All eight harnesses: a transcript or history by path, `--session` with a path or an id, a pasted session id, or the newest session for this directory and its parents, with its sub-agents. Hermes says it is experimental, as in Go |
 | `view`, `open` | A capture by id, a `session.json`, or a session of any harness by path or id; the sessions page when nothing is named, or the session the command was run from when DeepSeek Harness says which; `--port`, `--no-browser`, `--span`, `--from`, `--pick`, `--background` |
-| `share`, `push`, `login`, `logout`, `delete` | Refused: "cannot publish yet", exit 1, nothing written or sent |
+| `share`, `push`, `login`, `logout`, `delete` | Ported on 2026-10-14; see [rust-client.md](rust-client.md) |
 | `record`, `tap`, `setup`, `on`, `off`, `status`, `doctor`, `prune` | Parsed, then "not ported yet", exit 1 |
 
 ## Layout
@@ -50,7 +50,7 @@ takes both from the operating system.
 | Numbers | `float_roundtrip` in serde_json | See the first finding |
 | Home layout | Go's: `runs/<stamp>-<id>.json`, `previews/<sha256>.json`, `drafts/`, directories 0700 and files 0600 | Nothing asked for another, and the runner compares the files a command leaves and their modes |
 | Local access | Go's model unchanged: loopback only, the printed host name only, a key for each run in the URL's fragment, sent by the page as a header | It is what the security check script tests, and the access script is read from the Go tree and not copied |
-| Publishing | Absent, not stubbed to succeed | The plan's rule: nothing leaves the machine without the publish action, and there is no half of publishing that is safe to have |
+| Publishing | Absent, not stubbed to succeed, until it could be ported whole | The plan's rule: nothing leaves the machine without the publish action, and there is no half of publishing that is safe to have. Link publishing arrived whole on 2026-10-14 |
 | Importers | Go's code line for line in meaning, its odd corners included | Bytes equal to Go's are the cheapest proof a port is right. What looked wrong in Go is listed below and left for a decision, not fixed in passing |
 | Databases | rusqlite with SQLite built in, opened read-only | The plan's choice, already proved on six targets. opencode and Hermes keep their sessions in one |
 | Local time | chrono | Aider writes local times with no zone, and the sessions page groups by local day. For a time that a clock change skipped or repeated the rule is Go's, pinned by a test with made-up zones |
@@ -266,10 +266,9 @@ there for the build check and now has callers.
   [protocol](spool-protocol.md) together. Until then `list` shows finished
   captures only and the server has no `/r/<id>`.
 - `prune`, `on`, `off`, `status`, `doctor`, `setup`, `tap`, `record`.
-- Publication and identity, which are backlog item 8. The server's publish,
-  login, identity and named-share endpoints answer 501 with one message, and
-  it has no `/settings` or `/shared` page. Asked whether anyone is signed in,
-  it says no.
+- Device keys and named shares, the rest of backlog item 8. The server's
+  identity and named-share endpoints answer 501 with one message; publishing
+  a link and signing in are in [rust-client.md](rust-client.md).
 - The runner in CI, and on Linux and Windows at all.
 - The browser checks and the opt-in handoff test in CI. They were run by
   hand.

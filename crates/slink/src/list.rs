@@ -1,9 +1,11 @@
 //! `slink list`: the captures in the home, newest first.
 
+use std::path::{Path, PathBuf};
+
 use slink_local::{Capture, ago, capture_dir, capture_id, list_captures, unix_now};
 
-use crate::flags::{Parsed, Run};
-use crate::text::{clip, plural};
+use crate::flags::{Exit, Parsed, Run};
+use crate::text::{clip, plural, quoted};
 
 /// What every surface that can meet an empty store says: the three ways in,
 /// one on each line.
@@ -39,6 +41,46 @@ pub fn run(parsed: &Parsed) -> Run {
     }
     eprintln!("\n  review:  slink view <id>\n  publish: slink share <id>");
     Ok(())
+}
+
+/// The capture a person means: a path when it has a separator or ends in
+/// `.json`, else an id from `slink list`, else a file of that name here.
+pub fn resolve_capture(reference: &str) -> Result<PathBuf, Exit> {
+    let file = |path: &str| Path::new(path).is_file();
+    if reference.contains(['/', '\\']) || reference.ends_with(".json") {
+        return if file(reference) {
+            Ok(PathBuf::from(reference))
+        } else {
+            Err(Exit::failure(format!("cannot read {reference}")))
+        };
+    }
+    let matches: Vec<PathBuf> = list_captures(&capture_dir())
+        .into_iter()
+        .filter(|capture| capture_id(&capture.file) == reference)
+        .map(|capture| capture.file)
+        .collect();
+    match matches.as_slice() {
+        [only] => return Ok(only.clone()),
+        [] => {}
+        several => {
+            let paths: Vec<String> = several
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect();
+            return Err(Exit::failure(format!(
+                "id {reference} matches {} sessions — pass a full path instead:\n    {}",
+                several.len(),
+                paths.join("\n    ")
+            )));
+        }
+    }
+    if file(reference) {
+        return Ok(PathBuf::from(reference));
+    }
+    Err(Exit::failure(format!(
+        "no session {} — ids are in the first column of `slink list`",
+        quoted(reference)
+    )))
 }
 
 /// The one way a capture is shown in a terminal, so the id a person sees is

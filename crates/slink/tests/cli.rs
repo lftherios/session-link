@@ -139,7 +139,11 @@ impl Home {
             .env_clear()
             .env("HOME", &self.0)
             .env("USERPROFILE", &self.0)
-            .env("SLINK_HOME", self.0.join(".slink"));
+            .env("SLINK_HOME", self.0.join(".slink"))
+            // A publish puts its link on the clipboard. With no PATH at all a
+            // program is still looked for in the system's own directories,
+            // so the path names one that does not exist.
+            .env("PATH", self.0.join("no-programs"));
         if let Some(root) = env::var_os("SystemRoot") {
             command.env("SystemRoot", root);
         }
@@ -455,8 +459,8 @@ fn a_session_is_imported_listed_and_viewed() {
     assert!(fetch(port, "GET", "/", &access).1.contains("Stop viewer"));
     assert_eq!(fetch(port, "GET", "/p/nothing", &access).0, 404);
 
-    // Publishing is not in this binary: the page's own endpoint says so,
-    // and a request from another origin cannot stop the viewer.
+    // Publishing needs an account, and nothing is sent without one; a
+    // request from another origin cannot stop the viewer.
     let local = [("X-Slink-Access", key), ("x-slink", "1")];
     let (status, refused) = fetch(
         port,
@@ -464,8 +468,11 @@ fn a_session_is_imported_listed_and_viewed() {
         &format!("/api/publish-preview{}", &page[2..]),
         &local,
     );
-    assert_eq!(status, 501, "{refused}");
-    assert!(refused.contains("nothing was uploaded"), "{refused}");
+    assert_eq!(status, 401, "{refused}");
+    assert!(
+        refused.contains("run slink login before publishing"),
+        "{refused}"
+    );
     let foreign = [
         ("X-Slink-Access", key),
         ("x-slink", "1"),
@@ -486,23 +493,343 @@ fn a_session_is_imported_listed_and_viewed() {
     home.assert_contained();
 }
 
-/// Nothing leaves the machine from this binary: every command that would
-/// publish says it cannot, and writes nothing.
+const SESSION: &str = r#"{"schema":"session/v0","created_at":"2026-09-12T00:00:00Z","name":"Fictional publish","spans":[{"id":"root","type":"agent","raw":{"text":"PRIVATE_TEXT_SENTINEL"}}]}"#;
+
+/// What a command said on stderr, when it failed with exit status 1 and
+/// printed nothing on stdout.
+fn refused(output: &Output) -> String {
+    assert_eq!(output.status.code(), Some(1), "{}", text(&output.stderr));
+    assert_eq!(text(&output.stdout), "");
+    text(&output.stderr).to_owned()
+}
+
+/// Every way publishing stops before a byte is sent: nothing to publish, no
+/// account, no one to say yes, a document that is not a session or holds a
+/// credential, a server a key may not go to.
 #[test]
-fn nothing_can_be_published_yet() {
+fn publishing_stops_before_anything_is_sent() {
     let home = Home::new("publication");
-    for command in ["share", "push", "login", "logout", "delete"] {
-        let output = home.run(&[command]);
-        assert_eq!(output.status.code(), Some(1), "{command}");
-        assert_eq!(text(&output.stdout), "");
-        let said = text(&output.stderr);
-        assert!(
-            said.contains("cannot publish yet") && said.contains("nothing was uploaded"),
-            "{said}"
+    let work = home.0.join("work");
+    assert_eq!(
+        refused(&home.run(&["push"])),
+        "no sessions yet\n\n  record:  slink record -- <your agent command>\n  import:  slink import\n  ambient: slink setup\n  (or pass a session/v0 .json path)\n"
+    );
+    assert!(refused(&home.run(&["share", "--yes"])).starts_with("no sessions yet"));
+    fs::write(work.join("session.json"), SESSION).unwrap();
+    fs::write(work.join("invalid.json"), "{}").unwrap();
+    fs::write(
+        work.join("secret.json"),
+        SESSION.replace("PRIVATE_TEXT_SENTINEL", "sk-abcdefghijklmnop1234"),
+    )
+    .unwrap();
+    let not_signed_in =
+        "not signed in — run: slink login  (publishing needs an account; capture doesn't)\n";
+    assert_eq!(refused(&home.run(&["push", "session.json"])), not_signed_in);
+    assert_eq!(
+        refused(&home.run(&["share", "session.json"])),
+        not_signed_in
+    );
+    let keyed = ["--key", "rk_test", "--server", "http://127.0.0.1:9"];
+    let said = refused(&home.run(&[&["push", "session.json"][..], &keyed].concat()));
+    assert!(
+        said.starts_with("\"Fictional publish\"\n  1 span · 1 KB · captured ")
+            && said.ends_with(
+                "✓ no credentials detected\nnot a TTY — pass --yes to publish from scripts or CI\n"
+            ),
+        "{said}"
+    );
+    let said = refused(&home.run(&[&["push", "invalid.json", "--yes"][..], &keyed].concat()));
+    assert!(
+        said.starts_with("✗ not a valid session/v0 document\n    file:  invalid.json\n"),
+        "{said}"
+    );
+    let said = refused(&home.run(&[&["push", "secret.json", "--yes"][..], &keyed].concat()));
+    assert!(
+        said.contains("✗ publish blocked — the session appears to contain credentials:\n    provider_api_key  sk-abcde")
+            && said.contains("redact the local file and push again:"),
+        "{said}"
+    );
+    let said = refused(&home.run(&[
+        "push",
+        "session.json",
+        "--yes",
+        "--key",
+        "rk_test",
+        "--server",
+        "http://example.test",
+    ]));
+    assert!(
+        said.ends_with("✗ publish failed for http://example.test (use HTTPS for the server (HTTP is allowed only on localhost))\n    retry to resume any pending encrypted upload\n"),
+        "{said}"
+    );
+    assert!(refused(&home.run(&["push", "nosuch"])).contains("ids are in the first column"));
+
+    // Signing in with a key, and out again.
+    assert_eq!(
+        refused(&home.run(&["login", "--key", "nope"])),
+        "that doesn't look like an API key (rk_…)\n"
+    );
+    let out = home.run(&["logout"]);
+    assert!(out.status.success());
+    assert_eq!(text(&out.stderr), "not signed in\n");
+    let saved = home.run(&[
+        "login",
+        "--key",
+        "rk_saved",
+        "--server",
+        "https://example.test",
+    ]);
+    assert!(saved.status.success());
+    let config = home.0.join(".slink").join("config.json");
+    assert_eq!(
+        text(&saved.stderr),
+        format!("✓ saved to {}\n", config.display())
+    );
+    assert_eq!(
+        fs::read_to_string(&config).unwrap(),
+        "{\n  \"api_key\": \"rk_saved\",\n  \"server\": \"https://example.test\"\n}\n"
+    );
+    let out = home.run(&["logout"]);
+    assert_eq!(
+        text(&out.stderr),
+        "✓ signed out — the key was removed from this machine\n"
+    );
+
+    // Deleting asks for an id, an account and a yes.
+    assert_eq!(
+        refused(&home.run(&["delete"])),
+        "which one? pass the published URL or its id: slink delete <url|id>\n"
+    );
+    assert_eq!(
+        refused(&home.run(&["delete", "s/23456789abcdef"])),
+        "not signed in — run: slink login  (deleting needs the account that published it)\n"
+    );
+    assert_eq!(
+        refused(&home.run(&["delete", "a/b", "--key", "rk_test"])),
+        "\"a/b\" doesn't look like a published URL or id\n"
+    );
+    assert_eq!(
+        refused(&home.run(&["delete", "s/23456789abcdef", "--key", "rk_test"])),
+        "not a TTY — pass --yes to delete from scripts\n"
+    );
+    assert_eq!(home.files(), vec!["config.json".to_owned()]);
+    home.assert_contained();
+}
+
+/// A request the stand-in service was sent.
+#[derive(Clone)]
+struct Sent {
+    method: String,
+    path: String,
+    authorization: String,
+    body: Vec<u8>,
+}
+
+/// A stand-in for the hosted service on loopback. It acknowledges every
+/// envelope as the share `23456789abcdef`, takes shares offline, and keeps
+/// what it was sent.
+struct Service {
+    url: String,
+    sent: std::sync::Arc<std::sync::Mutex<Vec<Sent>>>,
+    _runtime: tokio::runtime::Runtime,
+}
+
+impl Service {
+    fn start() -> Service {
+        use axum::extract::Request;
+        use sha2::Digest;
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Sent>::new()));
+        let record = sent.clone();
+        let app = axum::Router::new().fallback(move |request: Request| {
+            let record = record.clone();
+            async move {
+                let (parts, body) = request.into_parts();
+                let body = axum::body::to_bytes(body, 64 * 1024 * 1024)
+                    .await
+                    .unwrap()
+                    .to_vec();
+                let request = Sent {
+                    method: parts.method.to_string(),
+                    path: parts.uri.to_string(),
+                    authorization: parts
+                        .headers
+                        .get("authorization")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or_default()
+                        .to_owned(),
+                    body,
+                };
+                record.lock().unwrap().push(request.clone());
+                let (status, answer) = match (request.method.as_str(), request.path.as_str()) {
+                    ("POST", "/api/shares") => {
+                        let sum: String = sha2::Sha256::digest(&request.body)
+                            .iter()
+                            .map(|byte| format!("{byte:02x}"))
+                            .collect();
+                        (
+                            201,
+                            serde_json::json!({"id": "23456789abcdef", "sha256": sum, "account_id": "acct_1"})
+                                .to_string(),
+                        )
+                    }
+                    ("DELETE", "/api/shares/23456789abcdef") => (204, String::new()),
+                    _ => (404, String::new()),
+                };
+                axum::response::Response::builder()
+                    .status(status)
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(answer))
+                    .unwrap()
+            }
+        });
+        let listener = runtime
+            .block_on(tokio::net::TcpListener::bind(("127.0.0.1", 0)))
+            .unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        runtime.spawn(async move { axum::serve(listener, app).await });
+        Service {
+            url,
+            sent,
+            _runtime: runtime,
+        }
+    }
+
+    fn sent(&self) -> Vec<Sent> {
+        self.sent.lock().unwrap().clone()
+    }
+}
+
+/// The key in a published link's fragment.
+fn content_key(url: &str) -> &str {
+    url.split_once("#key=").expect("a key in the fragment").1
+}
+
+#[test]
+fn a_session_is_published_encrypted_and_taken_offline() {
+    let home = Home::new("published");
+    let service = Service::start();
+    fs::write(home.0.join("work").join("session.json"), SESSION).unwrap();
+    let target = ["--server", service.url.as_str(), "--key", "rk_test"];
+
+    let pushed = home.run(&[&["push", "session.json", "--yes"][..], &target].concat());
+    let said = text(&pushed.stderr);
+    assert!(pushed.status.success(), "{said}");
+    let url = text(&pushed.stdout).trim_end().to_owned();
+    assert!(
+        url.starts_with(&format!("{}/s/23456789abcdef#key=", service.url)),
+        "{url}"
+    );
+    // Windows finds its clipboard program whatever the PATH says.
+    assert!(
+        said.contains("\n✓ published")
+            && said.ends_with("\n  anyone with this link can view it\n\n  take offline:  slink delete s/23456789abcdef\n"),
+        "{said}"
+    );
+    let upload = &service.sent()[0];
+    assert_eq!(
+        (upload.method.as_str(), upload.path.as_str()),
+        ("POST", "/api/shares")
+    );
+    assert_eq!(upload.authorization, "Bearer rk_test");
+    assert!(!String::from_utf8_lossy(&upload.body).contains("PRIVATE_TEXT_SENTINEL"));
+    assert_eq!(
+        slink_protocol::envelope::decrypt(&upload.body, content_key(&url)).unwrap(),
+        SESSION.as_bytes()
+    );
+    let files = home.files();
+    assert_eq!(files.len(), 1, "{files:?}");
+    assert!(files[0].starts_with("shares/") && files[0].ends_with("-23456789abcdef.json"));
+
+    let deleted = home.run(&[&["delete", &url, "--yes"][..], &target].concat());
+    assert!(deleted.status.success(), "{}", text(&deleted.stderr));
+    assert_eq!(
+        text(&deleted.stderr),
+        format!(
+            "✓ taken offline — the page now shows a deletion notice\n    url:  {}/s/23456789abcdef\n",
+            service.url
+        )
+    );
+    let delete = &service.sent()[1];
+    assert_eq!(
+        (
+            delete.method.as_str(),
+            delete.path.as_str(),
+            delete.authorization.as_str()
+        ),
+        ("DELETE", "/api/shares/23456789abcdef", "Bearer rk_test")
+    );
+
+    // From the local viewer, with the server and key in the environment.
+    let mut command = home.command(&["view", "session.json", "--no-browser"]);
+    command
+        .env("SLINK_SERVER", &service.url)
+        .env("SLINK_API_KEY", "rk_test");
+    let viewer = Running::of(command);
+    let (_, page) = viewer.ask("GET", &viewer.page, "");
+    assert!(page.contains("\"hasKey\":true"), "{page}");
+    let (status, signed) = viewer.json("GET", "/api/login/status", "");
+    assert_eq!(status, 200);
+    assert_eq!(signed["signed_in"], true);
+    assert_eq!(signed["server"], service.url.as_str());
+    let endpoint = viewer.page.replace("/p/", "/api/publish-preview/");
+    let (status, named) = viewer.json("POST", &endpoint, r#"{"recipients":["a@example.test"]}"#);
+    assert_eq!(status, 501, "{named}");
+    assert_eq!(viewer.ask("POST", &endpoint, "[").0, 400);
+    assert_eq!(
+        service.sent().len(),
+        2,
+        "a refused publish reached the service"
+    );
+    let (status, published) = viewer.json("POST", &endpoint, "");
+    assert_eq!(status, 200, "{published}");
+    assert_eq!(published["backup"], "setup");
+    let link = published["url"].as_str().unwrap();
+    assert!(link.starts_with(&format!("{}/s/23456789abcdef#key=", service.url)));
+    let upload = &service.sent()[2];
+    let preview = fs::read(
+        home.0
+            .join(".slink")
+            .join(format!("{}.json", viewer.page.replace("/p/", "previews/"))),
+    )
+    .unwrap();
+    assert_eq!(
+        slink_protocol::envelope::decrypt(&upload.body, content_key(link)).unwrap(),
+        preview
+    );
+    let (status, identity) = viewer.json("POST", "/api/identity", r#"{"action":"status"}"#);
+    assert_eq!(status, 501, "{identity}");
+    assert_eq!(viewer.ask("GET", "/settings", "").0, 200);
+    let foreign = [
+        ("X-Slink-Access", viewer.key.as_str()),
+        ("x-slink", "1"),
+        ("Origin", "https://example.test"),
+    ];
+    for route in [
+        "/api/login/status",
+        "/api/login/start",
+        "/api/identity",
+        endpoint.as_str(),
+    ] {
+        assert_eq!(
+            fetch(&viewer.port, "POST", route, &foreign).0,
+            403,
+            "{route}"
         );
     }
-    assert_eq!(home.files(), Vec::<String>::new());
+    viewer.stop();
+    let published_record = format!("drafts/published/{}.json", viewer_id(&endpoint));
+    assert!(
+        home.files().contains(&published_record),
+        "{:?}",
+        home.files()
+    );
+    assert_eq!(service.sent().len(), 3);
     home.assert_contained();
+}
+
+fn viewer_id(endpoint: &str) -> String {
+    endpoint.rsplit('/').next().unwrap().to_owned()
 }
 
 #[test]

@@ -1470,6 +1470,7 @@ dependencies = [
  "rustls",
  "serde_json",
  "sha2",
+ "slink-client",
  "slink-format",
  "slink-import",
  "slink-local",
@@ -1477,6 +1478,23 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "slink-client"
+version = "0.0.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "reqwest",
+ "ring",
+ "rustls",
+ "serde_json",
+ "sha2",
+ "slink-format",
+ "slink-local",
+ "slink-protocol",
+ "tokio",
 ]
 
 [[package]]

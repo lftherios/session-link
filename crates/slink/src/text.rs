@@ -12,6 +12,16 @@ pub fn clip(text: &str, limit: usize) -> String {
     }
 }
 
+/// A size as the publish gate shows it: megabytes from a million bytes,
+/// else whole kibibytes, at least one.
+pub fn fmt_bytes(count: usize) -> String {
+    if count >= 1_000_000 {
+        format!("{:.1} MB", count as f64 / 1e6)
+    } else {
+        format!("{} KB", (count / 1024).max(1))
+    }
+}
+
 pub fn plural(count: usize, word: &str) -> String {
     if count == 1 {
         format!("{count} {word}")
