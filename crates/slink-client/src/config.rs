@@ -65,6 +65,10 @@ pub fn write(home: &Path, config: &Config) -> io::Result<PathBuf> {
 /// The server and key a command uses: its flag, then `SLINK_SERVER` or
 /// `SLINK_API_KEY`, then the saved sign-in, then the default server and no
 /// key.
+///
+/// The saved key goes only to the server it was issued for. A flag or a
+/// `SLINK_SERVER` naming another, say from a project's environment, gets no
+/// key and signs in there; Go sends the saved key anyway.
 pub fn resolve_target(home: &Path, server_flag: &str, key_flag: &str) -> (String, String) {
     let saved = read(home);
     let variable = |name: &str| std::env::var(name).unwrap_or_default();
@@ -76,12 +80,26 @@ pub fn resolve_target(home: &Path, server_flag: &str, key_flag: &str) -> (String
             .to_owned()
     };
     let server = first([server_flag, &variable("SLINK_SERVER"), &saved.server]);
-    let key = first([key_flag, &variable("SLINK_API_KEY"), &saved.api_key]);
     let server = if server.is_empty() {
         DEFAULT_SERVER.to_owned()
     } else {
         server
     };
+    let issued = if saved.server.is_empty() {
+        DEFAULT_SERVER
+    } else {
+        &saved.server
+    };
+    let same = |one: &str, other: &str| {
+        one.trim_end_matches('/')
+            .eq_ignore_ascii_case(other.trim_end_matches('/'))
+    };
+    let saved_key = if same(issued, &server) {
+        saved.api_key.as_str()
+    } else {
+        ""
+    };
+    let key = first([key_flag, &variable("SLINK_API_KEY"), saved_key]);
     (server, key)
 }
 
@@ -120,6 +138,37 @@ mod tests {
                 server: "https://x.test".to_owned(),
                 ..Config::default()
             }
+        );
+        fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn a_saved_key_goes_only_to_the_server_it_was_issued_for() {
+        let home = std::env::temp_dir().join(format!("slink-client-target-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&home);
+        let config = Config {
+            api_key: "rk_saved".to_owned(),
+            server: "https://session.link".to_owned(),
+            ..Config::default()
+        };
+        write(&home, &config).unwrap();
+        let target = |server: &str, key: &str| resolve_target(&home, server, key);
+        for server in ["", "https://session.link/", "HTTPS://Session.Link"] {
+            let expected = if server.is_empty() {
+                "https://session.link"
+            } else {
+                server
+            };
+            assert_eq!(
+                target(server, ""),
+                (expected.to_owned(), "rk_saved".to_owned())
+            );
+        }
+        let elsewhere = "https://elsewhere.example";
+        assert_eq!(target(elsewhere, ""), (elsewhere.to_owned(), String::new()));
+        assert_eq!(
+            target(elsewhere, "rk_given"),
+            (elsewhere.to_owned(), "rk_given".to_owned())
         );
         fs::remove_dir_all(&home).unwrap();
     }

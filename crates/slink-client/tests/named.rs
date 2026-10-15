@@ -1058,3 +1058,115 @@ async fn shares_that_cannot_be_checked_stay_on_this_machine() {
     assert_eq!(copied.file_name(), file.file_name());
     assert_eq!(kept["sha256"], saved["sha256"]);
 }
+
+/// A claim that does not hold is named and passed over, and the people
+/// listed after it still get their keys. The service cannot check a proof,
+/// so whoever holds an invited address can post one without the secret and
+/// never replace it; in Go that stops every later grant of the share.
+#[tokio::test]
+async fn one_claim_that_does_not_hold_keeps_no_one_else_waiting() {
+    let (server, store) = service().await;
+    let a = home("passed-over");
+    let (owner, _) = sender(&a, &server).await;
+    let shared = owner
+        .publish_named(
+            TEXT,
+            &people(&["another@example.test", "reader@example.test"]),
+        )
+        .await
+        .unwrap();
+    let first = person(&shared, "another@example.test").clone();
+    let invitation = person(&shared, "reader@example.test").clone();
+    let (secret, _) = fragment(&invitation.url);
+    // The holder of the first address, signed in, without its secret.
+    let spoiler = reader("usr_spoiler");
+    let (claim, _) = spoiler.claim(
+        &first.url,
+        &spoiler.device,
+        &[0; 32],
+        &store.lock().unwrap(),
+    );
+    accept(&store, &first.id, (claim, encode(&random())), &spoiler);
+    let reader = reader(READER);
+    let valid = reader.claim(
+        &invitation.url,
+        &reader.device,
+        &secret,
+        &store.lock().unwrap(),
+    );
+    accept(&store, &invitation.id, valid, &reader);
+    let mut last = Vec::new();
+    for _ in 0..3 {
+        last = owner.named_shares("", "", true).await.unwrap();
+    }
+    assert_eq!(grants(&store), 1);
+    assert_eq!(person(&last[0], "reader@example.test").status, "ready");
+    assert_eq!(person(&last[0], "another@example.test").status, "accepted");
+    assert_eq!(
+        last[0].error,
+        "another@example.test: recipient verification failed; no decryption key was released"
+    );
+}
+
+/// A person revoked here, or granted already, is not granted again when the
+/// service lists them as accepted. Go takes the service's word, and a second
+/// grant goes to whatever incoming-share key the service then shows.
+#[tokio::test]
+async fn a_revocation_made_here_is_not_undone_by_the_service() {
+    let (server, store) = service().await;
+    let a = home("kept-here");
+    let (owner, _) = sender(&a, &server).await;
+    let shared = owner
+        .publish_named(TEXT, &people(&["reader@example.test"]))
+        .await
+        .unwrap();
+    let invitation = person(&shared, "reader@example.test").clone();
+    let (secret, _) = fragment(&invitation.url);
+    let reader = reader(READER);
+    let claim = reader.claim(
+        &invitation.url,
+        &reader.device,
+        &secret,
+        &store.lock().unwrap(),
+    );
+    accept(&store, &invitation.id, claim, &reader);
+    let revoked = owner
+        .named_shares(SHARE, &invitation.id, true)
+        .await
+        .unwrap();
+    assert_eq!(person(&revoked[0], "reader@example.test").status, "revoked");
+    assert_eq!(grants(&store), 0);
+    // A service that drops the revocation and lists the claim again.
+    store.lock().unwrap().share.as_mut().unwrap().people[0].revoked = false;
+    let listed = owner.named_shares("", "", true).await.unwrap();
+    assert_eq!(grants(&store), 0, "a key went to a person revoked here");
+    assert_eq!(person(&listed[0], "reader@example.test").status, "revoked");
+}
+
+#[tokio::test]
+async fn a_grant_made_here_is_not_made_again() {
+    let (server, store) = service().await;
+    let a = home("granted-here");
+    let (owner, _) = sender(&a, &server).await;
+    let reader = reader(READER);
+    let shared = owner
+        .publish_named(TEXT, &people(&["reader@example.test"]))
+        .await
+        .unwrap();
+    let invitation = person(&shared, "reader@example.test").clone();
+    let (secret, _) = fragment(&invitation.url);
+    let claim = reader.claim(
+        &invitation.url,
+        &reader.device,
+        &secret,
+        &store.lock().unwrap(),
+    );
+    accept(&store, &invitation.id, claim, &reader);
+    owner.named_shares("", "", true).await.unwrap();
+    assert_eq!(grants(&store), 1);
+    // A service that loses the grant and lists the claim again.
+    store.lock().unwrap().share.as_mut().unwrap().people[0].grant = None;
+    let listed = owner.named_shares("", "", true).await.unwrap();
+    assert_eq!(grants(&store), 1, "a second grant was made");
+    assert_eq!(person(&listed[0], "reader@example.test").status, "ready");
+}

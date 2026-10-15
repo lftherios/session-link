@@ -22,12 +22,21 @@ pub enum Refused {
 /// `server` without its trailing slashes, when a key may be sent to it.
 pub fn origin(server: &str) -> Result<String, Refused> {
     let invalid = Refused::Invalid;
-    // Go refuses control characters; a space, a backslash, a query or a
-    // fragment, even an empty one, are refused here as well.
-    if server
-        .bytes()
-        .any(|byte| byte <= b' ' || byte >= 0x7f || matches!(byte, b'\\' | b'?' | b'#'))
-    {
+    // Go refuses control characters, and a `%` that is not an escape; a
+    // space, a backslash, a query or a fragment, even an empty one, are
+    // refused here as well.
+    let bytes = server.as_bytes();
+    let escape = |at: usize| {
+        bytes
+            .get(at + 1..at + 3)
+            .is_some_and(|hex| hex.iter().all(u8::is_ascii_hexdigit))
+    };
+    if bytes.iter().enumerate().any(|(at, &byte)| {
+        byte <= b' '
+            || byte >= 0x7f
+            || matches!(byte, b'\\' | b'?' | b'#')
+            || (byte == b'%' && !escape(at))
+    }) {
         return Err(invalid);
     }
     let (scheme, rest) = server.split_once(':').ok_or(invalid)?;
@@ -134,6 +143,13 @@ mod tests {
             ("https://session.link\\.evil.test", Err(Refused::Invalid)),
             ("https://session .link", Err(Refused::Invalid)),
             ("https://session.link/a b", Err(Refused::Invalid)),
+            (
+                "https://session.link/a%2Fb",
+                Ok("https://session.link/a%2Fb"),
+            ),
+            ("https://session.link/%zz", Err(Refused::Invalid)),
+            ("https://session.link/a%2", Err(Refused::Invalid)),
+            ("https://session.link/%", Err(Refused::Invalid)),
             ("https://session.link\n", Err(Refused::Invalid)),
             ("https://séssion.link", Err(Refused::Invalid)),
             ("https://[::1", Err(Refused::Invalid)),

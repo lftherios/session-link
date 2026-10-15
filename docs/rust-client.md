@@ -1,6 +1,6 @@
 # Rust client: signing in, publishing, deleting, device keys and named shares
 
-2026-10-14, extended twice the same day · Implemented slices of the [Rust migration](rust-migration.md), the first four items of P3 (backlog item 8) · `slink-rs` signs in, publishes a session as an encrypted link from the terminal and from the local viewer, sends a lost upload again as the same ciphertext, and takes a link offline. It sets up recovery, asks for approval and gives it, recovers with the recovery key, revokes a device, and backs each new link up to the account's vault. From the local viewer it shares an excerpt with named people and grants each their key once they accept. Against the hosted service's smoke server it signs in by email approval, a browser opens what it published, three machines share one account through the settings page, and a browser recipient accepts a named share and reads it. The tests of all three slices pass on all six targets in CI.
+2026-10-14, extended twice the same day, reviewed 2026-10-15 · Implemented slices of the [Rust migration](rust-migration.md), the first four items of P3 (backlog item 8) · `slink-rs` signs in, publishes a session as an encrypted link from the terminal and from the local viewer, sends a lost upload again as the same ciphertext, and takes a link offline. It sets up recovery, asks for approval and gives it, recovers with the recovery key, revokes a device, and backs each new link up to the account's vault. From the local viewer it shares an excerpt with named people and grants each their key once they accept. Against the hosted service's smoke server it signs in by email approval, a browser opens what it published, three machines share one account through the settings page, and a browser recipient accepts a named share and reads it. The tests of all three slices pass on all six targets in CI. A [review by four agents](#the-review-of-2026-10-15) found nothing that blocks a release; what it did find is fixed or recorded.
 
 `crates/slink-client` is the hosted service as the CLI reaches it. It
 composes the [protocol crate](rust-protocol.md), which seals the document and
@@ -64,7 +64,9 @@ protocol the device keys follow.
 
 ## Where Rust differs from Go
 
-Each difference is a refusal or a request not made.
+Each difference is a refusal or a request not made, save one: a claim that
+does not hold no longer keeps the other people of its share waiting, and each
+of their claims is checked in full as before.
 
 | Case | Go | Rust |
 | --- | --- | --- |
@@ -72,7 +74,7 @@ Each difference is a refusal or a request not made.
 | A server with a space, a backslash, a byte outside printable ASCII, or a host with characters other than letters, digits, `-`, `.`, `_` and `~` | Accepted where its URL parser accepts them | Refused, so that nothing in the text is read one way by the check and another by the HTTP client |
 | A host that is only a port, `https://:443` | Accepted | Refused |
 | `slink delete` against a plain-HTTP server that is not on this machine | Sends the API key | Refused with the publishing rule's message |
-| Deleting a pre-encryption session | Its client follows redirects | Follows none |
+| Deleting a share or a pre-encryption session | Its client follows redirects, and sends the key on to the same host or a subdomain | Follows none |
 | A transport failure | Go's error text | Go's words for a refused connection, a reset, a timeout and an unknown host; reqwest's text for anything else |
 | The identity endpoint, `/api/identity`, which named shares read first | Its own URL check, which takes `https://host/?` as Go's publishing check does and then asks `/` with `/api/identity` as the query | The publishing rule above |
 | No API key | The request is sent with an empty key, and the service refuses it | 401 with `run slink login first`, and nothing sent |
@@ -82,6 +84,11 @@ Each difference is a refusal or a request not made.
 | A receipt with no account, from before receipts named one | Backed up when the service lists that ciphertext as the account's | Stays on this machine. Rust writes none, and the port reads no state Go wrote |
 | A device file from an older Go client: a recovery key, no pinned root and no pending setup | Offered for discarding when the account's identity is another's | Refused with the pins' message. Rust never writes one |
 | A capture still being recorded | Its spool is assembled before publishing | Read as the file it is: the recorder, which writes spools, is not ported |
+| A saved key and a server named by `--server` or `SLINK_SERVER` that is not the one the key was issued for | Sends the saved key there | Sends none, as to a server never signed in to: the request goes without a key and that server decides |
+| A write to the account's identity that the service answers as taken, then serves the record without | Pins only what it reads, so the older record passes and the backup or revocation is reported done | Pins what it wrote once the service has taken it, and refuses the older record |
+| A field name in another case, `Recipients` in a publish request, `Shares` in the vault, `Key` in a sign-in grant | Read as the field | Refused. Every client writes the names exactly, and an exact reading would publish a named share as a link for anyone |
+| A person revoked on this machine, or granted already, whom the service lists as accepted again | Granted, again | Not granted; the status this machine knows is kept |
+| A share in which one person's claim does not hold | The pass over the share stops there, and the people listed after it get no key | That person is named in the share's error and passed over; the others are checked and granted |
 
 ## What building it found
 
@@ -104,6 +111,64 @@ Each difference is a refusal or a request not made.
   tests now name a `PATH` that does not exist. The differential runner already
   gave its commands an empty directory.
 
+## The review of 2026-10-15
+
+Four agent reviewers, model sessions that had not seen the code, read the
+protocol crate, device keys and the vault, named shares, and publishing. Each
+was given the code, Go's code, the protocol documents and the threat model,
+but not the author's conclusions. Each wrote tests for what it found; those
+are now in the suites. None found a way to a key, a secret or the text, or a
+check Go makes that Rust leaves out. They are not the independent review the
+plan asks for before a stable release: they are the same kind of model that
+wrote the code.
+
+Fixed:
+
+- **Requests to a server on this machine went through a proxy named in the
+  environment.** reqwest honoured `HTTP_PROXY` and `ALL_PROXY` for
+  `http://127.0.0.1`, so the API key crossed a proxy in the clear. Go never
+  proxies this machine and reads neither variable for HTTPS. The client now
+  takes `HTTPS_PROXY` for HTTPS, minus `NO_PROXY`, and nothing else
+  ([tests/proxy.rs](../crates/slink-client/tests/proxy.rs)).
+- **A write the service answered and dropped was reported done.** A backup
+  said `synced`, and a revocation returned with the revoked device still in the
+  history, still holding the vault key later backups would use. Go and the
+  browser do the same. The device now pins what it wrote.
+- **One claim that did not hold stopped every grant after it in its share.**
+  The service cannot check a proof, so anyone holding an invited address
+  could post one without the secret and hold up the rest. Go does the same.
+- **The service's word replaced what this machine knew.** A person revoked here
+  before their grant was granted when the service listed them as accepted
+  again, and a person granted already was granted a second time, wrapped to
+  whatever incoming-share key the service then showed. Go does the same.
+- **Rust accepted some things Go refuses:** a server with a `%` that is not an
+  escape, a sign-in grant whose fields are not text, a second copy of an
+  approval request after one that fails, and field names in another case.
+- **Smaller:** the invitation secret was in `Offer`'s debug output; the two
+  locks were let go in the opposite order to Go's.
+
+Recorded, not changed:
+
+- **A sender takes the service's word for how current a recipient's history
+  is.** A service working with whoever holds a device the recipient has since
+  revoked can show the history as it was when they claimed, and the key is
+  wrapped to the incoming-share key that device can open. Only an honest
+  service's check stops it. It is the protocol's, shared by Go and the viewer,
+  and stays with the broader protocol review the plan keeps; see
+  [named-recipient-sharing.md](named-recipient-sharing.md).
+- **A device revoked before its owner said the recovery key was saved still
+  holds that key** in its device file, and can recover itself back in. A
+  revoked device that asks again reuses its keys, though the design says a
+  request makes new ones; a person still has to type its code. Both are Go's.
+- **Finished and deleted named shares are never pruned.** A deleted one fails
+  with 410 on every pass, and the outbox in the vault grows until, near 1,500
+  ten-person shares, the vault passes its 4 MiB limit and every write to it
+  fails, revoking a device among them.
+- **A pending receipt left behind after its upload landed** sends the same
+  ciphertext again, and the service revives a link that was deleted in
+  between. Go and the service do the same.
+- Keys are not wiped from memory when dropped. None reaches a log or an error.
+
 ## Evidence
 
 | Check | Result |
@@ -113,13 +178,14 @@ Each difference is a refusal or a request not made.
 | [tests/named.rs](../crates/slink-client/tests/named.rs) against a stand-in that holds each invitation and grant to the sender's current head and approved devices, as the service's named store does | Two people invited, each statement naming only its own; a person accepts, another machine recovered with the key has the share from the vault and grants it, and the person opens the text with their incoming-share key; the other still waits until revoked; no key, secret or text in a request. Go's tests: no grant for a proof made without the secret, another invitation's secret, a signature from elsewhere, a payload for another account or a device the history never approved, and no history asked for when the proof fails; a claimed invitation's link without its secret; a stale local status making no second grant; a person never invited stopping the pass after the grant before it is written down; a revocation with nothing kept here still sent; shares of a replaced identity and broken files left out of listings and the vault. Also a lost answer sent again as the same ciphertext and invitations, and a deleted share sealed afresh |
 | [tests/identity.rs](../crates/slink-client/tests/identity.rs) against a stand-in that verifies each write with the protocol crate and takes it only against the head and revision it holds | Three machines on one account: setup, the recovery key shown until confirmed, links backed up and another account's left out, sharing turned on, approval refused with a wrong code and given with the right one, revocation with a new epoch, vault key and incoming-share key that the revoked device's old key does not open, recovery on a machine that never had a device, and no secret in what the service stored. Go's setup tests: an identity the service substituted refused from the setup on, with nothing backed up to it; an interrupted setup sent again unchanged; a setup lost to another device reported on every action until discarded, then joined by approval or recovery with fresh keys; only an unfinished setup discarded. Also an older vault and a replaced root refused with the pins unchanged, a backup that loses a race made again, and the lock between processes |
 | The same journey with `SLINK_IDENTITY_BRIDGE` set to the server checkout's `scripts/identity-bridge.mjs` | Passes against the service's own identity store, which verifies each statement and applies its compare-and-swap |
-| `SLINK_BINARY=go/slink SLINK_CANDIDATE=target/release/slink-rs node scripts/compat.mjs` | 87 of 104, from 86. The `share` steps of the discovery case now agree |
+| `SLINK_BINARY=go/slink SLINK_CANDIDATE=target/release/slink-rs node scripts/compat.mjs` | 87 of 104, from 86. The `share` steps of the discovery case now agree. Still 87 after the review's fixes |
 | Server smoke, `SLINK_BINARY=target/release/slink-rs npm run smoke:encrypted` | Passes: the smoke's own `push`, decrypted with Web Crypto after the sender exits |
 | The same with `SLINK_BROWSER_SCRIPT=`[check-publish-browser.mjs](../scripts/check-publish-browser.mjs) | Passes with `slink-rs` and with Go: `slink login` approved through email, `push` with the saved key, the link opened in headless Chromium with its wrong-key and missing-key cases, `delete`, then 410 |
 | The same with `SLINK_BROWSER_SCRIPT=`[check-identity-browser.mjs](../scripts/check-identity-browser.mjs) and `slink-rs` | Passes: a first share through email sign-in, recovery set up on the settings page, a second machine locked until approved by its code, a wrong code refused, revocation, recovery on a third machine that restores the exact link, and no recovery key, content key or text in any request to the service |
 | The same with `SLINK_BROWSER_SCRIPT=`[check-named-browser.mjs](../scripts/check-named-browser.mjs) and `slink-rs` | Passes: an excerpt shared with two people from the viewer, recovery set up there, the exact bytes behind the link, a browser recipient signed up by email who accepts, the sender's viewer restarted and granting on its own, a forwarded link refused to another account, the sender's browser approved from the native settings page, recovery and key rotation in the recipient's browser with the old grant still open, the person revoked from `/shared`, and no text, key or secret in a request or in the browser's storage |
 | [check-viewer-browser.mjs](../scripts/check-viewer-browser.mjs), [check-security-browser.mjs](../scripts/check-security-browser.mjs) against `slink-rs` | Both pass |
-| `cargo test` | 298 pass |
+| The five browser checks above, again with the review's fixes | All pass |
+| `cargo test` | 311 pass, from 298: the reviewers' tests of a dropped backup and revocation, a bad claim among good ones, a revocation and a grant the service undoes, field names in another case, the proxy and the saved key's server |
 | `rust.yml` at `579f589`, again at `073ad8a` with device keys and at `f99ee41` with named shares | Lint, the format, protocol and viewer jobs, and the build, tests and `build-check` on each of the six targets pass |
 
 ## Cost
@@ -136,7 +202,8 @@ events and vaults signed here.
 
 Named shares take it to 9,016,800 bytes, another 129 KiB, again with no new
 package: the outbox, the requests, and the protocol crate's invitations,
-claim checks and grants, which nothing called before.
+claim checks and grants, which nothing called before. The review's fixes add
+16 KiB, to 9,033,360.
 
 ## Not done
 

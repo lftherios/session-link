@@ -228,8 +228,9 @@ impl State {
     }
 }
 
-/// What a sender holds of the invitation a claim answers.
-#[derive(Debug, Clone, Copy)]
+/// What a sender holds of the invitation a claim answers. Printed for
+/// debugging, it leaves the secret out.
+#[derive(Clone, Copy)]
 pub struct Offer<'a> {
     pub share_id: &'a str,
     pub invite_id: &'a str,
@@ -240,6 +241,18 @@ pub struct Offer<'a> {
     pub owner_root: &'a str,
     /// The invitation's secret, which only the invited person was sent.
     pub secret: &'a [u8; 32],
+}
+
+impl std::fmt::Debug for Offer<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Offer")
+            .field("share_id", &self.share_id)
+            .field("invite_id", &self.invite_id)
+            .field("sha256", &self.sha256)
+            .field("owner", &self.owner)
+            .field("owner_root", &self.owner_root)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A claim the sender may answer.

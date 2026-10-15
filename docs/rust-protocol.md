@@ -215,7 +215,12 @@ cases that are the viewer's to judge the verdict recorded for it.
    is Go that accepts a count JavaScript cannot hold.
 5. **Only the service limits size.** It refuses an event of more than 32 KiB
    and a vault statement of more than 8 MiB, as text. Go and the viewer rely
-   on it.
+   on it. It also refuses a whole identity of more than 10 MiB, which no
+   client checks: the crate takes 512 events at their limit and a vault at
+   its own, about 24 MiB, every signature checked. The client reads no more
+   than 12 MiB of an answer. Found in the review of 2026-10-15, with the
+   invitation secret in `Offer`'s debug output, which is now left out
+   ([rust-client.md](rust-client.md#the-review-of-2026-10-15)).
 6. **serde reads a struct from a list.** A derived `Deserialize` accepts a
    JSON array of the fields in order, and nothing else reads a statement that
    way. The crate reads payloads by name only, and two cases pin it.

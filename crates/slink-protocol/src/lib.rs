@@ -35,6 +35,7 @@ pub use named::{
     Accepted, Claim, Grant, Invitation, Invite, Offer, binding_proof, commitment, named_context,
     verify_claim,
 };
+pub use payload::misspelt;
 pub use record::{MAX_VAULT_DATA, Record, Vault, Verified, verify_record};
 pub use recovery::{Recovery, open_recovery, recovery_token, recovery_token_matches};
 pub use request::{REQUEST_LIFETIME_MS, Request, code_matches, confirmation};

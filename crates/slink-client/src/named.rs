@@ -34,7 +34,9 @@ use slink_protocol::{
 };
 
 use crate::device::{self, Device};
-use crate::identity::{Error, Identity, Input, LIMIT, random, read, refused, signed, signed_json};
+use crate::identity::{
+    Error, Identity, Input, LIMIT, exact, random, read, refused, signed, signed_json,
+};
 use crate::publish::{hex, seal, share_id};
 use crate::transport::client;
 use crate::vault::Contents;
@@ -45,6 +47,19 @@ const BUSY: &str = "another slink process is updating private keys; retry shortl
 const MAX_RECIPIENTS: usize = 10;
 /// How many unfinished shares one background pass looks at.
 const BATCH: usize = 8;
+/// The fields of an outbox, as Go names them.
+const OUTBOX_FIELDS: &[&str] = &[
+    "status",
+    "server",
+    "account",
+    "root",
+    "id",
+    "sha256",
+    "key",
+    "envelope",
+    "invitations",
+    "secrets",
+];
 
 /// A share for named people as this machine keeps it until each person has
 /// their key: in Go's shape, so the vault holds what Go's would.
@@ -99,13 +114,13 @@ impl Outbox {
     /// From an object with the fields and types Go reads; any other field
     /// is dropped, as Go drops it.
     pub fn read(value: &Value) -> Option<Outbox> {
-        let fields = value.as_object()?;
+        let fields = exact(value, OUTBOX_FIELDS)?;
         let invitations = match fields.get("invitations") {
             None | Some(Value::Null) => Vec::new(),
             Some(Value::Array(items)) => items
                 .iter()
                 .map(|item| {
-                    let fields = item.as_object()?;
+                    let fields = exact(item, &["id", "email", "commitment"])?;
                     Some(Invitation {
                         id: text(fields, "id")?,
                         email: text(fields, "email")?,
@@ -621,6 +636,17 @@ impl Identity {
         }
         let state = &keys.verified.state;
         let mut items = read_outbox(&self.home, server, &state.account, &state.root)?;
+        // Written down as soon as the service has it, so this machine never
+        // grants the person a key afterwards.
+        if !revoke.is_empty()
+            && let Some(saved) = items.iter_mut().find(|saved| saved.id == revoke)
+            && saved.secrets.contains_key(invitation)
+        {
+            saved
+                .status
+                .insert(invitation.to_owned(), "revoked".to_owned());
+            save(&outbox_file(&self.home, &saved.sha256), saved)?;
+        }
         if !refresh && !items.is_empty() {
             // Each pass starts somewhere else, so shares nobody answers
             // cannot keep the later ones waiting.
@@ -706,6 +732,9 @@ impl Identity {
             return Err(refused("private share identity changed"));
         }
         let file = outbox_file(&self.home, &saved.sha256);
+        // A claim that does not hold is named and passed over, so the people
+        // listed after it still get their keys.
+        let mut failed = None;
         for mut listed in remote.recipients {
             let known = saved
                 .invitations
@@ -714,12 +743,22 @@ impl Identity {
             if !known {
                 return Err(refused("recipient list changed"));
             }
-            saved
-                .status
-                .insert(listed.id.clone(), listed.status.clone());
-            let Some((claim, proof)) = listed.claim.take().filter(|_| listed.status == "accepted")
-            else {
+            // What this machine knows stays known: a person revoked here, or
+            // granted already, is not granted again whatever the service
+            // lists. Go takes the service's word.
+            let status = match (saved.status.get(&listed.id), listed.status.as_str()) {
+                (Some(known), _) if known == "revoked" => "revoked",
+                (_, "revoked") => "revoked",
+                (Some(known), _) if known == "ready" => "ready",
+                (_, listed) => listed,
+            }
+            .to_owned();
+            saved.status.insert(listed.id.clone(), status.clone());
+            let Some((claim, proof)) = listed.claim.take().filter(|_| status == "accepted") else {
                 continue;
+            };
+            let mut refuse = |error: slink_protocol::Error| {
+                failed.get_or_insert_with(|| format!("{}: {error}", listed.email));
             };
             let secret = saved.secrets.get(&listed.id).map_or("", String::as_str);
             let secret = decode_exact::<32>(secret)?;
@@ -739,7 +778,8 @@ impl Identity {
                 if let Err(error @ (Refusal::Claim | Refusal::ClaimProof)) =
                     verify_claim(&claim, &proof, &offer, &[])
                 {
-                    return Err(error.into());
+                    refuse(error);
+                    continue;
                 }
                 let path = format!("/api/named-shares/{}?invite={}", saved.id, listed.id);
                 let answer = self.named_request(server, &path, &[], None).await?;
@@ -755,7 +795,13 @@ impl Identity {
                     .map(|item| item.history)
                     .unwrap_or_default();
             }
-            let accepted = verify_claim(&claim, &proof, &offer, &listed.history)?;
+            let accepted = match verify_claim(&claim, &proof, &offer, &listed.history) {
+                Ok(accepted) => accepted,
+                Err(error) => {
+                    refuse(error);
+                    continue;
+                }
+            };
             let key = decode_exact::<32>(&saved.key)?;
             let grant = accepted.grant(
                 &offer,
@@ -771,7 +817,8 @@ impl Identity {
             saved.status.insert(listed.id.clone(), "ready".to_owned());
             save(&file, saved)?;
         }
-        save(&file, saved)
+        save(&file, saved)?;
+        failed.map_or(Ok(()), |message| Err(refused(&message)))
     }
 
     async fn named_post(&self, server: &str, id: &str, body: &Value) -> Result<(), Error> {

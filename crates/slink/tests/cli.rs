@@ -869,6 +869,14 @@ fn a_session_is_published_encrypted_and_taken_offline() {
         viewer.ask("POST", &endpoint, r#"{"recipients":[1]}"#).0,
         400
     );
+    // Go reads these as the people; read exactly, they would make a link
+    // for anyone, so they are refused.
+    for body in [
+        r#"{"Recipients":["a@example.test"]}"#,
+        r#"{"RECIPIENTS":null}"#,
+    ] {
+        assert_eq!(viewer.ask("POST", &endpoint, body).0, 400, "{body}");
+    }
     // The page that lists them asks nothing of the service while there are
     // none, and a revocation must name a share and an invitation.
     let (status, listed) = viewer.json("POST", "/api/named", r#"{"action":"status"}"#);

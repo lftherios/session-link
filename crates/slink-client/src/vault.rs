@@ -18,7 +18,7 @@ use slink_local::write_private;
 use slink_protocol::encoding::{decode_exact, digest, encode};
 use slink_protocol::{AgreementKey, State, Verified};
 
-use crate::identity::{Error, refused};
+use crate::identity::{Error, exact, refused};
 use crate::named::{Outbox, read_outbox};
 use crate::publish::share_id;
 
@@ -43,7 +43,7 @@ impl Receipt {
     /// From an object whose fields are text; a field that is missing or null
     /// is empty, as Go reads it.
     fn read(value: &Value) -> Option<Receipt> {
-        let fields = value.as_object()?;
+        let fields = exact(value, &["server", "account", "key", "sha256", "url"])?;
         let text = |name: &str| match fields.get(name) {
             None | Some(Value::Null) => Some(String::new()),
             Some(Value::String(text)) => Some(text.clone()),
@@ -164,7 +164,7 @@ impl Contents {
 
     /// The fields Go's client reads, with the types it reads them as.
     fn read(value: &Value) -> Option<Contents> {
-        let fields = value.as_object()?;
+        let fields = exact(value, &["version", "shares", "named", "inboxes"])?;
         let list = |name: &str| match fields.get(name) {
             None | Some(Value::Null) => Some(Vec::new()),
             Some(Value::Array(items)) => Some(items.clone()),

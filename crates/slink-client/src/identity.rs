@@ -23,7 +23,8 @@ use slink_local::create_private_dir;
 use slink_protocol::encoding::encode;
 use slink_protocol::{
     AgreementKey, Kind, Operation, Record, Recovery, Request, Signed, SigningKey, State, Vault,
-    Verified, code_matches, confirmation, open_recovery, recovery_token, verify_record, wrap,
+    Verified, code_matches, confirmation, misspelt, open_recovery, recovery_token, verify_record,
+    wrap,
 };
 use tokio::sync::{Mutex, MutexGuard};
 
@@ -60,6 +61,13 @@ pub enum Error {
 
 pub(crate) fn refused(message: &str) -> Error {
     Error::Refused(message.to_owned())
+}
+
+/// The object `value` is, unless one of its keys is one of `names` in
+/// another case: Go would read that key as the field, and this does not.
+pub(crate) fn exact<'a>(value: &'a Value, names: &[&str]) -> Option<&'a Map<String, Value>> {
+    let fields = value.as_object()?;
+    (!fields.keys().any(|key| misspelt(key, names))).then_some(fields)
 }
 
 impl Error {
@@ -357,10 +365,11 @@ pub struct Identity {
 }
 
 /// Held while this process changes the keys of a home: the lock in the
-/// process and the one on `identity/.lock`, released together.
+/// process and the one on `identity/.lock`. Fields drop in order, so the
+/// file is let go first and the next task in this process finds it free.
 pub(crate) struct Exclusive {
-    _process: MutexGuard<'static, ()>,
     _file: File,
+    _process: MutexGuard<'static, ()>,
 }
 
 impl Identity {
@@ -722,10 +731,12 @@ impl Identity {
         match kind {
             Some(Operation::Sharing) => data.rotate_inbox(&mut next, random()?),
             Some(Operation::Approve) => {
-                let found = remote.requests.iter().find_map(|signed| {
-                    let request = Request::verify(signed).ok()?;
-                    (request.id() == input.id).then_some((signed, request))
+                // As Go does, the first request with that id is the one, and
+                // it must verify: a second copy is not looked for.
+                let found = remote.requests.iter().find(|signed| {
+                    Request::read(signed).is_ok_and(|request| request.id() == input.id)
                 });
+                let found = found.and_then(|signed| Some((signed, Request::verify(signed).ok()?)));
                 let Some((_, request)) = found.filter(|(signed, request)| {
                     request.account == next.account
                         && request.root == next.root
@@ -787,6 +798,8 @@ impl Identity {
             &device.sign,
         )?;
         self.request(server, Some(update.to_json())).await?;
+        device.wrote(&update, next.seq)?;
+        device::save(&file, &device)?;
         Box::pin(self.once(server, "status", &Input::default())).await
     }
 
@@ -833,6 +846,8 @@ impl Identity {
             &recovery.root,
         )?;
         self.request(server, Some(update.to_json())).await?;
+        device.wrote(&update, next.seq)?;
+        device::save(file, &device)?;
         Box::pin(self.once(server, "status", &Input::default())).await
     }
 }

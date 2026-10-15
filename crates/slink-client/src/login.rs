@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use slink_protocol::misspelt;
 
 use crate::config::{self, Config};
 use crate::origin::origin;
@@ -132,6 +133,15 @@ async fn poll(home: &Path, attempt: &Attempt, interval: Duration) -> Result<Logg
             404 => return Err("sign-in expired; try again".to_owned()),
             _ => {}
         }
+        // Go reads each field as text, with any casing of its name; a grant
+        // it cannot read that way is refused.
+        let fields = ["key", "login", "uid"];
+        let grant = grant.filter(|grant| {
+            grant.iter().all(|(name, value)| {
+                !misspelt(name, &fields)
+                    && (!fields.contains(&name.as_str()) || value.is_string() || value.is_null())
+            })
+        });
         let text = |name: &str| {
             grant
                 .as_ref()

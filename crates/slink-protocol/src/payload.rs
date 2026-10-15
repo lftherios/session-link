@@ -97,13 +97,7 @@ impl<'a> Fields<'a> {
     /// JavaScript does not, so the two would read different statements.
     pub(crate) fn of(value: &'a Value, names: &[&str]) -> Option<Fields<'a>> {
         let map = value.as_object()?;
-        let misspelt = |key: &str| {
-            !names.contains(&key)
-                && names
-                    .iter()
-                    .any(|name| key.chars().map(fold).eq(name.chars()))
-        };
-        if map.keys().any(|key| misspelt(key)) {
+        if map.keys().any(|key| misspelt(key, names)) {
             return None;
         }
         Some(Fields(map))
@@ -211,6 +205,15 @@ fn write_text(out: &mut String, text: &str) {
         }
     }
     out.push('"');
+}
+
+/// Whether `key` is one of `names` written in another case: a key Go's
+/// `encoding/json` takes for that field, and an exact reading does not.
+pub fn misspelt(key: &str, names: &[&str]) -> bool {
+    !names.contains(&key)
+        && names
+            .iter()
+            .any(|name| key.chars().map(fold).eq(name.chars()))
 }
 
 /// How Go's `encoding/json` folds a key before matching it to a field: ASCII

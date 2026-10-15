@@ -71,6 +71,12 @@ impl Request {
         Ok(request)
     }
 
+    /// The request a statement holds, without checking who signed it: only
+    /// for finding the one statement that is then verified.
+    pub fn read(signed: &Signed) -> Result<Request, Error> {
+        read(&signed.read(Kind::Request)?).ok_or(Error::Request)
+    }
+
     /// Whether the request can still be approved at `now`, in milliseconds
     /// since 1970: made within the last ten minutes, and not dated more than
     /// a minute ahead.

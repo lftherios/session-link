@@ -73,6 +73,9 @@ struct Store {
     sent: Vec<Value>,
     /// How many writes to refuse as if another device wrote first.
     races: usize,
+    /// Whether writes are answered as taken, with the record as it was, and
+    /// not kept.
+    drop_writes: bool,
 }
 
 type Shared = Arc<Mutex<Store>>;
@@ -200,7 +203,9 @@ async fn service() -> (String, Shared) {
                         json!({"error": {"message": "Vault changed; refresh and retry"}}),
                     );
                 }
-                if let Err((status, message)) = apply(&mut store, &body) {
+                if store.drop_writes && body.get("vault").is_some() {
+                    // Answered below with the record unchanged.
+                } else if let Err((status, message)) = apply(&mut store, &body) {
                     return reply(status, json!({"error": {"message": message}}));
                 }
                 if store.lose_answer {
@@ -1070,5 +1075,66 @@ async fn a_backup_that_loses_a_race_is_made_again() {
     assert_eq!(
         (error.status(), error.to_string().as_str()),
         (409, "Vault changed; refresh and retry (HTTP 409)")
+    );
+}
+
+/// A write the service answers as taken moves the pins on, so a service
+/// that keeps nothing and serves the old vault next is caught, and the link
+/// is not reported as backed up. Go and the browser pin only what they read.
+#[tokio::test]
+async fn a_backup_the_service_answers_and_drops_is_not_reported_synced() {
+    let (server, store) = service().await;
+    let dir = home("dropped");
+    let laptop = Identity::new(&dir, &server, KEY);
+    call(&laptop, "setup", Input::default()).await;
+    let before = verify_record(&held(&server).await, ACCOUNT)
+        .unwrap()
+        .vault
+        .revision;
+    publish(&dir, &server, "23456789abcdef", ACCOUNT);
+    store.lock().unwrap().drop_writes = true;
+    let result = laptop.backup(ACCOUNT).await;
+    let after = verify_record(&held(&server).await, ACCOUNT)
+        .unwrap()
+        .vault
+        .revision;
+    assert_eq!(after, before, "the stand-in kept the write");
+    assert_eq!(store.lock().unwrap().sent.len(), 2, "setup and one backup");
+    assert_eq!(result, "failed");
+}
+
+/// The same for a revocation: a service that answers it and keeps the old
+/// history, with the device still approved and holding the vault key later
+/// backups would use, is refused rather than reported done.
+#[tokio::test]
+async fn a_revocation_the_service_answers_and_drops_is_not_reported_done() {
+    let (server, store) = service().await;
+    let (a, b) = (home("dropped-revoke-a"), home("dropped-revoke-b"));
+    let (laptop, desktop) = (
+        Identity::new(&a, &server, KEY),
+        Identity::new(&b, &server, KEY),
+    );
+    call(&laptop, "setup", Input::default()).await;
+    let asked = call(&desktop, "request", input("Desktop")).await;
+    let approve = Input {
+        id: asked.device_id.clone(),
+        code: asked.confirmation,
+        ..Input::default()
+    };
+    call(&laptop, "approve", approve).await;
+    store.lock().unwrap().drop_writes = true;
+    let revoke = Input {
+        id: asked.device_id.clone(),
+        ..Input::default()
+    };
+    let outcome = laptop.handle("revoke", &revoke).await;
+    let still = verify_record(&held(&server).await, ACCOUNT).unwrap();
+    assert!(still.state.device(&asked.device_id).is_some());
+    assert_eq!(
+        outcome
+            .map(|status| status.devices)
+            .unwrap_err()
+            .to_string(),
+        "server returned an older encrypted vault"
     );
 }

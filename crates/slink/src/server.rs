@@ -26,6 +26,7 @@ use slink_local::{
     Drafts, READING_SUFFIX, SaveError, capture_dir, display_path, home, save_preview,
     session_title_key, unix_now,
 };
+use slink_protocol::misspelt;
 use tokio::sync::{Mutex, Notify};
 
 use crate::picker::{self, Row, escape};
@@ -464,7 +465,9 @@ fn host(target: &str) -> &str {
 
 /// The people a publish request names, when it names any. Anything but no
 /// body, `null`, or an object whose `recipients` is absent, `null` or a list
-/// of text is not a publish request.
+/// of text is not a publish request. Nor is `Recipients` or another casing,
+/// which Go reads as the people and an exact reading would publish as a
+/// link for anyone.
 fn named(body: &[u8]) -> Result<Option<Vec<String>>, ()> {
     let Some(first) = serde_json::Deserializer::from_slice(body)
         .into_iter::<Value>()
@@ -474,6 +477,7 @@ fn named(body: &[u8]) -> Result<Option<Vec<String>>, ()> {
     };
     match first.map_err(drop)? {
         Value::Null => Ok(None),
+        Value::Object(fields) if fields.keys().any(|key| misspelt(key, &["recipients"])) => Err(()),
         Value::Object(fields) => match fields.get("recipients") {
             None | Some(Value::Null) => Ok(None),
             Some(Value::Array(people)) => people

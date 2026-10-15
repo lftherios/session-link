@@ -1,7 +1,8 @@
 # Named-recipient sharing
 
-2026-10-01, checked against the code on 2026-10-09 · implemented; on the hosted
-service since 2026-10-01 (v30). Independent protocol review is still open.
+2026-10-01, checked against the code on 2026-10-09, what the sender trusts the
+service for recorded 2026-10-15 · implemented; on the hosted service since
+2026-10-01 (v30). Independent protocol review is still open.
 
 Recipients use a browser, including on their first visit. The browser is an
 approved encryption device with private Web Crypto keys stored in IndexedDB.
@@ -26,7 +27,14 @@ random binding secret, never the session key. After browser sign-in and device
 setup/unlock, the recipient signs its account/root binding and authenticates it
 with that secret. The sender's native client verifies both proofs before issuing
 the encrypted grant. The server alone cannot substitute a public key in that
-handshake. Approved descendants of the bound history can receive the grant after
+handshake. The sender does take its word for two things it cannot check:
+which account owns an email address, and whether the recipient's history it
+shows is the latest. A server that lies about the first, given a forwarded
+link, has the key granted to another account. One that shows the history as
+it was before the recipient revoked a device has the key wrapped to the
+incoming-share key that device can open. Both were recorded in the review of
+2026-10-15 ([rust-client.md](rust-client.md#the-review-of-2026-10-15)) and are
+open in every client. Approved descendants of the bound history can receive the grant after
 key rotation. First-time delivery therefore needs the sender's viewer running;
 pending invitations persist locally and resume when the viewer is opened again.
 The UI must say when it is waiting for acceptance or for the sender.

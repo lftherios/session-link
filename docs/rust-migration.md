@@ -285,6 +285,17 @@ secret, from a device the recipient's history never approved, or for another
 invitation get no key, in the client's tests, which pass on all six targets
 in CI. What remains of P3 is the independent review.
 
+On 2026-10-15 four agent reviewers read the port without the author's
+conclusions. They found nothing that blocks a release. Four defects, three of
+them Go's too, are fixed in Rust: a proxy that carried the API key to a local
+server, a dropped write reported done, one bad claim holding up a share's
+other grants, and the service's word undoing a revocation. The protocol's own
+limits they found, such as the sender trusting the service for how current a
+recipient's history is, stay with the broader review.
+[rust-client.md](rust-client.md#the-review-of-2026-10-15) has the list. The
+item stays open: these reviewers are the same kind of model that wrote the
+code.
+
 ### P4 Complete recording and operating-system integration
 
 - [ ] Port Anthropic/OpenAI forwarding, SSE reassembly, capture gaps, segmentation,

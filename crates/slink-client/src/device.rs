@@ -127,6 +127,18 @@ impl Device {
         Ok(())
     }
 
+    /// Moves the pins on to `update`, which the service has just taken with
+    /// `seq` as the history's last event, so an answer that leaves it out is
+    /// refused as an older one.
+    pub fn wrote(&mut self, update: &Update, seq: u64) -> Result<(), Error> {
+        if let Some(event) = &update.event {
+            self.seq = i64::try_from(seq).unwrap_or(i64::MAX);
+            self.head = event.hash(Kind::Event)?;
+        }
+        self.revision = update.expected_revision + 1;
+        Ok(())
+    }
+
     /// As Go writes its device file.
     fn encode(&self) -> String {
         let mut fields = Map::new();

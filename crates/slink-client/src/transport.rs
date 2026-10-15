@@ -4,19 +4,36 @@
 use std::io;
 use std::time::Duration;
 
-use reqwest::{Client, Response, redirect};
+use reqwest::{Client, NoProxy, Proxy, Response, redirect};
 use serde_json::{Map, Value};
 
 /// A client that waits at most `timeout` for a whole exchange and never
 /// follows a redirect: a key sent to one server is not sent on to another,
 /// and an answer that points elsewhere is read as the answer.
+///
+/// It takes a proxy from the environment as Go's client does: `HTTPS_PROXY`
+/// for HTTPS, minus `NO_PROXY`, and never for this machine. Plain HTTP goes
+/// only to this machine, so a key sent over it never passes through a proxy.
 pub fn client(timeout: Duration) -> reqwest::Result<Client> {
     // An error means a provider is already installed, which is the goal.
     let _ = rustls::crypto::ring::default_provider().install_default();
-    Client::builder()
+    let mut builder = Client::builder()
         .timeout(timeout)
         .redirect(redirect::Policy::none())
-        .build()
+        .no_proxy();
+    if let Some(proxy) = variable("HTTPS_PROXY", "https_proxy") {
+        let skipped = variable("NO_PROXY", "no_proxy").unwrap_or_default();
+        let skipped = NoProxy::from_string(&format!("localhost,127.0.0.0/8,::1,{skipped}"));
+        builder = builder.proxy(Proxy::https(proxy)?.no_proxy(skipped));
+    }
+    builder.build()
+}
+
+/// The first of two environment variables that is set and not empty.
+fn variable(upper: &str, lower: &str) -> Option<String> {
+    [upper, lower]
+        .into_iter()
+        .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()))
 }
 
 /// The first JSON value of at most `limit` bytes of the answer, when it is an
