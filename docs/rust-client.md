@@ -186,7 +186,7 @@ Recorded, not changed:
 | [check-viewer-browser.mjs](../scripts/check-viewer-browser.mjs), [check-security-browser.mjs](../scripts/check-security-browser.mjs) against `slink-rs` | Both pass |
 | The five browser checks above, again with the review's fixes | All pass |
 | `cargo test` | 311 pass, from 298: the reviewers' tests of a dropped backup and revocation, a bad claim among good ones, a revocation and a grant the service undoes, field names in another case, the proxy and the saved key's server |
-| `rust.yml` at `579f589`, again at `073ad8a` with device keys and at `f99ee41` with named shares | Lint, the format, protocol and viewer jobs, and the build, tests and `build-check` on each of the six targets pass |
+| `rust.yml` at `579f589`, again at `073ad8a` with device keys, at `f99ee41` with named shares and at `d6c7ff6` with the review's fixes | Lint, the format, protocol and viewer jobs, and the build, tests and `build-check` on each of the six targets pass |
 
 ## Cost
 
