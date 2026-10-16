@@ -1,6 +1,6 @@
 # Identity and encrypted sharing
 
-2026-09-12, updated 2026-10-10 · deployed: encrypted sharing live since 2026-09-12
+2026-09-12, updated 2026-10-16 · deployed: encrypted sharing live since 2026-09-12
 (v29), named sharing and email sign-in since 2026-10-01 (v30). Independent
 protocol review and a volume restore rehearsal remain open.
 
@@ -149,7 +149,15 @@ incoming-share key; the recovery root signs a single recovery enrollment.
 Existing device public keys cannot change in place. Both client and server
 verify the full chain and reject unapproved signers and invalid transitions.
 Native and browser clients pin the root, previous history head and highest vault revision
-locally; old or conflicting histories are rejected.
+locally; old or conflicting histories are rejected. The browser and `slink-rs`
+also move the pins on to each write the service takes, so a record served
+without it is refused. Go pins only what it reads, and reports such a write
+done ([rust-client.md](rust-client.md#the-review-of-2026-10-15)). Pins protect
+each device only against a record older than one it has seen. A service can
+still show another device the history without this device's write, a
+revocation for example, and that device then wraps its next vault key to the
+revoked one. Only a transparency log, or devices comparing heads with each
+other, would catch it.
 
 Vault snapshots separately sign account ID, increasing revision, current history
 head, key epoch, writer and ciphertext. An event and its new vault snapshot

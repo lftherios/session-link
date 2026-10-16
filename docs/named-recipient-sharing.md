@@ -1,7 +1,8 @@
 # Named-recipient sharing
 
 2026-10-01, checked against the code on 2026-10-09, what the sender trusts the
-service for recorded 2026-10-15 · implemented; on the hosted service since
+service for recorded 2026-10-15, the browser's pins on its own writes
+2026-10-16 · implemented; on the hosted service since
 2026-10-01 (v30). Independent protocol review is still open.
 
 Recipients use a browser, including on their first visit. The browser is an
@@ -133,7 +134,8 @@ decryption, followed by schema/invariant checks of the plaintext.
 
 Browser device private keys are nonextractable Web Crypto keys in IndexedDB,
 scoped to the origin and account. Web Locks serialize updates across tabs. The
-browser pins the account root, previous head and highest vault revision. Recovery
+browser pins the account root, previous head and highest vault revision, and
+moves them on to each write the service takes. Recovery
 setup temporarily saves its user token locally until acknowledgment. Incoming
 keyring and outbox secrets are in the encrypted vault, never IndexedDB plaintext.
 Browsers need Ed25519, X25519, IndexedDB and Web Locks; unavailable primitives

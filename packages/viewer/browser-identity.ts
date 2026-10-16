@@ -58,8 +58,11 @@ async function prepareUpdate(record:IdentityRecord|null,state:IdentityState,data
  const value:VaultSnapshot={account:state.account,revision:(old?.revision??0)+1,head:event?await head(event):old?.head??"",epoch:state.epoch,signer:state.signer,data:await seal(key,raw,"slink/vault/v1/"+keyContext(state))};
  return {expected_head:old?.head??"",expected_revision:old?.revision??0,...(event?{event}:{}),vault:await sign("vault",value,signer)};
 }
-async function commit(record:IdentityRecord|null,state:IdentityState,data:KeyVault,key:Uint8Array<ArrayBuffer>,signer:CryptoKey,event?:Signed):Promise<IdentityResponse>{
- return browserRequest("/api/identity","POST",await prepareUpdate(record,state,data,key,signer,event));
+// Once the service has taken a write, the pins move on to it, so that a record
+// served without it is refused as older instead of read as if it was never sent.
+async function commit(device:LocalDevice,record:IdentityRecord|null,state:IdentityState,data:KeyVault,key:Uint8Array<ArrayBuffer>,signer:CryptoKey,event:Signed):Promise<void>{
+ const update=await prepareUpdate(record,state,data,key,signer,event);await browserRequest("/api/identity","POST",update);
+ device.seq=state.seq;device.head=await head(event);device.revision=update.expected_revision+1;await saveLocal(state.account,device);
 }
 export async function unlockedIdentity():Promise<UnlockedIdentity>{
  if(!navigator.locks)throw new Error("This browser does not support private device storage locks. Update your browser.");
@@ -122,7 +125,7 @@ async function identityAction(action:string,input:IdentityInput):Promise<Identit
   const key=await unwrap(recovery,state.recovery,state.recovery_wrap,keyContext(state)),data=await decodeVault(key,state,vault);
   d=await newDevice();await pin(remote.account,d,record,state,vault);
   const added=await publicDevice(d,nameFor(input.name));added.wrap=await wrap(added.box,key,keyContext(state));state.devices.push(added);state.kind="recover";state.signer="root";state.seq++;state.prev=vault.head;
-  await commit(record,state,data,key,root,await sign("event",state,root));return identityAction("status",{});
+  await commit(d,record,state,data,key,root,await sign("event",state,root));return identityAction("status",{});
  }
  if(!own){if(action!=="status")throw new Error("Approve this browser or use your recovery key");return result}
  const key=await unwrap(d!.box,d!.boxPublic,own.wrap,keyContext(state)),data=await decodeVault(key,state,vault);
@@ -146,5 +149,5 @@ async function identityAction(action:string,input:IdentityInput):Promise<Identit
   for(const device of state.devices)device.wrap=await wrap(device.box,nextKey,keyContext(state));state.recovery_wrap=await wrap(state.recovery,nextKey,keyContext(state));
  }
  state.kind=action as IdentityState["kind"];state.seq++;state.prev=vault.head;
- await commit(record,state,data,nextKey,d!.sign,await sign("event",state,d!.sign));return identityAction("status",{});
+ await commit(d!,record,state,data,nextKey,d!.sign,await sign("event",state,d!.sign));return identityAction("status",{});
 }

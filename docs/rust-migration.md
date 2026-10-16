@@ -292,7 +292,8 @@ server, a dropped write reported done, one bad claim holding up a share's
 other grants, and the service's word undoing a revocation. The protocol's own
 limits they found, such as the sender trusting the service for how current a
 recipient's history is, stay with the broader review. The fixes' tests pass
-on all six targets in CI.
+on all six targets in CI. The browser's settings page had the dropped write
+too and is fixed with them; Go keeps all three, since it is to be removed.
 [rust-client.md](rust-client.md#the-review-of-2026-10-15) has the list. The
 item stays open: these reviewers are the same kind of model that wrote the
 code.

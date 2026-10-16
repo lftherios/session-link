@@ -132,8 +132,14 @@ Fixed:
   ([tests/proxy.rs](../crates/slink-client/tests/proxy.rs)).
 - **A write the service answered and dropped was reported done.** A backup
   said `synced`, and a revocation returned with the revoked device still in the
-  history, still holding the vault key later backups would use. Go and the
-  browser do the same. The device now pins what it wrote.
+  history, still holding the vault key later backups would use. The device
+  now pins what it wrote. The browser did the same, and on 2026-10-16 its
+  settings page was given the same fix
+  ([browser-identity.ts](../packages/viewer/browser-identity.ts)). A fifth
+  reviewer read that fix, found it whole and asked for tests of a write that
+  fails, so that pins moved before the answer could not pass.
+  [browser-identity.test.mjs](../test/browser-identity.test.mjs) now has
+  both. Go does the same and is left as it is, since it is to be removed.
 - **One claim that did not hold stopped every grant after it in its share.**
   The service cannot check a proof, so anyone holding an invited address
   could post one without the secret and hold up the rest. Go does the same.

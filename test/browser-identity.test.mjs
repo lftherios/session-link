@@ -4,7 +4,7 @@ import { build } from "esbuild";
 
 const viewer = new URL("../packages/viewer/", import.meta.url).pathname;
 const bundle = await build({ stdin: { contents: 'export * from "./browser-identity"; export * from "./identity-crypto"; export * from "./identity-protocol";', resolveDir: viewer, loader: "ts" }, bundle: true, write: false, format: "esm" });
-const { browserIdentity, pair, random, b64, concat, utf8, seal, wrap, sign, head, unpack, keyContext, verifyRecord } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
+const { browserIdentity, unlockedIdentity, pair, random, b64, concat, utf8, seal, wrap, sign, head, unpack, keyContext, deviceID, verifyRecord } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
 const account = "usr_browser_setup";
 
 // Model only the browser storage and locking boundaries; all cryptography,
@@ -117,14 +117,24 @@ test("browser setup checks recovery tokens retained by older clients", async t =
 });
 
 // An honest account shared by several browsers, with pending approval requests.
+// A write is taken only against the head and revision it expects, as the
+// service's store takes it. `before` runs once ahead of the next write, for
+// another device's; `lose` takes a write and loses the answer. `drop`, which no
+// honest service does, answers a write as taken and keeps the record as it was.
 function sharedAccount() {
-  const server = { record: null, requests: [], offline: false, posts: 0 };
-  server.api = body => {
+  const server = { record: null, requests: [], offline: false, lose: false, drop: false, before: null, posts: 0 };
+  server.api = async body => {
     if (body) {
       if (server.offline) throw new Error("Connection lost");
       server.posts++;
       if (body.request) server.requests.push(body.request);
-      else server.record = { events: [...(server.record?.events ?? []), ...(body.event ? [body.event] : [])], vault: body.vault };
+      else {
+        if (server.before) { const write = server.before; server.before = null; await write(); }
+        const vault = server.record ? unpack(server.record.vault) : null;
+        if (body.expected_head !== (vault?.head ?? "") || body.expected_revision !== (vault?.revision ?? 0)) throw Object.assign(new Error("Vault changed"), { status: 409 });
+        if (!server.drop) server.record = { events: [...(server.record?.events ?? []), ...(body.event ? [body.event] : [])], vault: body.vault };
+        if (server.lose) throw new Error("Connection lost");
+      }
     }
     return { account, record: server.record, requests: server.requests };
   };
@@ -173,6 +183,86 @@ for (const [name, legacy, join] of [["approval", false, "request"], ["the recove
   assert.notEqual(devices.get(account).signPublic, unfinished.signPublic, "keys the server has seen must not be reused");
   assert.notEqual(devices.get(account).boxPublic, unfinished.boxPublic);
   assert.equal(devices.get(account).pendingRecovery, undefined);
+});
+
+// Browser A set up the account and approved B; C has asked to join. Each write
+// is made by A, except recovery, which C makes with the recovery key.
+async function threeBrowsers(t) {
+  const server = sharedAccount(), devices = environment(t, server.api), B = new Map(), C = new Map();
+  const first = await browserIdentity("setup", { name: "A" });
+  await browserIdentity("confirm-recovery");
+  const b = await elsewhere(devices, B, () => browserIdentity("request", { name: "B" }));
+  await browserIdentity("approve", { id: b.device_id, code: b.confirmation });
+  const c = await elsewhere(devices, C, () => browserIdentity("request", { name: "C" }));
+  const inputs = { approve: { id: c.device_id, code: c.confirmation }, revoke: { id: b.device_id }, recover: { recovery_key: first.recovery_key, name: "C" } };
+  const as = action => (name, input) => action === "recover" ? elsewhere(devices, C, () => browserIdentity(name, input)) : browserIdentity(name, input);
+  return { server, devices, B, C, write: action => as(action)(action, inputs[action]), as, pins: action => (action === "recover" ? C : devices).get(account) };
+}
+const pinsOf = device => ({ seq: device.seq, head: device.head, revision: device.revision });
+// Devices on the account once A approves C, C recovers, or A revokes B.
+const listed = { approve: 3, recover: 3, revoke: 1 };
+
+// A write the service answers as taken and then serves the record without is
+// refused, from then on, as an older history. Otherwise a revoked device would
+// still be listed with no error, and this browser's next write would wrap the
+// vault key to it again.
+for (const action of ["approve", "recover", "revoke"]) test(`browser refuses a record without the ${action} the service took`, async t => {
+  const { server, write, as, pins } = await threeBrowsers(t), older = /older or conflicting key history/;
+  server.drop = true;
+  await assert.rejects(write(action), older);
+  assert.equal(pins(action).seq, server.record.events.length, "the pins must be on the write the service took");
+  assert.equal(pins(action).revision, unpack(server.record.vault).revision + 1);
+  const posts = server.posts;
+  for (const next of ["status", action]) await assert.rejects(as(action)(next), older);
+  assert.equal(server.posts, posts, "nothing may be written over a record that lost this browser's write");
+});
+
+// A write that never arrived, or that lost to another device's, leaves the
+// pins where they were and is made again; one whose answer was lost is read
+// back. Pins moved before the answer would lock the browser out here.
+for (const failure of ["offline", "conflict", "lost"]) for (const action of ["approve", "recover", "revoke"]) test(`browser ${action} ${{ offline: "that never arrived is made again", conflict: "that lost to another device is made again", lost: "whose answer was lost is read back" }[failure]}`, async t => {
+  const { server, devices, B, write, as, pins } = await threeBrowsers(t);
+  let others = 0;
+  if (failure === "conflict") {
+    const d = await elsewhere(devices, new Map(), () => browserIdentity("request", { name: "D" }));
+    server.before = () => elsewhere(devices, B, () => browserIdentity("approve", { id: d.device_id, code: d.confirmation }));
+    others = 1;
+  }
+  server.offline = failure === "offline"; server.lose = failure === "lost";
+  const before = action === "recover" ? null : pinsOf(pins(action));
+  await assert.rejects(write(action), failure === "conflict" ? /Vault changed/ : /Connection lost/);
+  server.offline = server.lose = false;
+  if (before && failure !== "lost") assert.deepEqual(pinsOf(pins(action)), before);
+  const status = failure === "lost" ? await as(action)("status") : await write(action);
+  assert.equal(status.state, "ready");
+  assert.equal(status.devices.length, listed[action] + others);
+});
+
+// An account an older client set up has no incoming-share key until a device
+// turns sharing on, which is what a named share's recipient page asks for.
+async function olderAccount(t) {
+  const server = sharedAccount(), devices = environment(t, server.api);
+  const root = await pair("Ed25519", true), recovery = await pair("X25519", true), signing = await pair("Ed25519"), box = await pair("X25519"), key = random();
+  const state = { account, seq: 0, prev: "", kind: "init", signer: "root", root: root.public, recovery: recovery.public, recovery_box: await seal(random(), new Uint8Array(64), `slink/recovery/v1/${account}/${root.public}`), recovery_wrap: "", epoch: 1, devices: [] };
+  state.devices = [{ id: await deviceID(signing.public, box.public), name: "Older", sign: signing.public, box: box.public, wrap: await wrap(box.public, key, keyContext(state)) }];
+  state.recovery_wrap = await wrap(recovery.public, key, keyContext(state));
+  const event = await sign("event", state, root.private);
+  const vault = await sign("vault", { account, revision: 1, head: await head(event), epoch: 1, signer: "root", data: await seal(key, utf8(JSON.stringify({ version: 1, shares: [] })), "slink/vault/v1/" + keyContext(state)) }, root.private);
+  server.record = { events: [event], vault };
+  devices.set(account, { sign: signing.private, box: box.private, signPublic: signing.public, boxPublic: box.public, root: "", seq: -1, head: "", revision: 0 });
+  return server;
+}
+for (const drop of [false, true]) test(`browser sharing ${drop ? "the service dropped is refused" : "is turned on"}`, async t => {
+  const server = await olderAccount(t);
+  assert.equal((await browserIdentity("status")).sharing_ready, false);
+  server.drop = drop;
+  if (!drop) {
+    assert.equal((await browserIdentity("sharing")).sharing_ready, true);
+    assert.ok((await unlockedIdentity()).state.inbox);
+    return;
+  }
+  await assert.rejects(browserIdentity("sharing"), /older or conflicting key history/);
+  await assert.rejects(unlockedIdentity(), /older or conflicting key history/);
 });
 
 // Discarding is only for a setup that was never acknowledged. A browser whose
