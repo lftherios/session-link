@@ -7,9 +7,10 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use common::{agent_ids, agents, cell, ids, listed, nowhere, read, rows};
 use rusqlite::Connection;
 use serde_json::Value;
-use slink_import::{Agent, Candidate, Found, Input, Loader, Locations, recent};
+use slink_import::{Found, Input, Loader, Locations, recent};
 
 /// The three tables opencode keeps a session in, with the columns every
 /// version of it has. `store` adds the columns a session's row brings, so a
@@ -18,16 +19,6 @@ const TABLES: &str = "
     CREATE TABLE session (id TEXT PRIMARY KEY, title TEXT, directory TEXT, time_created INTEGER);
     CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, data TEXT);
     CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT);";
-
-fn read(file: &Path) -> Value {
-    let text =
-        fs::read_to_string(file).unwrap_or_else(|error| panic!("{}: {error}", file.display()));
-    serde_json::from_str(&text).unwrap_or_else(|error| panic!("{}: {error}", file.display()))
-}
-
-fn list(value: &Value) -> Vec<Value> {
-    value.as_array().cloned().unwrap_or_default()
-}
 
 /// What a fixture records of the sessions its sub-agents ran in, or null
 /// for a fixture without any.
@@ -38,25 +29,6 @@ fn recorded_agents(fixture: &Path) -> Value {
     } else {
         Value::Null
     }
-}
-
-/// Recorded sub-agents as the loader hands them to the importer: each one's
-/// session row and messages, and its own sub-agents the same way.
-fn agents(recorded: &Value) -> Vec<Agent> {
-    list(recorded)
-        .iter()
-        .map(|agent| Agent {
-            id: agent["id"].as_str().unwrap_or_default().to_owned(),
-            call: String::new(),
-            name: agent["name"].as_str().unwrap_or_default().to_owned(),
-            input: Input {
-                session: agent["session"].clone(),
-                messages: list(&agent["messages"]),
-                agents: agents(&agent["agents"]),
-                ..Input::default()
-            },
-        })
-        .collect()
 }
 
 /// A new database under the build's own temporary directory, holding what
@@ -70,20 +42,6 @@ fn database(name: &str, statements: &str) -> (PathBuf, Connection) {
     let db = Connection::open(&path).unwrap();
     db.execute_batch(statements).unwrap();
     (path, db)
-}
-
-/// A JSON value as the cell a row holds it in.
-fn cell(value: &Value) -> rusqlite::types::Value {
-    use rusqlite::types::Value as Cell;
-    match value {
-        Value::Null => Cell::Null,
-        Value::Number(number) => match number.as_i64() {
-            Some(whole) => Cell::Integer(whole),
-            None => Cell::Real(number.as_f64().unwrap()),
-        },
-        Value::String(text) => Cell::Text(text.clone()),
-        other => Cell::Text(other.to_string()),
-    }
 }
 
 /// Writes a session as opencode stores one: its row, a row for each message
@@ -113,7 +71,7 @@ fn store(db: &Connection, session: &Value, messages: &Value, agents: &Value) {
         rusqlite::params_from_iter(row.values().map(cell)),
     )
     .unwrap();
-    for message in list(messages) {
+    for message in rows(messages) {
         db.execute(
             "INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)",
             rusqlite::params![
@@ -126,7 +84,7 @@ fn store(db: &Connection, session: &Value, messages: &Value, agents: &Value) {
         .unwrap();
         // Parts are read back in the order of their ids, as opencode's own
         // ids put them in the order they were written.
-        for (index, part) in list(&message["parts"]).iter().enumerate() {
+        for (index, part) in rows(&message["parts"]).iter().enumerate() {
             db.execute(
                 "INSERT INTO part (id, message_id, session_id, time_created, data) VALUES (?, ?, ?, ?, ?)",
                 rusqlite::params![
@@ -140,7 +98,7 @@ fn store(db: &Connection, session: &Value, messages: &Value, agents: &Value) {
             .unwrap();
         }
     }
-    for agent in list(agents) {
+    for agent in rows(agents) {
         store(db, &agent["session"], &agent["messages"], &agent["agents"]);
     }
 }
@@ -171,39 +129,12 @@ fn by_id(path: &Path, id: &str) -> Found {
     }
 }
 
-/// opencode's sessions for `cwd` in the database at `path`, and what could
-/// not be read. No other harness has a store here, and none is asked.
-fn listed(path: &Path, cwd: &Path, id: &str, limit: usize) -> (Vec<Candidate>, Vec<String>) {
-    let locations = Locations {
-        claude: PathBuf::new(),
-        pi: PathBuf::new(),
-        omp: PathBuf::new(),
-        codex: PathBuf::new(),
+/// opencode's database at `path`, and no other harness's store.
+fn only_opencode(path: &Path) -> Locations {
+    Locations {
         opencode: path.to_owned(),
-        hermes: PathBuf::new(),
-        dsh: PathBuf::new(),
-    };
-    recent(&locations, "opencode", cwd, id, limit)
-}
-
-/// The sessions `listed` finds, when nothing stood in the way of reading.
-fn found(path: &Path, cwd: &str, id: &str, limit: usize) -> Vec<Candidate> {
-    let (candidates, problems) = listed(path, Path::new(cwd), id, limit);
-    assert_eq!(problems, Vec::<String>::new());
-    candidates
-}
-
-fn ids(candidates: &[Candidate]) -> String {
-    let ids: Vec<&str> = candidates
-        .iter()
-        .map(|candidate| candidate.id.as_str())
-        .collect();
-    ids.join(",")
-}
-
-fn agent_ids(agents: &[Agent]) -> String {
-    let ids: Vec<&str> = agents.iter().map(|agent| agent.id.as_str()).collect();
-    ids.join(",")
+        ..nowhere()
+    }
 }
 
 #[test]
@@ -215,7 +146,7 @@ fn every_fixture_reproduces_its_golden() {
         // and, for a session that started sub-agents, theirs.
         let input = Input {
             session: read(&fixture.join("input.session.json")),
-            messages: list(&read(&fixture.join("input.messages.json"))),
+            messages: rows(&read(&fixture.join("input.messages.json"))),
             agents: agents(&recorded_agents(&fixture)),
             fallback: "golden".into(),
             blobs: fixture.join("blobs"),
@@ -240,16 +171,16 @@ fn a_fixture_in_a_database_reads_as_its_golden() {
         // their order, and each sub-agent's session under its parent's.
         assert_eq!(
             input.messages,
-            list(&read(&fixture.join("input.messages.json"))),
+            rows(&read(&fixture.join("input.messages.json"))),
             "{name}"
         );
-        let recorded = list(&recorded_agents(&fixture));
+        let recorded = rows(&recorded_agents(&fixture));
         assert_eq!(input.agents.len(), recorded.len(), "{name}");
         for (agent, recorded) in input.agents.iter().zip(&recorded) {
             assert_eq!(agent.id, recorded["id"], "{name}");
             assert_eq!(agent.name, recorded["name"], "{name}");
             assert_eq!(agent.input.session, recorded["session"], "{name}");
-            assert_eq!(agent.input.messages, list(&recorded["messages"]), "{name}");
+            assert_eq!(agent.input.messages, rows(&recorded["messages"]), "{name}");
         }
         input.fallback = "golden".into();
         common::check_golden("opencode", &fixture, &input);
@@ -281,8 +212,9 @@ fn a_session_is_found_for_its_directory_and_by_its_id() {
     // From inside the project: its sessions and its parent directory's,
     // most recently active first. The sub-agent's session is the fixture
     // session's own, and is not offered.
-    let all = found(&path, "/work/checks/src", "", 30);
-    assert_eq!(ids(&all), format!("ses_above,{id},ses_before"));
+    let stores = only_opencode(&path);
+    let all = listed(&stores, "opencode", "/work/checks/src", "", 30);
+    assert_eq!(ids(&all), ["ses_above", id, "ses_before"]);
     let own = &all[1];
     assert_eq!(own.found.harness, "opencode");
     assert_eq!(own.title, "Greeting check");
@@ -297,20 +229,29 @@ fn a_session_is_found_for_its_directory_and_by_its_id() {
     assert_eq!(own.started, Some((1_791_387_530, 936_000_000)));
 
     // The limit keeps the newest.
-    assert_eq!(ids(&found(&path, "/work/checks/src", "", 1)), "ses_above");
     assert_eq!(
-        ids(&found(&path, "/work/checks", "", 2)),
-        format!("ses_above,{id}")
+        ids(&listed(&stores, "opencode", "/work/checks/src", "", 1)),
+        ["ses_above"]
+    );
+    assert_eq!(
+        ids(&listed(&stores, "opencode", "/work/checks", "", 2)),
+        ["ses_above", id]
     );
 
     // An id names one session, a sub-agent's included, among the project's.
-    assert_eq!(ids(&found(&path, "/work/checks", id, 1)), id);
-    assert_eq!(ids(&found(&path, "/work/checks/src", &child, 1)), child);
-    assert_eq!(ids(&found(&path, "/work/checks", "ses_other", 1)), "");
-    assert_eq!(ids(&found(&path, "/work/checks", "ses_nobody", 1)), "");
+    assert_eq!(
+        ids(&listed(&stores, "opencode", "/work/checks", id, 1)),
+        [id]
+    );
+    assert_eq!(
+        ids(&listed(&stores, "opencode", "/work/checks/src", &child, 1)),
+        [child.as_str()]
+    );
+    assert!(listed(&stores, "opencode", "/work/checks", "ses_other", 1).is_empty());
+    assert!(listed(&stores, "opencode", "/work/checks", "ses_nobody", 1).is_empty());
 
     // What was found loads as the fixture's session.
-    let chosen = found(&path, "/work/checks", id, 1);
+    let chosen = listed(&stores, "opencode", "/work/checks", id, 1);
     let mut input = chosen[0].found.load().unwrap();
     input.fallback = "golden".into();
     common::check_golden("opencode", &fixture, &input);
@@ -340,12 +281,18 @@ fn a_store_that_is_not_there_has_no_sessions_and_one_that_cannot_be_read_says_so
     let (path, _db) = database("unreadable", "CREATE TABLE incompatible (id TEXT)");
     let cwd = Path::new("/work/project");
     // A machine without opencode is ordinary.
-    let (candidates, problems) = listed(&path.with_extension("gone"), cwd, "", 30);
+    let (candidates, problems) = recent(
+        &only_opencode(&path.with_extension("gone")),
+        "opencode",
+        cwd,
+        "",
+        30,
+    );
     assert!(candidates.is_empty() && problems.is_empty(), "{problems:?}");
-    let (candidates, problems) = listed(Path::new(""), cwd, "", 30);
+    let (candidates, problems) = recent(&nowhere(), "opencode", cwd, "", 30);
     assert!(candidates.is_empty() && problems.is_empty(), "{problems:?}");
     // A database without opencode's tables is not.
-    let (candidates, problems) = listed(&path, cwd, "", 30);
+    let (candidates, problems) = recent(&only_opencode(&path), "opencode", cwd, "", 30);
     assert!(candidates.is_empty());
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert!(
@@ -355,7 +302,7 @@ fn a_store_that_is_not_there_has_no_sessions_and_one_that_cannot_be_read_says_so
     // Nor is a file that is no database.
     let text = path.with_extension("txt");
     fs::write(&text, "not a database, and long enough to be read as one\n").unwrap();
-    let (_, problems) = listed(&text, cwd, "", 30);
+    let (_, problems) = recent(&only_opencode(&text), "opencode", cwd, "", 30);
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert!(
         problems[0].starts_with("cannot read opencode sessions: "),
@@ -379,12 +326,13 @@ fn a_chosen_session_stays_the_one_that_is_loaded() {
            INSERT INTO session VALUES ('older','First task','/work/project',1),
                ('newer','Second task','/work/project',2), ('elsewhere','Other task','/other',3);"#,
     );
+    let stores = only_opencode(&path);
     assert_eq!(
-        ids(&found(&path, "/work/project/src", "", 30)),
-        "newer,older"
+        ids(&listed(&stores, "opencode", "/work/project/src", "", 30)),
+        ["newer", "older"]
     );
-    let chosen = found(&path, "/work/project", "older", 1);
-    assert_eq!(ids(&chosen), "older");
+    let chosen = listed(&stores, "opencode", "/work/project", "older", 1);
+    assert_eq!(ids(&chosen), ["older"]);
     db.execute("UPDATE session SET time_created=100 WHERE id='newer'", [])
         .unwrap();
     let input = chosen[0].found.load().unwrap();
@@ -422,8 +370,15 @@ fn a_sub_agents_session_is_not_offered_as_the_persons() {
          INSERT INTO session VALUES ('main', NULL, 'Rename the handler', '/work/project', 1),
              ('task', 'main', 'List the call sites', '/work/project', 2);",
     );
-    assert_eq!(ids(&found(&path, "/work/project", "", 30)), "main");
-    assert_eq!(ids(&found(&path, "/work/project", "task", 1)), "task");
+    let stores = only_opencode(&path);
+    assert_eq!(
+        ids(&listed(&stores, "opencode", "/work/project", "", 30)),
+        ["main"]
+    );
+    assert_eq!(
+        ids(&listed(&stores, "opencode", "/work/project", "task", 1)),
+        ["task"]
+    );
 }
 
 /// A long-running session is as recent as its last activity, like a
@@ -437,8 +392,8 @@ fn sessions_rank_by_when_they_were_last_active() {
              ('quick', NULL, 'Started later, finished', '/work/project', 5000, 6000),
              ('untouched', NULL, 'Never updated', '/work/project', 3000, NULL);",
     );
-    let all = found(&path, "/work/project", "", 30);
-    assert_eq!(ids(&all), "long-running,quick,untouched");
+    let all = listed(&only_opencode(&path), "opencode", "/work/project", "", 30);
+    assert_eq!(ids(&all), ["long-running", "quick", "untouched"]);
     assert_eq!(all[0].found.recency, 9_000_000_000);
     assert_eq!(all[0].started, Some((1, 0)));
     assert_eq!(all[0].title, "Started first, still going");
@@ -459,12 +414,12 @@ fn a_sub_agents_session_loads_with_its_parent() {
              ('deeper', 'task', 'Deeper', '/work/project', 3), ('other', NULL, 'Other', '/work/project', 4);",
     );
     let input = by_id(&path, "main").load().unwrap();
-    assert_eq!(agent_ids(&input.agents), "task");
+    assert_eq!(agent_ids(&input.agents), ["task"]);
     assert_eq!(input.agents[0].name, "Task");
     assert_eq!(input.agents[0].call, "");
     assert_eq!(input.agents[0].input.session["title"], "Task");
-    assert_eq!(agent_ids(&input.agents[0].input.agents), "deeper");
-    assert_eq!(agent_ids(&input.agents[0].input.agents[0].input.agents), "");
+    assert_eq!(agent_ids(&input.agents[0].input.agents), ["deeper"]);
+    assert!(agent_ids(&input.agents[0].input.agents[0].input.agents).is_empty());
 }
 
 /// A session started in the home directory belongs to work done there, and
@@ -483,10 +438,9 @@ fn a_session_in_the_home_directory_belongs_to_home_only() {
         [home.to_string_lossy()],
     )
     .unwrap();
-    let (at_home, problems) = listed(&path, &home, "", 30);
-    assert_eq!(problems, Vec::<String>::new());
-    assert_eq!(ids(&at_home), "opencode");
-    let (beneath, problems) = listed(&path, &home.join("code").join("proj"), "", 30);
-    assert_eq!(problems, Vec::<String>::new());
-    assert_eq!(ids(&beneath), "");
+    let stores = only_opencode(&path);
+    let at_home = listed(&stores, "opencode", &home, "", 30);
+    assert_eq!(ids(&at_home), ["opencode"]);
+    let beneath = listed(&stores, "opencode", home.join("code").join("proj"), "", 30);
+    assert!(beneath.is_empty());
 }

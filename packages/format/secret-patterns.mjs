@@ -7,7 +7,7 @@
  * The Rust port compiles them with Unicode off, so that `\b` and the classes
  * are ASCII as they are here and in Go; that also rules out `.` and negated
  * classes. Give a new pattern cases in testdata/format/scan.json.
- * The TS server (lib/secrets.ts) and the JS CLI import this module.
+ * The hosted server (lib/secrets.ts) imports this module.
  *
  * Exported as regex sources, not RegExp objects: global regexes carry
  * lastIndex state, so each consumer constructs its own instances.

@@ -23,18 +23,15 @@ or an implemented slice.
 
 | File | Summary |
 |------|---------|
-| [product-plan.md](product-plan.md) | Product promise and thesis, the three handoff use cases, six milestones in dependency order, and the integration TODO; draft updated 2026-10-12 |
+| [product-plan.md](product-plan.md) | Product promise and thesis, the three handoff use cases, six milestones in dependency order, and the integration TODO; draft updated 2026-10-16 |
 | [success-criteria.md](success-criteria.md) | The nine agreed requirements: install, daemon, integrations, viewer, data control, sharing, trustworthy record, no disruption, recipient value |
 | [kpis.md](kpis.md) | Proposed measurable targets and measurement definitions per criterion plus a week-two retention goal; proposed targets, not measured baselines |
-| [project-review.md](project-review.md) | Review of the 2026-09-11 checkout: CLI, format, viewer and test state, fixes made during the review, and the next viewer priorities |
 
 ## System architecture
 
 | File | Summary |
 |------|---------|
 | [architecture-overview.md](architecture-overview.md) | One-page map of the CLI, shared viewer, hosted service, encrypted sharing, trust boundaries and current deployment |
-| [architecture-review.md](architecture-review.md) | Whole-system review with code evidence, nine architectural findings, live topology and verification results |
-| [architecture-alternatives.md](architecture-alternatives.md) | Two alternatives: a transactional monolith and a stateless hosted platform, with trade-offs, migration paths and a recommendation |
 | [rust-migration.md](rust-migration.md) | Agreed Rust direction: replace Go CLI and hosted runtime, share protocol code, migrate nothing while there are no users, milestones with exit gates |
 | [compatibility-baseline.md](compatibility-baseline.md) | P0 reference for the Rust port: pinned revisions, CLI and hosted inventories, the differential runner, what it covers, findings and gaps |
 | [rust-build.md](rust-build.md) | The Rust workspace as built: pinned toolchain, viewer artifact, TLS and SQLite choices, the six targets and their state, first measurements |
@@ -64,7 +61,6 @@ or an implemented slice.
 | File | Summary |
 |------|---------|
 | [spool-protocol.md](spool-protocol.md) | Frozen v1 contract for in-progress captures: `.spool` JSONL skeleton and spans, `.spool.pid` liveness, `.lock` commit mutex, `.corrupt` set-aside |
-| [go-migration.md](go-migration.md) | 2026-07-18 decision record for moving the tap and CLI to Go, completed at v0.3.0 on 2026-07-19: frozen contracts, phases P0–P4, decisions, risks |
 
 ## Documentation outside docs/
 
@@ -75,7 +71,6 @@ or an implemented slice.
 | [packaging/README.md](../packaging/README.md) | The four CLI distribution channels driven from a tag: goreleaser (archives, packages, Homebrew cask), curl installer, npm, GitHub Release |
 | [assets/brand/README.md](../assets/brand/README.md) | Elision mark, wordmark and brand colors; the social preview card and its export; brand CSS and icons copied into the Go embed and the server |
 | [assets/product/README.md](../assets/product/README.md) | Product screenshots from fictional sessions and the README's How it works recording: sizes, what each shows, how to regenerate |
-| [assets/logos/README.md](../assets/logos/README.md) | Provenance and license of the Hermes Agent logo; the other four harness logos have no note yet |
 | [testdata/format/README.md](../testdata/format/README.md) | Format and scan cases every validator and scanner must agree on: the fields of the two files and how to change them |
 | [testdata/protocol/README.md](../testdata/protocol/README.md) | Envelope, statement, history, vault and key cases every implementation must agree on: the fields, the generator, how to change them |
 | [testdata/viewer/arrival/README.md](../testdata/viewer/arrival/README.md) | Fictional arrival fixture: eight exchanges, a recovered failure, Markdown, reasoning parts, standalone tool evidence, a child-agent result |

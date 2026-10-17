@@ -1,7 +1,8 @@
 # CLI to web: first implementation
 
 2026-09-11 · implements the first slice of the [product plan](product-plan.md);
-harness contract updated 2026-10-08; checked against the code on 2026-10-09.
+harness contract updated 2026-10-08; checked against the code on 2026-10-09;
+updated 2026-10-16.
 These are development scenarios, not reports of real colleague exchanges.
 
 ## Common interaction
@@ -286,14 +287,14 @@ blocking, cross-origin rejection, hostname checks, foreground/background
 startup, browser launch failure, SSH guidance and occupied-port recovery.
 The pi bridge is exercised with a stub CLI so tests cannot publish externally.
 The browser scripts cover real embedded rendering, reload and copied links with
-the access key, the mobile dark layout and stopping the viewer. Picker search
-and the detached server are not covered by a script in this checkout.
+the access key, the mobile dark layout and stopping the viewer. The detached
+server is covered by [tests/cli.rs](../crates/slink/tests/cli.rs), which reads
+from a background viewer after its command returns and then stops it. Picker
+search is not covered by a script in this checkout.
 
 Publishing encrypts the saved document on this machine and posts the envelope
 to `/api/shares`, or `/api/named-shares` for named recipients; a local mock
 receiver verifies the upload. The hosted service is outside this checkout, and
-these checks publish nothing to it. Local selection,
-author context and export projection are implemented in the next slice; see the
-[excerpt contract and verification](share-excerpt-v1.md). Excerpt publishing was
-gated at the time; the hosted service has accepted encrypted excerpts since
-2026-09-12. Richer document rendering and saved diffs remain separate milestones.
+these checks publish nothing to it. Selection, author context and export are in
+the [excerpt contract](share-excerpt-v1.md). Saved diffs remain a separate
+milestone.

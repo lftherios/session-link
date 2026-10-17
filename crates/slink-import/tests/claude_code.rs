@@ -2,7 +2,7 @@
 
 mod common;
 
-use slink_import::{HARNESSES, import, load_file, ported};
+use slink_import::{import, load_file};
 
 #[test]
 fn every_fixture_reproduces_its_golden() {
@@ -20,9 +20,5 @@ fn every_fixture_reproduces_its_golden() {
 
 #[test]
 fn a_harness_without_an_importer_says_so() {
-    for harness in HARNESSES.into_iter().filter(|harness| !ported(harness)) {
-        let error = import(harness, &Default::default()).unwrap_err();
-        assert!(error.to_string().contains(harness), "{error}");
-    }
     assert!(import("nope", &Default::default()).is_err());
 }

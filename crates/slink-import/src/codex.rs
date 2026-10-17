@@ -29,11 +29,7 @@ use crate::discover::{
 };
 use crate::images::image_part;
 use crate::value::{data_part, field, js_string, or_null, text, truthy};
-use crate::{Agent, Input};
-
-pub(crate) const PORTED: bool = true;
-
-const LABEL: &str = "session-import@0.1.0";
+use crate::{Agent, Input, LABEL};
 
 pub(crate) fn import(input: &Input) -> Result<Option<Value>, String> {
     Ok(read(input))

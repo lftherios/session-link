@@ -32,8 +32,6 @@ use crate::images::image_part;
 use crate::value::{data_part, field, put, text, truthy};
 use crate::{Agent, Input};
 
-pub(crate) const PORTED: bool = true;
-
 /// `harness` is `pi` or `omp`: omp's transcript is pi's with a title line of
 /// its own, and it moves images into a store beside the transcripts.
 pub(crate) fn import(input: &Input, harness: &str) -> Result<Option<Value>, String> {

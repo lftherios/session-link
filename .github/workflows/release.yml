@@ -5,10 +5,8 @@ name: release
 # version is the source of truth: bump the ones you changed, then tag —
 # unchanged packages are skipped, not re-published.
 #
-# As of the Go cutover (v0.3.0): the CLI is `session.link` on npm as the Go
-# LAUNCHER, published by release-go.yml's binary-channel step — NOT here.
-# The standalone binaries come from goreleaser (release-go.yml), not the old
-# Bun build. This workflow only ships the format + viewer libraries.
+# The CLI's npm launcher and its binaries are published by release-go.yml,
+# not here. This workflow only ships the format and viewer libraries.
 #
 # Publishing uses npm trusted publishing: npm accepts the publish because it
 # comes from this workflow file in this repository, which each package names

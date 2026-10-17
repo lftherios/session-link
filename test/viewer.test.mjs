@@ -1,34 +1,20 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { test } from "node:test";
-import { build } from "esbuild";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { importViewer } from "../scripts/viewer-module.mjs";
 
-// Exercise the public React component with the same TSX compiler as the
-// standalone build. No generated test bundle or extra runtime is needed.
-const built = await build({
-  entryPoints: ["packages/viewer/index.ts"],
-  bundle: true,
-  write: false,
+// Exercise the React component with the same TSX compiler as the standalone
+// build. No generated test bundle or extra runtime is needed.
+const { RunViewer, PartView, ToolNames, toolNames } = await importViewer(["RunViewer"], {
   platform: "node",
   format: "cjs",
   external: ["react", "react/*", "react-dom/*", "lucide-react", "@session-link/format"],
   jsx: "automatic",
 });
-const module = { exports: {} };
-new Function("require", "module", "exports", built.outputFiles[0].text)(
-  createRequire(import.meta.url), module, module.exports,
-);
-const { RunViewer } = module.exports;
 let modelExports;
-const sessionModel = async () => modelExports ??= await (async () => {
-  const bundled = await build({ entryPoints: ["packages/viewer/session-model.ts"], bundle: true, write: false, platform: "node", format: "cjs", external: ["@session-link/format"] });
-  const model = { exports: {} };
-  new Function("require", "module", "exports", bundled.outputFiles[0].text)(createRequire(import.meta.url), model, model.exports);
-  return model.exports;
-})();
+const sessionModel = () => modelExports ??= importViewer(["session-model"]);
 
 const message = (role, text) => ({ role, content: [{ type: "text", text }] });
 const call = (id, input, output, extra = {}) => ({
@@ -39,10 +25,21 @@ const run = (spans, source = { kind: "proxy", fidelity: "exact" }) => ({
   schema: "session/v0", created_at: "2026-09-11T00:00:00Z", source,
   spans: [{ id: "root", type: "agent" }, ...spans],
 });
-const render = (doc, initialView = "transcript", local) => renderToStaticMarkup(createElement(RunViewer, { run: doc, initialView, local }));
+// The exchange view a reader arrives at.
+const render = (doc, local) => renderToStaticMarkup(createElement(RunViewer, { run: doc, local }));
+// The whole session as the reader holds it: every exchange with its agent
+// activity open, each part drawn by the renderer RunViewer gives the reader.
+// Agent activity, where tool steps and most images are read, opens only on a
+// click, which server rendering cannot make.
+const readerHTML = async doc => {
+  const { exchangesFor, readerFlow, buildFlow } = await sessionModel();
+  const blocks = exchangesFor(doc, readerFlow(buildFlow(doc))).flatMap(e => [...e.prompts, ...e.blocks]);
+  return renderToStaticMarkup(createElement(ToolNames.Provider, { value: toolNames(doc) },
+    blocks.map(b => createElement("div", { key: b.key }, b.err, b.msg.content.map((part, i) => createElement(PartView, { key: i, part }))))));
+};
 const count = (html, text) => html.split(text).length - 1;
 
-test("privacy: transcript images never load remote or local HTTP resources", () => {
+test("privacy: images never load remote or local HTTP resources", () => {
   const doc = run([call("s1", [message("user", "Review this")], [{ role:"assistant", content:[
     {type:"text",text:"![Diagram](https://external.test/private-marker.png)"},
     {type:"image",url:"http://127.0.0.1:4400/api/stop"},
@@ -50,7 +47,7 @@ test("privacy: transcript images never load remote or local HTTP resources", () 
     {type:"image",url:"data:image/svg+xml,<svg onload='alert(1)'/>"},
     {type:"image",url:"data:image/png;base64,iVBORw0KGgo="},
   ]}])]);
-  const html = render(doc, "exchange");
+  const html = render(doc);
   assert.doesNotMatch(html, /<img[^>]+src="(?:https?:|javascript:|data:image\/svg)/);
   assert.match(html, /href="https:\/\/external.test\/private-marker.png" target="_blank" rel="noopener noreferrer"/);
   assert.match(html, /Open external image/);
@@ -62,7 +59,7 @@ test("arrival: latest input and answer open beneath scoped search and one share 
     call("s1", [message("user", "old-question")], [message("assistant", "old-answer")]),
     call("s2", [message("user", "current-question")], [message("assistant", "current-answer")]),
   ], { kind: "import" }), name: "A recognizable task" };
-  const html = render(doc, "exchange", { source: "fixture", project: "/tmp/demo" });
+  const html = render(doc, { source: "fixture", project: "/tmp/demo" });
   assert.match(html, /title="Conversation outline"><strong>2<\/strong> <span class="sv-of">of (?:<!-- -->)?2<\/span>/);
   assert.match(html, />Human input</); assert.match(html, />Agent response</);
   assert.doesNotMatch(html, />Prompt<|>Response</);
@@ -121,7 +118,7 @@ test("sharing: a rendered selection maps back to its source passage", async () =
   assert.equal(sourceRange(source, "not in this text"), null);
   assert.equal(partUnit({ unitPrefix: "u2-out-0", partIndices: [0, 2] }, 1), "u2-out-0-2");
   assert.equal(partUnit({ unitPrefix: "u2-out-0", unitPrefixes: ["u2-out-0-5"] }, 0), "u2-out-0-5");
-  const html = render(run([call("s1", [message("user", "Check it")], [message("assistant", "Checked")])]), "exchange", { source: "fixture" });
+  const html = render(run([call("s1", [message("user", "Check it")], [message("assistant", "Checked")])]), { source: "fixture" });
   assert.match(html, /data-unit="u1-in-0-0"/); assert.match(html, /data-unit="u1-out-0-0"/);
 });
 
@@ -137,7 +134,7 @@ test("arrival: tool results and harness messages never become human input", asyn
   assert.deepEqual(exchanges.map(e => e.prompts.map(p => messageText(p.msg))), [["Fix the header layout"], ["status?"]]);
   assert.equal(messageText(responseFor(exchanges[0]).msg), "The header now uses one row.");
   assert.deepEqual(exchanges[1].blocks.map(b => messageText(b.msg).slice(0, 14)), ["<local-command", "<command-name>", "<local-command", "All checks pas"], "context reads with the input it accompanied");
-  const html = render(doc, "exchange", { source: "fixture" });
+  const html = render(doc, { source: "fixture" });
   assert.equal(count(html, ">Human input<"), 1);
   assert.match(html, /status\?/); assert.match(html, /All checks pass/);
   assert.doesNotMatch(html, /local-command|command-name/);
@@ -151,7 +148,7 @@ test("arrival: imported Claude Code harness messages read as context and errors"
   assert.equal(messageText(responseFor(exchanges[0]).msg), "The header now uses one row.");
   assert.ok(exchanges[0].blocks.some(b => readingRole(b.msg) === "context" && /declined/.test(messageText(b.msg))));
   assert.equal(responseFor(exchanges[1]), undefined);
-  const html = render(doc, "exchange", { source: "fixture" });
+  const html = render(doc, { source: "fixture" });
   assert.match(html, /Error: Usage limit reached\. Try again later\./);
   assert.doesNotMatch(html, />Agent response</);
 });
@@ -171,7 +168,7 @@ test("arrival: an imported pi session reads as the branch that was kept", async 
   const { exchangesFor, messageText } = await sessionModel();
   const doc = JSON.parse(await readFile("testdata/import/pi/branches/golden.run.json", "utf8"));
   assert.deepEqual(exchangesFor(doc).map(e => e.prompts.map(p => messageText(p.msg))), [["The upload test fails one run in five. Find out why."], ["Fix the race instead"], ["retry"]]);
-  const html = render(doc, "conversation", { source: "fixture" });
+  const html = await readerHTML(doc);
   assert.match(html, /overloaded_error/);
   assert.doesNotMatch(html, /Deleted upload\.test\.ts/);
 });
@@ -182,7 +179,7 @@ for (const [fixture, images] of [
 ]) {
   test(`viewer: images imported from ${fixture} are shown`, async () => {
     const doc = JSON.parse(await readFile(`testdata/import/${fixture}/golden.run.json`, "utf8"));
-    const html = render(doc);
+    const html = await readerHTML(doc);
     const shown = new Set(html.match(/<img[^>]+src="data:image\/(?:png|jpeg|webp);base64,[^"]+"/g) ?? []);
     assert.equal(shown.size, images, `distinct images rendered from ${fixture}`);
     assert.doesNotMatch(html, /no source|inline bytes omitted/);
@@ -204,9 +201,9 @@ for (const [fixture, task] of [
     assert.ok(exchanges.some(e => !e.child && e.prompts.length), "the session's own exchanges remain");
     // The sub-agent's work follows the exchange that delegated it.
     assert.ok(exchanges.indexOf(delegated[0]) > exchanges.findIndex(e => !e.child));
-    // The transcript marks where the sub-agent's work begins, by its name.
+    // The reader names the sub-agent whose work it is.
     const agent = doc.spans.find(s => s.type === "agent" && s.parent_id);
-    assert.ok(render(doc).includes(`aria-label="Inspect ${agent.name} in the tree"`));
+    assert.equal(delegated[0].agent, agent.name);
   });
 }
 
@@ -217,12 +214,12 @@ test("arrival: a dsh session reads as the person's turns, with what dsh supplied
   // dsh puts its runtime context in the person's turn; it is not a prompt of theirs.
   assert.deepEqual(exchanges.map(e => e.prompts.map(p => messageText(p.msg))),
     [["RUN_TOOL BAD_ARGS: print a greeting with the shell and report what it printed"], ["FOLLOW_UP: thanks, that is all"]]);
-  const html = render(doc);
+  const html = await readerHTML(doc);
   assert.match(html, /hello from the tool/);
   assert.match(html, /missing required property/);
   // A request the provider failed is shown where it happened, before the retry that answered.
   const retried = JSON.parse(await readFile("testdata/import/dsh/v4-retry/golden.run.json", "utf8"));
-  assert.match(render(retried), /mock overload \(SERVER\)[\s\S]*Hello\. Nothing to run here\./);
+  assert.match(await readerHTML(retried), /mock overload \(SERVER\)[\s\S]*Hello\. Nothing to run here\./);
 });
 
 test("arrival: an aider run reads as its prompts and replies, with aider's own notices as evidence", async () => {
@@ -242,7 +239,7 @@ test("arrival: an aider run reads as its prompts and replies, with aider's own n
   assert.match(messageText(exchanges[0].blocks[0].msg), /Aider v0\.86\.2[\s\S]*Added hello\.py to the chat\./);
   assert.match(exchanges[0].blocks[2].msg.content[0].content[0].text, /Applied edit to hello\.py[\s\S]*SyntaxError: '\(' was never closed/);
   assert.match(messageText(exchanges[0].blocks[3].msg), /The closing bracket was missing/);
-  assert.match(render(doc), /Commit 06b6ca0 feat: greet the world/);
+  assert.match(await readerHTML(doc), /Commit 06b6ca0 feat: greet the world/);
   // Aider records one time, the start of the run. Nothing else is given a time.
   assert.equal(doc.spans.filter(s => s.started_at).length, 1);
   assert.equal(doc.spans.filter(s => s.ended_at).length, 0);
@@ -250,12 +247,12 @@ test("arrival: an aider run reads as its prompts and replies, with aider's own n
 
 test("arrival: names that look like injected context never become the title", () => {
   const doc = { ...run([call("s1", [message("user", "<environment_context>cwd: /tmp</environment_context>"), message("user", "Compare onboarding options")], [message("assistant", "The comparison")])], { kind: "import" }), name: "<environment_context> <cwd>/tmp</cwd>" };
-  const html = render(doc, "exchange");
+  const html = render(doc);
   assert.match(html, /sv-untitled">Untitled · Import · /);
   assert.doesNotMatch(html, /<h1>&lt;environment_context/);
 });
 
-test("arrival: mixed reasoning and answer text use one collapsed activity section", () => {
+test("arrival: mixed reasoning and answer text use one collapsed activity section", async () => {
   const doc = run([call("s1", [message("user", "Compare the options")], [{ role: "assistant", content: [
     { type: "thinking", text: "first-reasoning-marker" },
     { type: "thinking", text: "second-reasoning-marker" },
@@ -264,22 +261,22 @@ test("arrival: mixed reasoning and answer text use one collapsed activity sectio
     { type: "thinking", text: "last-reasoning-marker" },
   ] }])], { kind: "import" });
   const before = JSON.stringify(doc);
-  const html = render(doc, "exchange", { source: "fixture" });
+  const html = render(doc, { source: "fixture" });
   assert.match(html, /The readable answer/);
   assert.equal(count(html, '<summary>Agent activity'), 1);
   assert.doesNotMatch(html, /reasoning-marker|tool-evidence-marker|>thinking</);
   assert.match(html, /id="message-u1-out-0"/);
   assert.equal(JSON.stringify(doc), before, "presentation must not change source content");
-  const transcript = render(doc, "transcript");
-  assert.match(transcript, /first-reasoning-marker/);
-  assert.match(transcript, /last-reasoning-marker/);
+  const opened = await readerHTML(doc);
+  assert.match(opened, /first-reasoning-marker/);
+  assert.match(opened, /last-reasoning-marker/);
 });
 
 test("arrival: reasoning without an answer stays in agent activity", () => {
   const doc = run([call("s1", [message("user", "An interrupted question")], [{ role: "assistant", content: [
     { type: "thinking", text: "unfinished-reasoning-marker" },
   ] }])], { kind: "import" });
-  const html = render(doc, "exchange");
+  const html = render(doc);
   assert.match(html, /No response captured/);
   assert.equal(count(html, '<summary>Agent activity'), 1);
   assert.doesNotMatch(html, /unfinished-reasoning-marker|>thinking</);
@@ -291,7 +288,7 @@ test("arrival: a later child result does not replace the main conversation", () 
     { id: "child", parent_id: "s1", type: "agent", name: "Researcher" },
     call("c1", [message("user", "child-task")], [message("assistant", "child-result")], { parent_id: "child" }),
   ]);
-  const html = render(doc, "exchange");
+  const html = render(doc);
   assert.match(html, /main-result/);
   assert.doesNotMatch(html, /child-result|child-task/);
 });
@@ -301,11 +298,11 @@ test("arrival: trailing prompts and recorded failures never borrow an earlier re
     call("s1", [message("user", "first-task")], [message("assistant", "old-success")]),
     { id: "tail", parent_id: "root", type: "custom", input: { messages: [message("user", "pending-task")] } },
   ]);
-  let html = render(doc, "exchange");
+  let html = render(doc);
   assert.match(html, /pending-task/); assert.match(html, /No response captured/);
   assert.doesNotMatch(html, /old-success|still recording/);
   doc.spans.push(call("failure", [], [], { status: "error", error: { message: "command failed" } }));
-  html = render(doc, "exchange", { source: "fixture" });
+  html = render(doc, { source: "fixture" });
   assert.match(html, /Error: command failed/);
   assert.match(html, /Share this view/);
 });
@@ -315,20 +312,20 @@ test("arrival: recovered errors do not override the latest successful exchange",
     call("failure", [message("user", "old-task")], [], { status: "error", error: { message: "old-error" } }),
     call("success", [message("user", "new-task")], [message("assistant", "new-result")]),
   ], { kind: "import" });
-  const html = render(doc, "exchange");
+  const html = render(doc);
   assert.match(html, /new-result/); assert.doesNotMatch(html, /old-error/);
 });
 
-test("arrival: standalone results remain inspectable and replayed tool results appear once", () => {
+test("arrival: standalone results remain inspectable and replayed tool results appear once", async () => {
   const result = [{ type: "text", text: "recorded-tool-result" }];
   const doc = run([
     call("s1", [message("user", "run tests")], [{ role: "assistant", content: [{ type: "tool_call", id: "t1", name: "shell", arguments: { command: "npm test" } }] }]),
     { id: "t1", type: "tool_call", parent_id: "s1", name: "shell", input: { tool_call_id: "t1", arguments: { command: "npm test" } }, output: { result } },
     call("s2", [{ role: "tool", content: [{ type: "tool_result", tool_call_id: "t1", content: result }] }], [message("assistant", "tests passed")]),
   ]);
-  const html = render(doc, "exchange");
+  const html = render(doc);
   assert.match(html, /Agent activity/);
-  assert.equal(count(render(doc, "transcript"), "recorded-tool-result"), 1);
+  assert.equal(count(await readerHTML(doc), "recorded-tool-result"), 1);
 });
 
 test("reading: a tool span's own copy of a result defers to the result the model received", async () => {
@@ -343,7 +340,7 @@ test("reading: a tool span's own copy of a result defers to the result the model
   const results = buildFlow(doc).filter(block => block.msg?.content.some(part => part.type === "tool_result"));
   assert.equal(results.length, 1, "one result per call");
   assert.equal(results[0].msg.content[0].content[0].text, "model-saw-this");
-  assert.doesNotMatch(render(doc, "transcript"), /interrupted/);
+  assert.doesNotMatch(await readerHTML(doc), /interrupted/);
 });
 
 test("reading: a failed tool's result stands in for its bare error status", async () => {
@@ -358,7 +355,7 @@ test("reading: a failed tool's result stands in for its bare error status", asyn
   assert.deepEqual(errors(withMessage), ["timed out"]);
 });
 
-test("reading: recorded tool input and output are verbatim, never Markdown", () => {
+test("reading: recorded tool input and output are verbatim, never Markdown", async () => {
   const output = "## main...origin/main [ahead 2]\n  * indented, not a list\n<b>raw</b>";
   const doc = run([
     call("s1", [message("user", "push")], [
@@ -366,7 +363,7 @@ test("reading: recorded tool input and output are verbatim, never Markdown", () 
       { role: "tool", content: [{ type: "tool_result", tool_call_id: "t1", content: [{ type: "text", text: output }] }] },
     ]),
   ]);
-  const html = render(doc, "transcript");
+  const html = await readerHTML(doc);
   assert.match(html, /<pre class="rv-tool-text">## main\.\.\.origin\/main \[ahead 2\]\n  \* indented, not a list\n&lt;b&gt;raw&lt;\/b&gt;<\/pre>/);
   assert.doesNotMatch(html, /<h2[^>]*>main/);
   assert.match(html, /<pre class="rv-tool-text rv-tool-command">git status -sb\ngit push<\/pre>/, "a shell command reads as the command it ran");
@@ -381,11 +378,11 @@ test("arrival: a closing exit with no answer is not where reading starts", () =>
     call("s1", [message("user", "Compare the onboarding flows")], [message("assistant", "the-real-answer")]),
     { id: "tail", parent_id: "root", type: "custom", input: { messages: [message("user", "exit")] } },
   ], { kind: "import" });
-  const html = render(doc, "exchange");
+  const html = render(doc);
   assert.match(html, /the-real-answer/);
   assert.match(html, /<strong>1<\/strong> <span class="sv-of">of (?:<!-- -->)?2<\/span>/, "the exit stays in the conversation");
   doc.spans[2].input.messages = [message("user", "and the pricing?")];
-  assert.match(render(doc, "exchange"), /No response captured/, "a real trailing question still leads");
+  assert.match(render(doc), /No response captured/, "a real trailing question still leads");
 });
 
 test("navigation: reading continues at the end of an exchange", () => {
@@ -393,12 +390,12 @@ test("navigation: reading continues at the end of an exchange", () => {
     call("s1", [message("user", "first-question")], [message("assistant", "first-answer")]),
     call("s2", [message("user", "second-question")], [message("assistant", "second-answer")]),
   ]);
-  const local = render(doc, "exchange", { source: "fixture" });
+  const local = render(doc, { source: "fixture" });
   const nav = local.slice(local.indexOf('aria-label="Continue reading"'));
   assert.match(nav, /Previous<\/span><span class="sv-endnav-text">first-question</);
   assert.doesNotMatch(local, /first-answer/);
   assert.doesNotMatch(nav, /Copy link/, "local addresses are not for sharing");
-  assert.match(render(doc, "exchange"), /aria-label="Continue reading"[\s\S]*Copy link/, "hosted readers can link to what they read");
+  assert.match(render(doc), /aria-label="Continue reading"[\s\S]*Copy link/, "hosted readers can link to what they read");
 });
 
 test("navigation: an attached image's file tag is not the prompt's text", async () => {
@@ -432,7 +429,7 @@ test("reading: a subagent's input is a delegated task, not human input", () => {
     { id: "child", parent_id: "root", type: "agent", name: "Researcher" },
     call("c1", [message("user", "child-task")], [message("assistant", "child-result")], { parent_id: "child" }),
   ]);
-  const html = render(doc, "exchange");
+  const html = render(doc);
   assert.match(html, /child-task/);
   assert.match(html, />Delegated task</);
   assert.doesNotMatch(html, />Human input</);
@@ -446,12 +443,12 @@ test("navigation: each subagent's exchanges count among themselves", () => {
     call("b1", [message("user", "review one")], [message("assistant", "one")], { parent_id: "b" }),
     call("b2", [message("user", "review two")], [message("assistant", "two")], { parent_id: "b" }),
   ]);
-  assert.match(render(doc, "exchange"), /<span class="sv-agent">Reviewer<\/span> <strong>2<\/strong> <span class="sv-of">of (?:<!-- -->)?2<\/span>/);
+  assert.match(render(doc), /<span class="sv-agent">Reviewer<\/span> <strong>2<\/strong> <span class="sv-of">of (?:<!-- -->)?2<\/span>/);
 });
 
 test("arrival: opaque names show an untitled label and titles are only editable locally", () => {
   const doc = { ...run([call("s1", [message("user", "Compare onboarding options")], [message("assistant", "The comparison")])]), name: "01a08f55-ced0-7de0-bdf3-b979a0873181" };
-  const html = render(doc, "exchange");
+  const html = render(doc);
   assert.match(html, /<h1 class="sv-untitled">Untitled · Proxy · /);
   assert.doesNotMatch(html, /Edit title|01a08f55/);
   assert.equal(count(html, "Compare onboarding options"), 1, "the prompt is read once, not repeated as a headline");
@@ -460,12 +457,12 @@ test("arrival: opaque names show an untitled label and titles are only editable 
 test("arrival: a name the importer clipped from the first prompt is not a title", () => {
   const prompt = "Please delete the stale build artifacts directory and then double-check that nothing else references it";
   const doc = { ...run([call("s1", [message("user", prompt)], [message("assistant", "Done")])], { kind: "import", harness: "claude-code" }), name: prompt.slice(0, 77) + "…" };
-  assert.match(render(doc, "exchange"), /<h1 class="sv-untitled">Untitled · Claude Code · /);
+  assert.match(render(doc), /<h1 class="sv-untitled">Untitled · Claude Code · /);
   const exact = { ...doc, name: "List the files here" };
   exact.spans = [exact.spans[0], call("s1", [message("user", "List the files here")], [message("assistant", "Done")])];
-  assert.match(render(exact, "exchange"), /sv-untitled/);
+  assert.match(render(exact), /sv-untitled/);
   const summary = { ...doc, name: "Clean up stale build artifacts" };
-  assert.match(render(summary, "exchange"), /<h1>Clean up stale build artifacts<\/h1>/);
+  assert.match(render(summary), /<h1>Clean up stale build artifacts<\/h1>/);
 });
 
 test("reading: human input, responses and activity show their recorded times", async () => {
@@ -474,7 +471,7 @@ test("reading: human input, responses and activity show their recorded times", a
     call("s1", [message("user", "Check the build")], [{ role: "assistant", content: [{ type: "tool_call", id: "t1", name: "shell", arguments: { command: "make" } }] }], { started_at: "2026-09-11T13:04:00.000Z", ended_at: "2026-09-11T13:04:05.000Z" }),
     call("s2", [{ role: "tool", content: [{ type: "tool_result", tool_call_id: "t1", content: [{ type: "text", text: "ok" }] }] }], [message("assistant", "The build passes.")], { started_at: "2026-09-11T13:05:30.000Z", ended_at: "2026-09-11T13:06:08.000Z" }),
   ]);
-  const html = render(doc, "exchange");
+  const html = render(doc);
   assert.match(html, /Human input<time class="sv-time" dateTime="2026-09-11T13:04:00\.000Z" title="[^"]+">[^<]+<\/time>/);
   assert.match(html, /Agent response<time class="sv-time" dateTime="2026-09-11T13:06:08\.000Z" title="[^"]+">[^<]+<\/time>/);
   assert.match(html, /<summary>Agent activity(?:<!-- -->)? · 2 steps<span class="sv-duration" title="[^"]+"> · (?:<!-- -->)?2m 8s<\/span><\/summary>/);
@@ -484,7 +481,7 @@ test("reading: human input, responses and activity show their recorded times", a
 
 test("reading: Markdown headings, tables, lists, citations and inert HTML", () => {
   const text = '## Findings\n\n| Product | Setup |\n| --- | --- |\n| Atlas | **Self serve** |\n\n- Verify the trial\n- Read [docs][source]\n\n[source]: https://example.test/docs\n\n<script>alert(1)</script>\n\n[unsafe](javascript:alert(1))';
-  const html = render(run([call("s1", [message("user", "Compare products")], [message("assistant", text)])]), "exchange");
+  const html = render(run([call("s1", [message("user", "Compare products")], [message("assistant", text)])]));
   assert.match(html, /<h2>Findings<\/h2>/); assert.match(html, /<table>/); assert.match(html, /<ul>/);
   assert.match(html, /<strong>Self serve<\/strong>/); assert.match(html, /href="https:\/\/example.test\/docs"/);
   assert.match(html, /&lt;script&gt;/); assert.doesNotMatch(html, /<script>|href="javascript:/);
@@ -529,11 +526,11 @@ test("reading: separately selected source definitions resolve excerpt citations"
   assert.match(html, /\[docs\]:/);
 });
 
-test("viewer: full-history calls render each conversational message once", () => {
+test("viewer: full-history calls render each conversational message once", async () => {
   const q = message("user", "question-unique");
   const a = message("assistant", "answer-unique");
   const next = message("user", "followup-unique");
-  const html = render(run([
+  const html = await readerHTML(run([
     call("s1", [q], [a]),
     call("s2", structuredClone([q, a, next]), [message("assistant", "done-unique")]),
   ]));
@@ -542,9 +539,9 @@ test("viewer: full-history calls render each conversational message once", () =>
   }
 });
 
-test("viewer: equal-length messages sharing 600+ characters keep their different endings", () => {
+test("viewer: equal-length messages sharing 600+ characters keep their different endings", async () => {
   const prefix = "x".repeat(650);
-  const html = render(run([
+  const html = await readerHTML(run([
     call("s1", [message("user", prefix + "ending-A")], [message("assistant", "one")]),
     call("s2", [message("user", prefix + "ending-B")], [message("assistant", "two")]),
   ]));
@@ -556,9 +553,9 @@ for (const source of [
   { kind: "import", fidelity: "reconstructed" },
   { kind: "sdk", label: "pi-extension@0.1.0", fidelity: "exact" },
 ]) {
-  test(`viewer: repeated ${source.kind} input deltas remain visible`, () => {
+  test(`viewer: repeated ${source.kind} input deltas remain visible`, async () => {
     const prompt = message("user", "continue-unique");
-    const html = render(run([
+    const html = await readerHTML(run([
       call("s1", [prompt], []),
       call("s2", [structuredClone(prompt)], [message("assistant", "done")]),
     ], source));
@@ -566,42 +563,44 @@ for (const source of [
   });
 }
 
-test("viewer: a shorter input that matches only part of history is a new turn", () => {
+test("viewer: a shorter input that matches only part of history is a new turn", async () => {
   const prompt = message("user", "repeat-unique");
-  const html = render(run([
+  const html = await readerHTML(run([
     call("s1", [prompt], [message("assistant", "one")]),
     call("s2", [prompt], [message("assistant", "two")]),
   ]));
   assert.equal(count(html, "repeat-unique"), 2);
 });
 
-test("viewer: identical content from a different named speaker is not an echo", () => {
+test("viewer: identical content from a different named speaker is not an echo", async () => {
   const prompt = message("user", "speaker-message-unique");
-  const html = render(run([
+  const html = await readerHTML(run([
     call("s1", [{ ...prompt, name: "alice" }], []),
     call("s2", [{ ...prompt, name: "bob" }], []),
   ]));
   assert.equal(count(html, "speaker-message-unique"), 2);
 });
 
-test("viewer: a parent conversation resumes after an interleaved subagent", () => {
+test("viewer: a parent conversation resumes after an interleaved subagent", async () => {
+  const { exchangesFor } = await sessionModel();
   const q = message("user", "parent-question-unique");
   const a = message("assistant", "parent-answer-unique");
-  const html = render(run([
+  const doc = run([
     call("s1", [q], [a]),
     { id: "child", parent_id: "s1", type: "agent", name: "Researcher" },
     call("s2", [q], [message("assistant", "child-answer-unique")], { parent_id: "child" }),
     call("s3", [q, a, message("user", "followup-unique")], [message("assistant", "done")]),
-  ]));
+  ]);
+  const html = await readerHTML(doc);
   assert.equal(count(html, "parent-question-unique"), 2); // Once in each conversation.
   assert.equal(count(html, "parent-answer-unique"), 1);
   assert.match(html, /child-answer-unique/);
-  assert.match(html, /aria-label="Inspect Researcher in the tree"/);
+  assert.ok(exchangesFor(doc).some(e => e.child && e.agent === "Researcher"), "the subagent's work reads under its name");
 });
 
-test("viewer: a failed retry still shows its error when its input is replayed", () => {
+test("viewer: a failed retry still shows its error when its input is replayed", async () => {
   const prompt = message("user", "retry-question-unique");
-  const html = render(run([
+  const html = await readerHTML(run([
     call("s1", [prompt], [], { status: "error", error: { message: "first-failure-unique" } }),
     call("s2", [prompt], [], { status: "error", error: { message: "retry-failure-unique" } }),
   ]));
@@ -610,15 +609,16 @@ test("viewer: a failed retry still shows its error when its input is replayed", 
   assert.match(html, /retry-failure-unique/);
 });
 
-test("viewer: transcript messages have explicit inspect buttons and escape HTML", () => {
-  const html = render(run([
+test("viewer: messages escape HTML and a trailing message is read", async () => {
+  const doc = run([
     call("s1", [message("user", '<script>alert("hello")</script>')], []),
     { id: "tail", type: "custom", input: { messages: [message("user", "trailing-unique")] } },
-  ]));
-  assert.match(html, /<button[^>]*aria-label="Inspect this turn in the tree"/);
+  ]);
+  const html = await readerHTML(doc);
   assert.match(html, /&lt;script&gt;/);
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /trailing-unique/);
+  assert.match(render(doc), /trailing-unique/, "reading starts at the trailing message");
 });
 
 for (const fixture of [
@@ -644,6 +644,8 @@ for (const fixture of [
 ]) {
   test(`viewer: renders ${fixture}`, async () => {
     const doc = JSON.parse(await readFile(fixture, "utf8"));
-    assert.match(render(doc), /aria-label="Viewer mode"/);
+    // The reader opens, and every part of every exchange renders.
+    assert.match(render(doc), /aria-label="Reading layout"/);
+    await readerHTML(doc);
   });
 }

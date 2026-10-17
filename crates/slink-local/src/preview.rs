@@ -10,6 +10,7 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::home::{create_private_dir, write_private};
+use crate::{hex, sha256_hex};
 
 /// What follows a preview's id in the name of its reading copy: the same
 /// session without the recorded results of its tool calls. Those are most of
@@ -34,7 +35,7 @@ pub fn save_preview(dir: &Path, text: &str) -> Result<String, String> {
         ));
     }
     let data = slink_format::compact(text).ok_or("cannot read session JSON")?;
-    let id = hex(&Sha256::digest(data.as_bytes()));
+    let id = sha256_hex(data.as_bytes());
     let failed = |error: std::io::Error| format!("cannot save the preview: {error}");
     create_private_dir(dir).map_err(failed)?;
     let file = dir.join(format!("{id}.json"));
@@ -112,7 +113,7 @@ pub fn reusable_preview(
         return None;
     }
     let data = fs::read(dir.join(format!("{id}.json"))).ok()?;
-    (hex(&Sha256::digest(&data)) == id).then(|| id.to_owned())
+    (sha256_hex(&data) == id).then(|| id.to_owned())
 }
 
 /// Notes which preview a stamp made. Best effort: without the note the next
@@ -150,10 +151,6 @@ fn reading_copy(document: &Value) -> Option<Value> {
         copy["spans"] = Value::Array(trimmed);
         copy
     })
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[cfg(test)]

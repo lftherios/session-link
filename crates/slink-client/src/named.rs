@@ -24,8 +24,7 @@ use std::time::Duration;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
-use slink_local::write_private;
+use slink_local::{sha256_hex, write_private};
 use slink_protocol::encoding::{decode_exact, digest, encode};
 use slink_protocol::envelope::{self, MAX_PLAINTEXT};
 use slink_protocol::{
@@ -37,7 +36,7 @@ use crate::device::{self, Device};
 use crate::identity::{
     Error, Identity, Input, LIMIT, exact, random, read, refused, signed, signed_json,
 };
-use crate::publish::{hex, seal, share_id};
+use crate::publish::{seal, share_id};
 use crate::transport::client;
 use crate::vault::Contents;
 
@@ -514,7 +513,7 @@ impl Identity {
                     server: server.to_owned(),
                     account: state.account.clone(),
                     root: state.root.clone(),
-                    sha256: hex(&Sha256::digest(&sealed)),
+                    sha256: sha256_hex(&sealed),
                     key,
                     envelope: sealed,
                     ..Outbox::default()

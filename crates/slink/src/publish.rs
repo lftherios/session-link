@@ -12,14 +12,15 @@ use std::process::{Command, Stdio};
 use serde_json::Value;
 use slink_client::{DEFAULT_SERVER, resolve_target};
 use slink_local::{
-    Capture, ago, capture_dir, capture_id, display_path, home, list_captures, unix_now,
+    Capture, ago, ago_unix, capture_dir, capture_id, display_path, home, list_captures, unix_now,
 };
 
 use crate::account;
 use crate::flags::{Exit, Parsed, Run};
-use crate::import::{import_to_file, latest_with_walk_up, no_session_hint, rfc3339};
+use crate::import::{import_to_file, latest_with_walk_up, no_session_hint};
 use crate::list::{EMPTY, resolve_capture, row};
 use crate::text::{clip, fmt_bytes, plural, quoted};
+use crate::view::modified;
 
 const NOT_SIGNED_IN: &str =
     "not signed in — run: slink login  (publishing needs an account; capture doesn't)";
@@ -173,15 +174,6 @@ fn share_newest(from: &str) -> Result<PathBuf, Exit> {
     }
 }
 
-fn modified(file: &Path) -> i64 {
-    fs::metadata(file)
-        .and_then(|found| found.modified())
-        .ok()
-        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-        .and_then(|since| i64::try_from(since.as_nanos()).ok())
-        .unwrap_or(0)
-}
-
 /// A session named outright: a capture by id or path, published as it is,
 /// or a transcript or a session id of an agent, imported first.
 fn share_target(arg: &str, session: &str, from: &str) -> Result<PathBuf, Exit> {
@@ -221,7 +213,7 @@ fn share_pick(from: &str) -> Result<PathBuf, Exit> {
         eprintln!(
             "  {:<7} {:<9} your {} agent's newest session for this project (import + publish)",
             "agent",
-            ago(&rfc3339(found.recency / 1_000_000_000), now),
+            ago_unix(found.recency / 1_000_000_000, now),
             found.harness
         );
     }

@@ -1,9 +1,11 @@
 //! The publishing client's TLS, apart from any command: rustls with ring
-//! completes a handshake with a certificate it trusts and refuses one it does
-//! not, and the operating system's trust store verifies the hosted service.
+//! completes a handshake with a certificate it trusts, and the client every
+//! request to the service is made with refuses one it does not and verifies
+//! the hosted service by the operating system's trust store.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use rcgen::CertifiedKey;
 use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
@@ -51,6 +53,9 @@ async fn serve_once(
     Ok(address)
 }
 
+/// A client of the same reqwest and rustls that trusts `identity` alone.
+/// The shipped client cannot be told to trust a certificate made for a test,
+/// so a handshake that completes is shown with this one.
 fn client_trusting(
     identity: &CertifiedKey<rcgen::KeyPair>,
     server: SocketAddr,
@@ -75,15 +80,23 @@ async fn completes_a_handshake_with_a_certificate_it_trusts() -> Fallible {
     Ok(())
 }
 
+/// The client the CLI ships. It trusts the operating system's store and can
+/// be told to trust nothing else.
+fn shipped() -> reqwest::Result<reqwest::Client> {
+    slink_client::client(Duration::from_secs(30))
+}
+
 #[tokio::test]
 async fn refuses_a_certificate_it_was_not_told_to_trust() -> Fallible {
     install_provider();
     let server = serve_once(&certificate()?).await?;
-    let error = client_trusting(&certificate()?, server)?
-        .get(format!("https://localhost:{}/", server.port()))
+    // By address, so that the connection is made and only the handshake
+    // can fail.
+    let error = shipped()?
+        .get(format!("https://{server}/"))
         .send()
         .await
-        .expect_err("the server's certificate is not the trusted one");
+        .expect_err("no store trusts a certificate made for this test");
     assert!(error.is_connect(), "{error:?}");
     Ok(())
 }
@@ -91,9 +104,7 @@ async fn refuses_a_certificate_it_was_not_told_to_trust() -> Fallible {
 #[tokio::test]
 #[ignore = "reaches the network; CI runs it on every target"]
 async fn the_system_trust_store_verifies_the_hosted_service() -> Fallible {
-    install_provider();
-    let response = reqwest::Client::builder()
-        .build()?
+    let response = shipped()?
         .get("https://session.link/api/health")
         .send()
         .await?;

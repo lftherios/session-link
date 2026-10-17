@@ -3,6 +3,8 @@
 //! wrong or pointed elsewhere. Go's tests of the same, in
 //! go/internal/cli/encrypted_test.go and cli_test.go, are here as well.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -10,10 +12,9 @@ use std::time::Duration;
 
 use axum::body::{Body, to_bytes};
 use axum::extract::Request;
-use axum::http::StatusCode;
 use axum::response::Response;
+use common::{home, reply, serve, sha256};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use slink_client::{delete, login, upload};
 use slink_protocol::envelope;
 
@@ -64,20 +65,7 @@ async fn service(answer: Answer) -> (String, Arc<Mutex<Vec<Seen>>>) {
             answer(&request, count)
         }
     });
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-        .await
-        .unwrap();
-    let address = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, app).await });
-    (format!("http://{address}"), seen)
-}
-
-fn reply(status: u16, body: impl Into<Body>) -> Response {
-    Response::builder()
-        .status(StatusCode::from_u16(status).unwrap())
-        .header("content-type", "application/json")
-        .body(body.into())
-        .unwrap()
+    (serve(app).await, seen)
 }
 
 fn header<'a>(seen: &'a Seen, name: &str) -> &'a str {
@@ -85,20 +73,6 @@ fn header<'a>(seen: &'a Seen, name: &str) -> &'a str {
         .iter()
         .find(|(key, _)| key == name)
         .map_or("", |(_, value)| value)
-}
-
-fn sha256(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-fn home(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("slink-client-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
 }
 
 fn files(dir: &Path) -> Vec<PathBuf> {

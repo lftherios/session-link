@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { build } from "esbuild";
+import { importViewer } from "../scripts/viewer-module.mjs";
 
-const viewer = new URL("../packages/viewer/", import.meta.url).pathname;
-const bundle = await build({ stdin: { contents: 'export * from "./browser-identity"; export * from "./identity-crypto"; export * from "./identity-protocol";', resolveDir: viewer, loader: "ts" }, bundle: true, write: false, format: "esm" });
-const { browserIdentity, unlockedIdentity, pair, random, b64, concat, utf8, seal, wrap, sign, head, unpack, keyContext, deviceID, verifyRecord } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
+const { browserIdentity, unlockedIdentity, pair, random, b64, concat, utf8, seal, wrap, sign, head, unpack, keyContext, deviceID, verifyRecord } = await importViewer(["browser-identity", "identity-crypto", "identity-protocol"]);
 const account = "usr_browser_setup";
 
 // Model only the browser storage and locking boundaries; all cryptography,
@@ -104,18 +102,6 @@ for (const committed of [false, true]) test(`browser setup retries ${committed ?
   await assert.rejects(browserIdentity("setup"), /identity is missing/);
 });
 
-test("browser setup checks recovery tokens retained by older clients", async t => {
-  let record = null;
-  const devices = environment(t, async body => {
-    if (body) { record = await substitute(body); throw new Error("Connection lost"); }
-    return response(record);
-  });
-  await assert.rejects(browserIdentity("setup"), /Connection lost/);
-  const saved = devices.get(account);
-  saved.root = ""; saved.seq = -1; saved.head = ""; saved.revision = 0; delete saved.pendingSetup;
-  for (const action of ["setup", "discard-setup"]) await assert.rejects(browserIdentity(action), /recovery identity/);
-});
-
 // An honest account shared by several browsers, with pending approval requests.
 // A write is taken only against the head and revision it expects, as the
 // service's store takes it. `before` runs once ahead of the next write, for
@@ -154,12 +140,11 @@ const conflict = error => error.code === "setup_conflict";
 // A browser whose own setup never reached the server must not stay locked out
 // once another device has set the account up. It refuses that identity until
 // the unfinished setup is discarded, then joins with fresh keys.
-for (const [name, legacy, join] of [["approval", false, "request"], ["the recovery key", false, "recover"], ["the recovery key after an older client", true, "recover"]]) test(`browser setup lost to another device joins by ${name}`, async t => {
+for (const [name, join] of [["approval", "request"], ["the recovery key", "recover"]]) test(`browser setup lost to another device joins by ${name}`, async t => {
   const server = sharedAccount(), devices = environment(t, server.api), other = new Map();
   server.offline = true;
   await assert.rejects(browserIdentity("setup"), /Connection lost/);
   server.offline = false;
-  if (legacy) { const saved = devices.get(account); saved.root = ""; saved.seq = -1; saved.head = ""; saved.revision = 0; delete saved.pendingSetup; }
   const unfinished = structuredClone(devices.get(account));
   const first = await elsewhere(devices, other, () => browserIdentity("setup", { name: "Other" }));
   assert.equal(first.state, "ready");

@@ -1,6 +1,6 @@
 # Viewer content model
 
-Agreed product guidance · 2026-09-11.
+Agreed product guidance · 2026-09-11, updated 2026-10-16.
 
 Use this model when designing the viewer's language, layout and behavior. It
 describes what the viewer represents; it is not a wire-format specification or
@@ -98,25 +98,8 @@ The action vocabulary is **navigate, search, select, edit, annotate, save and
 share**. Inspection is navigation into greater detail. Actions operate on the
 content model; they are not additional categories of recorded content.
 
-The viewer's priorities, agreed on 2026-09-11:
-
-1. Land on the latest human input and associated answer.
-2. Make search central and prominent, with explicit **This view** and
-   **Whole session** scopes.
-3. Put **Share this view** at the top right. Offer local saving within that flow.
-4. Integrate exchange navigation compactly around the reading experience.
-5. Reveal selection controls when someone hovers over content, with keyboard
-   focus and touch equivalents. Selection persists while navigating.
-6. Offer annotation and editing after selection, keeping them secondary to
-   reading, finding and sharing.
-
 Opening, expanding or collapsing content changes presentation. Explicit
 inclusion determines what is saved or shared. The share panel must make that
 scope reviewable; hidden content must not silently become part of an export.
 Captured source text remains verbatim. Editing affects authored fields and
 selection boundaries; annotations remain distinct from recorded content.
-
-See [viewer arrival](viewer-arrival.md) for the current implementation and its
-limits. In particular, a saved view currently preserves included text, a starting
-point, title and annotation; arbitrary ordering and expansion settings are not
-yet saved as presentation options.

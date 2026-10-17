@@ -3,7 +3,7 @@
 As of v0.3.0 the CLI is a single native Go binary (`go/`). It ships through
 four channels, all driven from the tag:
 
-- **goreleaser** (`go/.goreleaser.yaml`) — compressed archives (~5MB), a
+- **goreleaser** (`go/.goreleaser.yaml`) — compressed archives (about 6 MB), a
   `checksums.txt`, `.deb`/`.rpm`/`.apk`, and Homebrew **cask** auto-update
   to `lftherios/homebrew-tap`.
 - **`curl | sh`** — `packaging/install.sh` (archive-aware, checksum-verified,
@@ -13,8 +13,8 @@ four channels, all driven from the tag:
   platform-package + `optionalDependencies` pattern (esbuild/Biome style):
   per-platform `@session-link/cli-<goos>-<goarch>` packages (os/cpu-gated,
   binary only) + a `session.link` launcher whose `bin` shim resolves and
-  execs the matching binary. `npx session.link` fetches only the ~5MB
-  package for the user's platform.
+  execs the matching binary. `npx session.link` fetches only the package
+  for the user's platform, about 6 MB.
 - **GitHub Release** — every archive + package + checksum, attached by
   goreleaser.
 
@@ -25,7 +25,7 @@ state is tagged `js-cli-v0.2`.
 ## Build / validate locally (no release)
 
 ```bash
-npm run build:viewer                                   # → go/internal/open/viewer.js (go:embed'd)
+npm run build:viewer                                   # → build/viewer/, copied to go/internal/open/ for go:embed
 node scripts/golden.mjs --check                        # Go embeds in sync with packages/format
 (cd go && goreleaser check)                            # validate the release config
 (cd go && goreleaser release --snapshot --clean --skip=publish)   # full build → go/dist/

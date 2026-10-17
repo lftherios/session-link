@@ -18,7 +18,6 @@ mod picker;
 mod publish;
 mod server;
 mod text;
-mod tls;
 mod view;
 mod viewer;
 

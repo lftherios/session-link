@@ -1,14 +1,15 @@
 #!/bin/sh
-# session.link CLI installer — the Go build (P4). Served at
-# https://session.link/install.sh once cutover happens; until then this is
-# the staged artifact. Downloads the right archive from the GitHub Release,
-# verifies its checksum, and drops `slink` on your PATH. No Node required.
+# session.link CLI installer — the native `slink` binary (Go, v0.3.0+).
+# Served at https://session.link/install.sh. Downloads the right archive
+# from the GitHub Release, verifies its checksum, and drops `slink` on your
+# PATH. No Node required. Source: lftherios/session-link → packaging/install.sh.
 #
 #   curl -fsSL https://session.link/install.sh | sh
 #
 # Overrides: SLINK_VERSION (default: latest), SLINK_INSTALL_DIR
 # (default: /usr/local/bin, or ~/.local/bin without write access),
-# SLINK_REPO (default: lftherios/session-link).
+# SLINK_REPO (default: lftherios/session-link),
+# SLINK_NO_VERIFY=1 (skip checksum verification — not recommended).
 set -eu
 
 REPO="${SLINK_REPO:-lftherios/session-link}"
@@ -45,20 +46,23 @@ trap 'rm -rf "$tmp"' EXIT
 say "downloading ${asset} (${VERSION})…"
 curl -fsSL "${base}/${asset}" -o "${tmp}/${asset}" || die "download failed: ${base}/${asset}"
 
-# Verify the checksum against the release's checksums.txt.
-if curl -fsSL "${base}/checksums.txt" -o "${tmp}/checksums.txt" 2>/dev/null; then
-  want=$(grep " ${asset}\$" "${tmp}/checksums.txt" | awk '{print $1}')
-  if [ -n "$want" ]; then
-    if command -v sha256sum >/dev/null 2>&1; then
-      got=$(sha256sum "${tmp}/${asset}" | awk '{print $1}')
-    else
-      got=$(shasum -a 256 "${tmp}/${asset}" | awk '{print $1}')
-    fi
-    [ "$got" = "$want" ] || die "checksum mismatch for ${asset}"
-    say "checksum ok"
-  fi
+# Verify the checksum against the release's checksums.txt. Fail-closed:
+# a missing manifest or a missing entry aborts the install.
+if [ "${SLINK_NO_VERIFY:-}" = "1" ]; then
+  say "WARNING: SLINK_NO_VERIFY=1 — checksum verification SKIPPED."
+  say "WARNING: the downloaded binary has NOT been verified."
 else
-  say "warning: no checksums.txt found — skipping verification"
+  curl -fsSL "${base}/checksums.txt" -o "${tmp}/checksums.txt" 2>/dev/null \
+    || die "could not fetch checksums.txt from ${base} — refusing to install an unverified binary (set SLINK_NO_VERIFY=1 to override)"
+  want=$(grep " ${asset}\$" "${tmp}/checksums.txt" | awk '{print $1}' || true)
+  [ -n "$want" ] || die "checksums.txt has no entry for ${asset} — refusing to install an unverified binary (set SLINK_NO_VERIFY=1 to override)"
+  if command -v sha256sum >/dev/null 2>&1; then
+    got=$(sha256sum "${tmp}/${asset}" | awk '{print $1}')
+  else
+    got=$(shasum -a 256 "${tmp}/${asset}" | awk '{print $1}')
+  fi
+  [ "$got" = "$want" ] || die "checksum mismatch for ${asset}"
+  say "checksum ok"
 fi
 
 tar -xzf "${tmp}/${asset}" -C "${tmp}"
@@ -88,4 +92,5 @@ case ":${PATH}:" in
   *":${dir}:"*) ;;
   *) say "  note: ${dir} is not on your PATH — add it, or run ${dir}/slink" ;;
 esac
-say "  get started: slink login && slink on"
+say "  record a session: slink dev -- <your agent command>   (or: slink import)"
+say "  publish it:        slink login && slink push"

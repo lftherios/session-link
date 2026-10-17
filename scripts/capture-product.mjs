@@ -2,13 +2,13 @@
 // Capture the built product, using fictional sessions and an isolated local home.
 // Run npm run build:viewer and rebuild slink first. See assets/product/README.md.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, realpath, writeFile, utimes } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import os from "node:os";
 import { sessions } from "../testdata/landing/sessions.mjs";
 import { validateRun } from "../packages/format/validate.mjs";
+import { launchBrowser, startViewer } from "./browser.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const output = path.resolve(process.env.SCREENSHOT_DIR ?? path.join(root, "assets/product"));
@@ -27,83 +27,22 @@ for (const [index, session] of sessions.entries()) {
   await utimes(file, modified, modified);
 }
 
-const startup = (child, stream, pattern) => new Promise((resolve, reject) => {
-  let output = "";
-  const timer = setTimeout(() => reject(new Error(`Startup timed out: ${output.slice(-1000)}`)), 15000);
-  child[stream].on("data", chunk => {
-    output += chunk;
-    const match = output.match(pattern);
-    if (match) { clearTimeout(timer); resolve(match[0]); }
-  });
-  child.once("error", error => { clearTimeout(timer); reject(error); });
-  child.once("exit", code => { clearTimeout(timer); reject(new Error(`Process exited ${code}: ${output.slice(-1000)}`)); });
-});
-let cli, browser, socket;
+let cli, browser;
 try {
-  cli = spawn(process.env.SLINK_BINARY ?? "/tmp/session-link-landing-slink", ["view", "--pick", "--no-browser"], {
-    cwd: project,
-    env: { ...process.env, SLINK_HOME: localHome, SLINK_SERVER: "http://127.0.0.1:1", SLINK_API_KEY: "" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const localURL = await startup(cli, "stdout", /http:\/\/127\.0\.0\.1:\d+[^\s]*/);
-  const base = new URL(localURL).origin;
-  browser = spawn(process.env.BROWSER_BINARY ?? "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", [
-    "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
-    "--disable-background-networking", "--disable-component-update", "--disable-sync",
-    "--remote-debugging-port=0", `--user-data-dir=${path.join(workspace, "browser")}`, "about:blank",
-  ], { stdio: ["ignore", "ignore", "pipe"] });
-  const endpoint = await startup(browser, "stderr", /ws:\/\/[^\s]+/);
-  // The first page can appear a moment after the debugging endpoint does.
-  let pageTarget;
-  for (let i = 0; i < 100 && !pageTarget; i++) {
-    pageTarget = (await (await fetch(`http://127.0.0.1:${new URL(endpoint).port}/json/list`)).json()).find(item => item.type === "page");
-    if (!pageTarget) await new Promise(resolve => setTimeout(resolve, 50));
-  }
-  socket = new WebSocket(pageTarget.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
-  let sequence = 0;
-  const pending = new Map(), errors = [];
-  socket.onmessage = ({ data }) => {
-    const message = JSON.parse(data);
-    if (message.id) {
-      const call = pending.get(message.id); pending.delete(message.id);
-      message.error ? call.reject(new Error(JSON.stringify(message.error))) : call.resolve(message.result);
-    }
-    if (message.method === "Runtime.exceptionThrown") errors.push(message.params.exceptionDetails.text);
-  };
-  const send = (method, params = {}) => new Promise((resolve, reject) => {
-    const id = ++sequence; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params }));
-  });
-  const evaluate = async expression => {
-    const result = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
-    if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
-    return result.result.value;
-  };
-  const waitFor = async expression => {
-    for (let i = 0; i < 200; i++) {
-      if (await evaluate(expression)) return;
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    const page = await evaluate("JSON.stringify({url:location.href,title:document.title,rows:document.querySelectorAll('.row').length,empty:document.querySelector('.empty-state')?.textContent,status:document.querySelector('#result')?.textContent})");
-    throw new Error(`Timed out: ${expression}; ${page}`);
-  };
+  cli = await startViewer(["--pick"], { home: localHome, cwd: project, binary: process.env.SLINK_BINARY ?? "/tmp/session-link-landing-slink" });
+  const { url: localURL, origin: base } = cli;
+  browser = await launchBrowser({ profile: path.join(workspace, "browser"), installed: true });
+  const page = await browser.firstPage(), errors = browser.errors;
+  const { send, evaluate, waitFor, fill: field } = page;
   const click = selector => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
-  const field = (selector, value) => evaluate(`(()=>{
-    const el=document.querySelector(${JSON.stringify(selector)});
-    const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
-    Object.getOwnPropertyDescriptor(proto,'value').set.call(el,${JSON.stringify(value)});
-    el.dispatchEvent(new Event('input',{bubbles:true}));
-  })()`);
   const capture = async (name, width = 1280, height = 940) => {
     // 2x so the hero stays sharp on HiDPI displays; the page declares CSS sizes.
     await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: SCALE, mobile: false });
     await evaluate("document.activeElement?.blur();document.fonts.ready.then(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))");
     assert.equal(await evaluate("document.documentElement.scrollWidth > innerWidth"), false, `${name}: horizontal overflow`);
-    const { data } = await send("Page.captureScreenshot", { format: "webp", quality: 88 });
-    await writeFile(path.join(output, `${name}.webp`), Buffer.from(data, "base64"));
+    await writeFile(path.join(output, `${name}.webp`), await page.screenshot({ format: "webp", quality: 88 }));
     console.log(`Captured ${name}.webp (${width} × ${height} CSS px at ${SCALE}x)`);
   };
-  await send("Runtime.enable"); await send("Page.enable");
   await send("Emulation.setTimezoneOverride", { timezoneId: "Europe/Berlin" });
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 940, deviceScaleFactor: SCALE, mobile: false });
@@ -138,5 +77,5 @@ try {
   await writeFile(path.join(output, "capture.json"), JSON.stringify(manifest, null, 2) + "\n");
   console.log(`Product screenshots: ${output}`);
 } finally {
-  socket?.close(); browser?.kill("SIGTERM"); cli?.kill("SIGTERM");
+  browser?.close(); cli?.child.kill("SIGTERM");
 }

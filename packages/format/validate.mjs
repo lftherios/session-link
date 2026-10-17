@@ -10,8 +10,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Ajv2020Module from "ajv/dist/2020.js";
 import addFormatsModule from "ajv-formats";
-// Static JSON import (not a disk read) so the schema inlines when the CLI is
-// bundled for distribution — a bundled/binary build has no schema file to read.
+// A static JSON import, not a disk read, so the schema inlines wherever this
+// module is bundled.
 import schema from "./session.schema.json" with { type: "json" };
 
 const Ajv2020 = Ajv2020Module.default ?? Ajv2020Module;
@@ -51,10 +51,8 @@ export function validateRun(data) {
   return invariantErrors(data);
 }
 
-// Basename, not import.meta.url equality: when the CLI is bundled into one
-// file every module shares import.meta.url, so URL-equality would fire this
-// block on `slink <cmd>`. The entry basename is validate.mjs only when this
-// file is run directly.
+// Run directly when the entry is validate.mjs, compared by basename so that
+// a bundle that includes this module never runs it.
 const isMain = path.basename(process.argv[1] ?? "") === "validate.mjs";
 
 if (isMain) {

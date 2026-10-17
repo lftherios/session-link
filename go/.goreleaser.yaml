@@ -1,4 +1,5 @@
-# goreleaser config for the Go slink CLI (P4 of docs/go-migration.md).
+# goreleaser config for the Go slink CLI. It goes with Go at P5 of
+# docs/rust-migration.md.
 #
 # NOT YET WIRED TO RELEASE. This produces the P4 distribution — compressed
 # archives + checksums + a Homebrew tap update + deb/rpm — replacing the

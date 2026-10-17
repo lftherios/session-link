@@ -8,6 +8,8 @@
 //! `scripts/identity-bridge.mjs`, the journey runs against the service's own
 //! store as well.
 
+mod common;
+
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -16,44 +18,21 @@ use std::sync::{Arc, Mutex};
 
 use axum::body::to_bytes;
 use axum::extract::Request as HttpRequest;
-use axum::http::{Method, StatusCode};
-use axum::response::Response;
+use axum::http::Method;
+use common::{
+    Refusal, Written, home, random, record_json, refuse, reply, serve, signed, signed_json,
+};
 use serde_json::{Value, json};
 use slink_client::Identity;
 use slink_client::identity::{Error, Input, Status};
 use slink_protocol::encoding::{digest, encode};
 use slink_protocol::{
     AgreementKey, Kind, Operation, Record, Recovery, Request, Signed, SigningKey, State, Vault,
-    verify_history, verify_record, wrap,
+    verify_history, verify_record,
 };
 
 const ACCOUNT: &str = "usr_fixture";
 const KEY: &str = "rk_fixture";
-
-fn home(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("slink-identity-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn signed(value: &Value) -> Signed {
-    Signed {
-        payload: value["payload"].as_str().unwrap().to_owned(),
-        signature: value["signature"].as_str().unwrap().to_owned(),
-    }
-}
-
-fn signed_json(signed: &Signed) -> Value {
-    json!({"payload": signed.payload, "signature": signed.signature})
-}
-
-fn record_json(record: &Record) -> Value {
-    json!({
-        "events": record.events.iter().map(signed_json).collect::<Vec<_>>(),
-        "vault": signed_json(&record.vault),
-    })
-}
 
 /// What the stand-in keeps, and how it misbehaves when asked to.
 #[derive(Default)]
@@ -80,20 +59,8 @@ struct Store {
 
 type Shared = Arc<Mutex<Store>>;
 
-fn reply(status: u16, body: Value) -> Response {
-    Response::builder()
-        .status(StatusCode::from_u16(status).unwrap())
-        .header("content-type", "application/json")
-        .body(body.to_string().into())
-        .unwrap()
-}
-
-fn refuse(status: u16, message: &str) -> Result<(), (u16, String)> {
-    Err((status, message.to_owned()))
-}
-
 /// A write as the service's identity store takes it.
-fn apply(store: &mut Store, body: &Value) -> Result<(), (u16, String)> {
+fn apply(store: &mut Store, body: &Value) -> Result<(), Refusal> {
     if let Some(request) = body.get("request") {
         let Some(record) = &store.record else {
             return refuse(409, "Set up recovery on your first device first");
@@ -112,31 +79,12 @@ fn apply(store: &mut Store, body: &Value) -> Result<(), (u16, String)> {
         store.requests.push(request);
         return Ok(());
     }
-    let current = store
-        .record
-        .as_ref()
-        .map(|record| verify_record(record, ACCOUNT).unwrap());
-    let (head, revision) = current.as_ref().map_or((String::new(), 0), |held| {
-        (held.head.clone(), held.vault.revision)
-    });
-    if body["expected_head"] != head || body["expected_revision"] != revision {
-        return refuse(409, "Vault changed; refresh and retry");
-    }
-    let mut events = store
-        .record
-        .as_ref()
-        .map(|record| record.events.clone())
-        .unwrap_or_default();
+    let Written {
+        before: current,
+        record: next,
+        verified: checked,
+    } = common::write(store.record.as_ref(), ACCOUNT, body)?;
     let event = body.get("event").map(signed);
-    events.extend(event.clone());
-    let next = Record {
-        events,
-        vault: signed(&body["vault"]),
-    };
-    let checked = verify_record(&next, ACCOUNT).map_err(|error| (422, error.to_string()))?;
-    if checked.vault.revision != revision + 1 {
-        return refuse(409, "Invalid vault revision");
-    }
     let writer = if event.is_some() {
         checked.state.signer == checked.vault.signer
     } else {
@@ -220,24 +168,8 @@ async fn service() -> (String, Shared) {
             )
         }
     });
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-        .await
-        .unwrap();
-    let address = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, app).await });
-    (format!("http://{address}"), store)
+    (serve(app).await, store)
 }
-
-fn random() -> [u8; 32] {
-    let mut bytes = [0; 32];
-    for (index, byte) in bytes.iter_mut().enumerate() {
-        *byte = (index as u8).wrapping_mul(37) ^ (std::process::id() as u8);
-    }
-    bytes[0] ^= COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as u8;
-    bytes
-}
-
-static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// A valid identity the service made itself, from what a device sent: a
 /// new root and recovery key, a vault key the service chose, wrapped to the
@@ -272,23 +204,16 @@ fn forged(sign_key: &str, box_key: &str, name: &str) -> Record {
         devices: Vec::new(),
         inbox: None,
     };
-    let context = state.context();
-    let wrapped = |to: &str| {
-        wrap(
-            to,
-            &key,
-            &context,
-            &AgreementKey::from_bytes(random()),
-            [2; 12],
-        )
+    let wrapped = |state: &State, to: &str| {
+        state.wrap_key(to, &key, &AgreementKey::from_bytes(random()), [2; 12])
     };
-    state.recovery_wrap = wrapped(&state.recovery).unwrap();
+    state.recovery_wrap = wrapped(&state, &state.recovery).unwrap();
     state.devices.push(slink_protocol::Device {
         id: slink_protocol::device_id(sign_key, box_key),
         name: name.to_owned(),
         sign_key: sign_key.to_owned(),
         box_key: box_key.to_owned(),
-        wrap: wrapped(box_key).unwrap(),
+        wrap: wrapped(&state, box_key).unwrap(),
     });
     let event = Signed::sign(Kind::Event, &state.encode(), &recovery.root).unwrap();
     let vault = Vault {

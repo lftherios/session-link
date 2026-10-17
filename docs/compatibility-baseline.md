@@ -1,11 +1,10 @@
 # Compatibility baseline for the Rust migration
 
-2026-10-11, revised 2026-10-12 · P0 reference record for the [Rust migration](rust-migration.md) · inventory and differential runner implemented; coverage gaps and unmeasured baselines are listed below.
+2026-10-11, revised 2026-10-12 and 2026-10-16 · P0 reference record for the [Rust migration](rust-migration.md) · inventory and differential runner implemented; coverage gaps and unmeasured baselines are listed below.
 
 This is the record the port is held to: what the Go CLI and the hosted service
 expose today, how a candidate implementation is compared with the reference,
-what the comparison found, and what it does not reach yet. It is the first item
-of the plan's implementation backlog.
+what the comparison found, and what it does not reach yet. It is the plan's P0.
 
 Nobody uses the software yet, so the port is held to the product's behavior and
 not to state the Go CLI or the Node service wrote; the plan's
@@ -18,7 +17,7 @@ the same thing, and a deliberate difference is declared here.
 | What | Pinned at |
 | --- | --- |
 | Client | `fb2da26` on `main`, released as v0.9.1 |
-| Hosted service | `2250b3b` in `session-link-server`; the [architecture review](architecture-review.md) found Fly release 58 running |
+| Hosted service | `2250b3b` in `session-link-server`, which Fly release 58 was running on 2026-10-11 |
 | Viewer bundle | SHA-256 `eec340330565f26779368b73b2e226a2dabdf786572e88b5b8659c20ef22942e`, the same for the bundle the CLI embeds and the one checked into the server |
 | Changed since, on purpose | Two protocol rules of 2026-10-12, in Go, the viewer and the service together: no signing key of small order, and device names of whole characters only ([rust-protocol.md](rust-protocol.md), findings seven and eight). The bundle with them is `948b0ad37fdf05832db038c1d1b9b243ef1f6ece5acc6f2378658b5299305a3c` |
 | Packages | `@session-link/format` 0.1.1, `@session-link/viewer` 0.7.1, `@session-link/pi-extension` 0.1.0 |
@@ -146,9 +145,10 @@ changes to declare the difference when the Rust code for it lands.
 2. Captures list by file name, and the stamp in the name has one-second
    resolution, so two captures made within a second list in the order of their
    random IDs. `push` and `share` with no argument take the first as the
-   newest. The runner waits for the next second between imports. The port makes
-   "newest" well defined; whether by a finer stamp or by reading `created_at`
-   is settled when `list` is ported.
+   newest. The runner waits for the next second between imports. This is
+   still open: `list` is ported, and Rust sorts by file name as Go does
+   ([captures.rs](../crates/slink-local/src/captures.rs)). A finer stamp or
+   reading `created_at` would make "newest" well defined.
 3. A recorded document's `source.label` is `slink-go@<version>`. The Rust
    recorder writes `slink-rs@<version>`, and the recording cases will compare
    that field by its shape.

@@ -1,17 +1,12 @@
 # The capture spool protocol (v1, frozen 2026-07-18)
 
-Frozen contract, 2026-07-18 · unchanged since. Where the reference now lives,
-and where the Go implementation differs, is noted at
-[the end](#status-of-the-implementations-2026-10-09).
+Frozen contract, 2026-07-18 · unchanged since · [the implementations](#implementations) updated 2026-10-16.
 
 The contract between a slink **recorder** (tap daemon / `slink dev`) and
 every other slink process (`list`, `push`, `open`, `prune`, recovery) for
-in-progress captures. The Go implementation targets this document, not the
-JS code; the JS implementation (`cli/store.mjs` @ `7caaf91`, 106 tests) is
-the reference. This protocol survived six adversarial verification rounds
-(18 → 13 → 10 → 2 → 1 → 0 findings); every rule below exists because its
-absence was a demonstrated bug — the rationale comments in `store.mjs` are
-part of the spec.
+in-progress captures. This protocol survived six adversarial verification
+rounds (18 → 13 → 10 → 2 → 1 → 0 findings); every rule below exists because
+its absence was a demonstrated bug.
 
 ## Files
 
@@ -155,25 +150,22 @@ Run at tap startup and opportunistically during `list`:
 - An append wedged in the final write syscall across a shutdown can lose
   that one span (never the capture).
 
-## Status of the implementations (2026-10-09)
+## Implementations
 
-The contract above is unchanged. Two things around it have changed.
+The Go package `go/internal/spool`, its tests and the fixtures under
+`testdata/spool/` carry the contract. The JS code it was first written
+against, `cli/store.mjs`, was removed at v0.3.0; its rationale comments are
+readable at `7caaf91` or the tag `js-cli-v0.2`. `slink dev` and `slink open`
+are today's `slink record` and `slink view`; the old names still work. The
+Rust port writes and reads spools with its recorder, in the plan's P4.
 
-The JS reference is no longer in the tree. `cli/store.mjs` and its tests were
-removed at the v0.3.0 cutover (`922ffa1`) and are readable at `7caaf91` or the
-tag `js-cli-v0.2`. The Go package `go/internal/spool`, its tests and the
-fixtures under `testdata/spool/` now carry the contract. `slink dev` and
-`slink open` are today's `slink record` and `slink view`; the old names still
-work.
+Go differs from the contract in two places, found by reading the code and not
+exercised:
 
-The Go implementation differs from the contract in two places, found by
-reading the code and not exercised:
-
-- `slink record` has no heartbeat timer. Only the tap daemon refreshes the
-  sidecars of its open sessions every 60 s; a wrapper-mode sidecar is refreshed
-  by appends alone. Three minutes after its last call, such a session is alive
+- `slink record` has no heartbeat timer; only the tap daemon has one. A
+  wrapper-mode sidecar is refreshed by appends alone. Three minutes after its last call, such a session is alive
   only through the boot-token branch.
 - Windows builds check neither the process nor the boot time
-  (`platform_windows.go`), so liveness there is sidecar freshness alone. With
-  the point above, a `slink record` session on Windows that is quiet for three
-  minutes reads as dead by the rule as coded.
+  (`platform_windows.go`), so liveness there is sidecar freshness alone, and
+  a `slink record` session on Windows that is quiet for three minutes reads
+  as dead.

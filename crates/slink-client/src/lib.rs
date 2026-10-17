@@ -17,6 +17,5 @@ mod vault;
 
 pub use config::{Config, DEFAULT_SERVER, resolve_target};
 pub use identity::Identity;
-pub use origin::{Refused, origin};
-pub use publish::{Upload, share_id, upload};
-pub use transport::cause;
+pub use publish::{Upload, upload};
+pub use transport::client;

@@ -47,19 +47,9 @@ pub const HARNESSES: [&str; 8] = [
     "pi",
 ];
 
-/// Whether this build can import from `harness`.
-pub fn ported(harness: &str) -> bool {
-    match harness {
-        "aider" => aider::PORTED,
-        "claude-code" => true,
-        "codex" => codex::PORTED,
-        "dsh" => dsh::PORTED,
-        "hermes" => hermes::PORTED,
-        "omp" | "pi" => pi::PORTED,
-        "opencode" => opencode::PORTED,
-        _ => false,
-    }
-}
+/// What an import names as its source's `label`. pi and omp each give their
+/// own.
+const LABEL: &str = "session-import@0.1.0";
 
 /// What a harness recorded of one session, as its importer wants it. A
 /// harness that keeps transcript files gives `lines`; one that keeps a
@@ -100,8 +90,6 @@ pub struct Agent {
 /// Why nothing was imported.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
-    /// A harness this build has no importer for yet.
-    NotPorted(String),
     /// Not the name of any harness.
     Unknown(String),
     /// The importer could not read what it was given.
@@ -111,10 +99,6 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::NotPorted(harness) => write!(
-                f,
-                "{harness} sessions cannot be imported by slink-rs yet — the Go slink imports them"
-            ),
             Error::Unknown(harness) => write!(f, "no importer for {harness}"),
             Error::Failed(why) => write!(f, "import failed: {why}"),
         }
@@ -126,9 +110,6 @@ impl std::error::Error for Error {}
 /// The session in `input` as a `session/v0` document, or `None` when the
 /// harness recorded no messages.
 pub fn import(harness: &str, input: &Input) -> Result<Option<Value>, Error> {
-    if HARNESSES.contains(&harness) && !ported(harness) {
-        return Err(Error::NotPorted(harness.to_owned()));
-    }
     let run = match harness {
         "aider" => aider::import(input),
         "claude-code" => Ok(claude_code::import(input)),

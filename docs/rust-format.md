@@ -1,11 +1,15 @@
 # Rust format validation and credential scan
 
-2026-10-12 · Implemented slice of the [Rust migration](rust-migration.md), backlog item 4 · `crates/slink-format` reads, validates and scans; the JavaScript, Go and Rust implementations agree on 183 format cases and 31 scan cases with nine recorded differences; the crate's tests pass on all six targets and the sweep on Linux in CI.
+2026-10-12, updated 2026-10-16 · Implemented slice of the [Rust migration](rust-migration.md)'s P1 · JavaScript, Go and Rust agree on 183 format cases and 31 scan cases, with nine recorded differences.
 
 What the Rust side of `session/v0` is, how it is held to the validators that
-already exist, and what comparing them found. The crate has no caller in the
-product yet: `slink-rs build-check` links and runs it so that every target
-proves it, and the first command to use it is the importer in backlog item 6.
+already exist, and what comparing them found. `crates/slink-format` reads,
+validates and scans; its tests pass on all six targets and the sweep on Linux
+in CI. `slink-import`, `slink-local`, `slink-client` and the CLI call it, and
+`slink-rs build-check` runs it on every target. Reading files and writing
+documents came with the commands: [rust-cli.md](rust-cli.md) has how a
+transcript that is not UTF-8 is read, why `encode` writes Go's bytes, and why
+numbers are read with `float_roundtrip`.
 
 ## The crate
 
@@ -148,12 +152,6 @@ ours to keep correct; the sweep is what would make that safe to try.
 
 ## Not done
 
-- Reading a file. Decoding bytes that are not UTF-8 belongs with the first
-  command that opens a document.
-- Writing documents was settled with the first importer: `encode` writes
-  Go's bytes, and serde_json reads numbers with `float_roundtrip`, because
-  its default reads some of them one step off. [rust-cli.md](rust-cli.md)
-  has both.
 - Nesting past 127 levels, if a real transcript needs it when the importers
   and the recorder read provider payloads.
 - `run/v0` is still accepted, because the schema still lists it.

@@ -16,8 +16,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
-use slink_local::write_private;
+use slink_local::{sha256_hex, write_private};
 use slink_protocol::envelope::{self, MAX_PLAINTEXT};
 
 use crate::identity::Identity;
@@ -108,10 +107,6 @@ impl Receipt {
     }
 }
 
-pub(crate) fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 /// The pending receipt for this text on this server, when there is one: the
 /// first by name of those that start with `prefix`.
 fn pending_file(dir: &Path, prefix: &str) -> Option<PathBuf> {
@@ -176,7 +171,7 @@ pub async fn upload(home: &Path, text: &str, server: &str, api_key: &str) -> Upl
     }
 
     let pending = home.join("pending-shares");
-    let prefix = hex(&Sha256::digest(format!("{server}\0{text}").as_bytes()));
+    let prefix = sha256_hex(format!("{server}\0{text}").as_bytes());
     let mut pending_path = pending.join(format!("{prefix}.json"));
     if let Some(found) = pending_file(&pending, &prefix) {
         pending_path = found;
@@ -207,7 +202,7 @@ pub async fn upload(home: &Path, text: &str, server: &str, api_key: &str) -> Upl
                 account: String::new(),
                 server: server.clone(),
                 key,
-                sha256: hex(&Sha256::digest(&data)),
+                sha256: sha256_hex(&data),
                 url: String::new(),
                 envelope: data,
             };

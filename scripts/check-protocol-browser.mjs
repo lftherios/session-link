@@ -7,47 +7,34 @@
  *
  *   node scripts/check-protocol-browser.mjs
  *
- * BROWSER_BINARY names a Chromium-family browser; without it the script looks
- * for a Playwright Chromium, Chrome and Brave. Nothing leaves the machine:
- * the page and the cases are served from loopback.
+ * BROWSER_BINARY or CHROME_PATH names a Chromium-family browser; without
+ * either, scripts/browser.mjs looks for the newest Playwright headless shell,
+ * Chrome and Brave. Nothing leaves the machine: the page and the cases are
+ * served from loopback.
  */
-import { spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
+import { findBrowser, launchBrowser } from "./browser.mjs";
+import { bundleViewer } from "./viewer-module.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const playwright = path.join(os.homedir(), "Library/Caches/ms-playwright");
-const shells = existsSync(playwright)
-  ? readdirSync(playwright).filter((name) => name.startsWith("chromium_headless_shell-")).sort().reverse()
-      .map((name) => path.join(playwright, name, "chrome-headless-shell-mac-arm64/chrome-headless-shell"))
-  : [];
-const executable = [process.env.BROWSER_BINARY, ...shells, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"]
-  .find((candidate) => candidate && existsSync(candidate));
-if (!executable) {
+if (!findBrowser()) {
   console.error("Set BROWSER_BINARY to a Chromium-family browser executable");
   process.exit(2);
 }
 
-const bundled = await build({
-  stdin: { contents: 'export * from "./identity-protocol"; export * from "./identity-crypto"; export * from "./encryption"; export * from "./named-sharing";', resolveDir: path.join(root, "packages/viewer"), loader: "ts" },
-  bundle: true,
-  write: false,
-  format: "iife",
-  globalName: "viewer",
-  logLevel: "silent",
-});
+const bundled = await bundleViewer(["identity-protocol", "identity-crypto", "encryption", "named-sharing"], { format: "iife", globalName: "viewer", logLevel: "silent" });
 const FILES = ["envelopes.json", "statements.json", "histories.json"];
 // keys.json is judged whole in the page: what a case opens to is compared
 // there, with the secrets it names.
 const KEYS = "keys.json";
 const served = {
   "/": ["text/html", "<!doctype html><meta charset=utf-8><title>protocol cases</title><script src=/viewer.js></script>"],
-  "/viewer.js": ["text/javascript", bundled.outputFiles[0].text],
+  "/viewer.js": ["text/javascript", bundled],
   ...Object.fromEntries([...FILES, KEYS].map((name) => [`/${name}`, ["application/json", readFileSync(path.join(root, "testdata/protocol", name))]])),
 };
 const server = http.createServer((request, response) => {
@@ -196,59 +183,13 @@ async function judgeAll() {
 }
 
 const scratch = await mkdtemp(path.join(os.tmpdir(), "slink-protocol-browser-"));
-const browser = spawn(executable, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--remote-debugging-port=0", `--user-data-dir=${scratch}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
-let socket;
+let browser;
 let failures = 0;
 try {
-  const endpoint = await new Promise((resolve, reject) => {
-    let text = "";
-    const timeout = setTimeout(() => reject(new Error("the browser did not start")), 15_000);
-    browser.stderr.on("data", (chunk) => {
-      text += chunk;
-      const match = text.match(/DevTools listening on (ws:\/\/\S+)/);
-      if (match) {
-        clearTimeout(timeout);
-        resolve(match[1]);
-      }
-    });
-    browser.on("error", reject);
-  });
-  // The first page can appear a moment after the debugging endpoint does.
-  let target;
-  for (let i = 0; i < 100 && !target; i++) {
-    target = (await (await fetch(`http://127.0.0.1:${new URL(endpoint).port}/json/list`)).json()).find((entry) => entry.type === "page");
-    if (!target) await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  socket = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => {
-    socket.onopen = resolve;
-    socket.onerror = reject;
-  });
-  let sequence = 0;
-  const pending = new Map();
-  socket.onmessage = ({ data }) => {
-    const message = JSON.parse(data);
-    const call = pending.get(message.id);
-    if (!call) return;
-    pending.delete(message.id);
-    if (message.error) call.reject(new Error(JSON.stringify(message.error)));
-    else call.resolve(message.result);
-  };
-  const send = (method, params = {}) =>
-    new Promise((resolve, reject) => {
-      const id = ++sequence;
-      pending.set(id, { resolve, reject });
-      socket.send(JSON.stringify({ id, method, params }));
-    });
-  const evaluate = async (expression) => {
-    const result = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
-    if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
-    return result.result.value;
-  };
-  await send("Runtime.enable");
-  await send("Page.enable");
-  await send("Page.navigate", { url: `${origin}/` });
-  for (let i = 0; i < 200 && !(await evaluate("typeof viewer === 'object' && !!crypto.subtle")); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+  browser = await launchBrowser({ profile: scratch });
+  const { evaluate, navigate, waitFor } = await browser.firstPage();
+  await navigate(`${origin}/`);
+  await waitFor("typeof viewer === 'object' && !!crypto.subtle");
   const { agent, out } = await evaluate(`(${judgeAll})()`);
 
   const expected = Object.fromEntries(
@@ -270,8 +211,7 @@ try {
   }
   console.log(`${agent}\n${out.length} cases, ${failures} judged differently from what the cases say for the viewer`);
 } finally {
-  socket?.close();
-  browser.kill();
+  browser?.close();
   server.close();
   await rm(scratch, { recursive: true, force: true }).catch(() => {});
 }

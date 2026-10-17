@@ -1,6 +1,6 @@
 # session.link Rust migration plan
 
-2026-10-11, revised 2026-10-12 · Rust direction agreed; implementation plan · nothing is migrated, see [Starting fresh](#starting-fresh) · P0 is under way in the [compatibility baseline](compatibility-baseline.md); the workspace and first build are in [rust-build.md](rust-build.md).
+2026-10-11, revised 2026-10-12 and 2026-10-16 · agreed implementation plan · P0–P2 done, save the items still unchecked below; P3 done but for the independent protocol review; P4, the recorder, is next; Go is deleted at P5.
 
 Replace the Go CLI and recorder with Rust, replace the hosted Next.js runtime
 with a Rust service, and share protocol logic between the native applications.
@@ -15,10 +15,13 @@ a later decision about whether Rust is worthwhile. Performance measurements
 guide implementation and catch regressions; the strategic goal is a maintained
 Rust foundation shared by the CLI and service.
 
-This supersedes the language recommendations in
-[architecture-alternatives.md](architecture-alternatives.md). The
+An earlier comparison of hosted designs, of 2026-10-11, kept the Go CLI and
+recommended one transactional host with SQLite metadata and restore-based
+recovery as the near-term default. This plan replaces its language choices and
+keeps that shape. The
 [current architecture](architecture-overview.md) remains the deployed baseline.
-The older [Go migration](go-migration.md) remains a historical record.
+The Go CLI itself replaced a Node and Bun one at v0.3.0, in July 2026, for a
+smaller binary and a lighter recorder.
 
 ## Starting fresh
 
@@ -242,9 +245,9 @@ viewer/security scripts pass against Rust. The omitted-content marker is absent
 from the entire excerpt, including raw and download channels. An opt-in
 `slink-rs` binary can perform local workflows in an isolated home.
 
-On 2026-10-12 the exit holds on macOS arm64, with reading a capture that is
-still being recorded left to P4. [rust-cli.md](rust-cli.md) has the evidence
-and what the six targets have yet to run.
+The exit holds since 2026-10-12, with reading a capture still being recorded
+left to P4; the tests pass on all six targets in CI and the browser checks were
+run on macOS arm64. [rust-cli.md](rust-cli.md) has the evidence.
 
 ### P3 Complete publication and private identity
 
@@ -264,38 +267,16 @@ result, and a second device recovers Rust-created links. An interrupted upload
 resumes. Rotation, substitution, rollback, tampering and concurrent-vault cases
 pass. Content keys never enter HTTP requests, logs or plaintext server storage.
 
-On 2026-10-14 the first three items hold on macOS arm64: Rust publishes to
-the existing Node server, a browser opens the result, an interrupted upload
-resumes, and a third machine recovers a Rust-created link with the recovery
-key, through the settings page against the service's smoke server.
-Rotation, substitution, rollback and concurrent-vault cases pass in the
-client's tests, and its journey passes against the service's own identity
-store. Tampered statements are the protocol crate's shared cases, and every
-answer is verified by that crate. No content key, recovery key or text
-reached a request to the service or its storage in those runs. The client's
-tests pass on all six targets in CI. [rust-client.md](rust-client.md) has the
-evidence and where Rust refuses what Go accepts.
-
-The fourth item followed the same day, on macOS arm64: a Rust viewer shares
-an excerpt with two people, a browser recipient signs up by email and
-accepts, the restarted viewer grants on its own, and the recipient's
-recovery, key rotation and revocation hold, through the service's named
-browser check against its smoke server. Claims without the invitation's
-secret, from a device the recipient's history never approved, or for another
-invitation get no key, in the client's tests, which pass on all six targets
-in CI. What remains of P3 is the independent review.
-
-On 2026-10-15 four agent reviewers read the port without the author's
-conclusions. They found nothing that blocks a release. Four defects, three of
-them Go's too, are fixed in Rust: a proxy that carried the API key to a local
-server, a dropped write reported done, one bad claim holding up a share's
-other grants, and the service's word undoing a revocation. The protocol's own
-limits they found, such as the sender trusting the service for how current a
-recipient's history is, stay with the broader review. The fixes' tests pass
-on all six targets in CI. The browser's settings page had the dropped write
-too and is fixed with them; Go keeps all three, since it is to be removed.
-[rust-client.md](rust-client.md#the-review-of-2026-10-15) has the list. The
-item stays open: these reviewers are the same kind of model that wrote the
+The first four items hold since 2026-10-14, on macOS arm64 against the
+service's smoke server, with the tests on all six targets in CI: Rust
+publishes, a browser opens the result, an interrupted upload resumes, a third
+machine recovers a Rust-created link, and a named share is accepted, granted
+and revoked. [rust-client.md](rust-client.md) has the evidence and
+[rust-protocol.md](rust-protocol.md) the shared cases. On 2026-10-15 four agent
+reviewers read the port without the author's conclusions and found nothing
+that blocks a release; the defects they found are fixed or recorded
+([the list](rust-client.md#the-review-of-2026-10-15)). The independent-review
+item stays open: those reviewers are the same kind of model that wrote the
 code.
 
 ### P4 Complete recording and operating-system integration
@@ -337,11 +318,15 @@ commands to Go.
   deliberately reconfigured; a workflow filename rename can break publishing.
 - [ ] Cut the first stable Rust `slink` release against the existing hosted
   service. Update user/install docs and regenerate the hosted documentation.
+- [ ] Delete the Go implementation with it: `go/`, `release-go.yml`, the
+  goreleaser configuration, and the Go legs of the golden copies, the format
+  and protocol sweeps and the differential runner. Keep the fixtures.
 
 **Exit:** every supported distribution installs and completes read/share flows.
 Rust is the default binary across channels, with no Go runtime or fallback.
-The Go build leaves packaging in that release; its last tag remains the
-reference.
+The Go build leaves packaging in that release and its source leaves the
+repository; its last tag remains the reference. On 2026-10-16 the owner chose
+this over keeping Go until P7: nothing after P5 needs it.
 
 ### P6 Replace the hosted runtime
 
@@ -385,8 +370,8 @@ Node service stop working, and the old volume is left in place.
 - [ ] Define recovery objectives and rehearse a consistent SQLite/blob restore
   of the new store, including encrypted vaults, histories, tombstones and
   service secrets.
-- [ ] Retire the Node runtime code and the Go implementation, preserving
-  fixtures and reproducible historical artifacts.
+- [ ] Retire the Node runtime code, preserving fixtures and reproducible
+  historical artifacts. The Go implementation went at P5.
 
 **Exit:** native Rust CLI and server are the maintained production
 implementations. Retention and recovery procedures work on the new store.
@@ -460,25 +445,14 @@ actual compatible combination.
 
 ## First implementation backlog
 
-Each item is a reviewable change with an explicit result. The milestone gates
-above remain authoritative; merging scaffolding does not complete the port.
-
-| Order | Change | Completion evidence |
-| --- | --- | --- |
-| 1 | P0 compatibility manifest and baseline runner | Current binaries pass the runner; command/API inventory and fixture classifications are recorded |
-| 2 | Cargo workspace and six-target native build spike | TLS, SQLite and embedded viewer build; release artifacts install on the test matrix |
-| 3 | Neutral viewer artifact plus manifest | Existing Go/server outputs still match; Rust consumes the same artifact without a source copy |
-| 4 | Rust format validator and scanner | All existing goldens plus unknown-field and invalid-document cases agree |
-| 5 | Rust envelope/history verifier | Go/Web Crypto fixtures and negative protocol corpus agree; malformed inputs fail safely |
-| 6 | Rust CLI shell, first importer and local reader | One complete local journey works under isolated `SLINK_HOME`, with publication unavailable until implemented |
-| 7 | Remaining importers, drafts and exporter | P2 gate passes, including all harnesses and omission checks |
-| 8 | Publication, identity, recorder and platform slices | P3/P4 gates pass before any stable replacement release |
-
-The first planning checkpoint follows items 1–2: use measured build portability,
-baseline costs and contract inventory to size the remaining work. Importer
-fidelity, private identity state, OS process behavior and hosted authentication
-are the largest uncertainty areas. Keep the CLI and server releases as
-separate milestones even if implementation work overlaps.
+The first seven items are done: the baseline runner, the six-target build, the
+viewer artifact, the format validator, the protocol verifier, and the CLI with
+every importer, drafts and the exporter. P0 to P2 above have the evidence;
+what those items left undone is still unchecked there. The eighth, the
+publication, identity, recorder and platform slices, continues as P3 and P4,
+and no stable replacement release ships before their gates pass. The milestone
+gates remain authoritative. Keep the CLI and server releases as separate
+milestones even if implementation work overlaps.
 
 ## Completion checklist
 

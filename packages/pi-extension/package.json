@@ -25,10 +25,6 @@
       "./index.ts"
     ]
   },
-  "scripts": {
-    "build": "echo 'nothing to build — pi loads index.ts directly'",
-    "check": "echo 'nothing to check'"
-  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
   },

@@ -7,8 +7,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use common::{ids, listed, nowhere, scratch, write};
 use serde_json::{Value, json};
-use slink_import::{Candidate, Input, Locations, import, load_file, read_lines, recent};
+use slink_import::{Input, Locations, import, load_file, read_lines};
 
 const TYPED: &str = r#"{"type":"user/message","seq":8,"time":1791451208534,"data":{"content":[{"type":"text","text":"Find the race in the upload test"}],"source":{"kind":"user"},"role":"user","id":"m1"},"surfaceOp":"append"}"#;
 const FALLBACK: &str = r#"{"type":"session/title","seq":12,"time":1791451208539,"data":{"title":"Find the race in the","messageSeqs":[8],"source":{"kind":"fallback"}}}"#;
@@ -30,48 +31,12 @@ fn log_text(id: &str, cwd: &str, header: &str, events: &[&str]) -> String {
     lines.join("\n") + "\n"
 }
 
-/// A directory of one test's own, empty.
-fn scratch(test: &str) -> PathBuf {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("dsh-{test}"));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-/// Writes a log as it was at one moment.
-fn write_log(file: &Path, body: impl AsRef<[u8]>, at: SystemTime) {
-    fs::create_dir_all(file.parent().unwrap()).unwrap();
-    fs::write(file, body).unwrap();
-    let log = fs::File::options().write(true).open(file).unwrap();
-    log.set_modified(at).unwrap();
-}
-
 /// A machine with a dsh store and no other agent's.
 fn only_dsh(store: &Path) -> Locations {
     Locations {
-        claude: PathBuf::new(),
-        pi: PathBuf::new(),
-        omp: PathBuf::new(),
-        codex: PathBuf::new(),
-        opencode: PathBuf::new(),
-        hermes: PathBuf::new(),
         dsh: store.to_owned(),
+        ..nowhere()
     }
-}
-
-/// The sessions dsh recorded for a directory, and that nothing went wrong
-/// reading them.
-fn listed(store: &Path, cwd: &Path, id: &str) -> Vec<Candidate> {
-    let (candidates, problems) = recent(&only_dsh(store), "dsh", cwd, id, 30);
-    assert_eq!(problems, Vec::<String>::new());
-    candidates
-}
-
-fn ids(candidates: &[Candidate]) -> Vec<&str> {
-    candidates
-        .iter()
-        .map(|candidate| candidate.id.as_str())
-        .collect()
 }
 
 fn entries(dir: &Path) -> Vec<PathBuf> {
@@ -143,7 +108,7 @@ fn sessions_are_found_where_dsh_keeps_them() {
     let project = "/work/upload";
     let now = SystemTime::now();
     let dir = root.join("--work-upload--");
-    write_log(
+    write(
         &dir.join("session-top").join("session.v4.jsonl"),
         log_text(
             "session-top",
@@ -155,12 +120,12 @@ fn sessions_are_found_where_dsh_keeps_them() {
     );
     // dsh keeps a generation it has moved on from; the highest is the
     // session.
-    write_log(
+    write(
         &dir.join("session-top").join("session.v3.jsonl"),
         "{\"type\":\"session\",\"version\":3,\"id\":\"session-top\",\"createdAt\":1,\"cwd\":\"/elsewhere\",\"isSeeded\":false,\"delegationDepth\":0}\n",
         now + HOUR,
     );
-    write_log(
+    write(
         &dir.join("child-1").join("session.v4.jsonl"),
         log_text(
             "child-1",
@@ -170,19 +135,19 @@ fn sessions_are_found_where_dsh_keeps_them() {
         ),
         now + MINUTE,
     );
-    write_log(
+    write(
         &dir.join("session-untitled").join("session.v4.jsonl"),
         log_text("session-untitled", project, "", &[TYPED, FALLBACK]),
         now - HOUR,
     );
     // "/work:upload" is filed in the same directory; its header says it is
     // another project's.
-    write_log(
+    write(
         &dir.join("session-other").join("session.v4.jsonl"),
         log_text("session-other", "/work:upload", "", &[TYPED]),
         now,
     );
-    write_log(
+    write(
         &root
             .join("--work-elsewhere--")
             .join("session-far")
@@ -191,7 +156,8 @@ fn sessions_are_found_where_dsh_keeps_them() {
         now,
     );
 
-    let found = listed(&root, Path::new(project), "");
+    let stores = only_dsh(&root);
+    let found = listed(&stores, "dsh", project, "", 30);
     assert_eq!(ids(&found), ["session-top", "session-untitled"]);
     assert_eq!(found[0].name, "Upload test race");
     assert_eq!(found[0].title, "Upload test race");
@@ -212,18 +178,18 @@ fn sessions_are_found_where_dsh_keeps_them() {
     assert_eq!(read.fallback, "session-top");
     // Only its id reaches a sub-agent's own session.
     assert_eq!(
-        ids(&listed(&root, Path::new(project), "child-1")),
+        ids(&listed(&stores, "dsh", project, "child-1", 30)),
         ["child-1"]
     );
     assert_eq!(
-        ids(&listed(&root, Path::new(project), "session-untitled")),
+        ids(&listed(&stores, "dsh", project, "session-untitled", 30)),
         ["session-untitled"]
     );
-    assert!(listed(&root, Path::new(project), "session-far").is_empty());
+    assert!(listed(&stores, "dsh", project, "session-far", 30).is_empty());
     // From inside the project, its sessions are still the ones offered.
     let deeper = Path::new(project).join("src");
     assert_eq!(
-        ids(&listed(&root, &deeper, "")),
+        ids(&listed(&stores, "dsh", &deeper, "", 30)),
         ["session-top", "session-untitled"]
     );
 }
@@ -236,7 +202,8 @@ fn a_session_lists_the_logs_of_its_sub_agents() {
         .find(|fixture| fixture.ends_with("v4-sub-agents"))
         .unwrap()
         .join("sessions");
-    let found = listed(&store, Path::new("/work/checks"), "");
+    let stores = only_dsh(&store);
+    let found = listed(&stores, "dsh", "/work/checks", "", 30);
     assert_eq!(
         ids(&found),
         ["session-431fac29-44de-4024-a816-7be59e5482b0"]
@@ -257,9 +224,11 @@ fn a_session_lists_the_logs_of_its_sub_agents() {
     // The fork began with a copy of its parent's history. The sub-agent in
     // that copy is the parent's, not one of its own.
     let fork = listed(
-        &store,
-        Path::new("/work/checks"),
+        &stores,
+        "dsh",
+        "/work/checks",
         "3a456f9a-9e0c-4d3b-8bcf-a227a1dc039e",
+        30,
     );
     assert_eq!(fork.len(), 1);
     assert!(fork[0].related.is_empty(), "{:?}", fork[0].related);
@@ -321,7 +290,8 @@ fn a_compressed_log_cut_off_mid_write_is_read() {
     );
     assert_eq!(kept, whole[..kept.len()]);
     // Its header is still read, which is what finds it for its project.
-    let found = listed(&root, Path::new("/work/greeting"), "");
+    let stores = only_dsh(&root);
+    let found = listed(&stores, "dsh", "/work/greeting", "", 30);
     assert_eq!(
         ids(&found),
         ["session-13acf23d-ac96-43ac-add4-6c1de6b47e5a"]
@@ -332,7 +302,7 @@ fn a_compressed_log_cut_off_mid_write_is_read() {
     fs::write(&cut, &raw[..20]).unwrap();
     let error = read_lines(&cut).unwrap_err().to_string();
     assert_eq!(error, format!("{}: unexpected EOF", cut.display()));
-    assert!(listed(&root, Path::new("/work/greeting"), "").is_empty());
+    assert!(listed(&stores, "dsh", "/work/greeting", "", 30).is_empty());
 }
 
 #[test]
@@ -352,9 +322,9 @@ fn a_log_is_taken_for_compressed_by_its_name() {
     let now = SystemTime::now();
     // Each is read whole whatever it is called: that goes by its first bytes.
     let unnamed = project.join("unnamed").join("session.v4.jsonl");
-    write_log(&unnamed, &packed, now);
+    write(&unnamed, &packed, now);
     let misnamed = project.join("misnamed").join("session.v4.jsonl.zstd");
-    write_log(&misnamed, &text, now);
+    write(&misnamed, &text, now);
     assert_eq!(
         read_lines(&unnamed).unwrap(),
         read_lines(&compressed).unwrap()
@@ -365,15 +335,16 @@ fn a_log_is_taken_for_compressed_by_its_name() {
     );
     // Its header alone is read by the name, as Go reads it, so neither is
     // found for its project. dsh writes neither.
-    assert!(listed(&root, Path::new("/work/greeting"), "").is_empty());
+    let stores = only_dsh(&root);
+    assert!(listed(&stores, "dsh", "/work/greeting", "", 30).is_empty());
     let (plain, named) = (
         project.join("plain").join("session.v4.jsonl"),
         project.join("named").join("session.v4.jsonl.zstd"),
     );
-    write_log(&plain, &text, now - HOUR);
-    write_log(&named, &packed, now);
+    write(&plain, &text, now - HOUR);
+    write(&named, &packed, now);
     assert_eq!(
-        ids(&listed(&root, Path::new("/work/greeting"), "")).len(),
+        ids(&listed(&stores, "dsh", "/work/greeting", "", 30)).len(),
         2
     );
 }

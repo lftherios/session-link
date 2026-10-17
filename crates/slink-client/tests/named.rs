@@ -6,6 +6,8 @@
 //! who accepts is made here, as a browser would make them. Go's tests of the
 //! same, in go/internal/identity/named_test.go, are here too.
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,17 +15,18 @@ use std::sync::{Arc, Mutex};
 
 use axum::body::to_bytes;
 use axum::extract::Request as HttpRequest;
-use axum::http::{Method, StatusCode};
-use axum::response::Response;
+use axum::http::Method;
+use common::{
+    Refusal, home, random, record_json, refuse, reply, serve, sha256, signed, signed_json,
+};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use slink_client::Identity;
 use slink_client::identity::Input;
 use slink_client::named::Shared;
 use slink_protocol::encoding::{decode_exact, encode};
 use slink_protocol::{
     AgreementKey, Claim, Kind, Operation, Record, Recovery, Signed, SigningKey, State,
-    binding_proof, device_id, named_context, unwrap, verify_history, verify_record, wrap,
+    binding_proof, device_id, named_context, unwrap, verify_history, verify_record,
 };
 
 const OWNER: &str = "usr_owner";
@@ -32,33 +35,8 @@ const READER: &str = "usr_reader";
 const SHARE: &str = "k7qm2xrw9tbn4c";
 const TEXT: &str = r#"{"schema":"session/v0","created_at":"2026-09-12T00:00:00Z","name":"PRIVATE_NAMED_SENTINEL","spans":[{"id":"root","type":"agent"}]}"#;
 
-fn home(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("slink-named-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn signed(value: &Value) -> Signed {
-    Signed {
-        payload: value["payload"].as_str().unwrap().to_owned(),
-        signature: value["signature"].as_str().unwrap().to_owned(),
-    }
-}
-
-fn signed_json(signed: &Signed) -> Value {
-    json!({"payload": signed.payload, "signature": signed.signature})
-}
-
 fn payload(signed: &Signed, kind: Kind) -> Value {
     serde_json::from_slice(&signed.read(kind).unwrap()).unwrap()
-}
-
-fn hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 /// One person a share is for, as the service keeps them.
@@ -109,47 +87,9 @@ struct Store {
 
 type Kept = Arc<Mutex<Store>>;
 
-fn reply(status: u16, body: Value) -> Response {
-    Response::builder()
-        .status(StatusCode::from_u16(status).unwrap())
-        .header("content-type", "application/json")
-        .body(body.to_string().into())
-        .unwrap()
-}
-
-type Refusal = (u16, String);
-
-fn refuse<T>(status: u16, message: &str) -> Result<T, Refusal> {
-    Err((status, message.to_owned()))
-}
-
 /// A write to the sender's record, taken only against what it holds.
 fn write(store: &mut Store, body: &Value) -> Result<(), Refusal> {
-    let current = store
-        .record
-        .as_ref()
-        .map(|record| verify_record(record, OWNER).unwrap());
-    let (head, revision) = current.as_ref().map_or((String::new(), 0), |held| {
-        (held.head.clone(), held.vault.revision)
-    });
-    if body["expected_head"] != head || body["expected_revision"] != revision {
-        return refuse(409, "Vault changed; refresh and retry");
-    }
-    let mut events = store
-        .record
-        .as_ref()
-        .map(|record| record.events.clone())
-        .unwrap_or_default();
-    events.extend(body.get("event").map(signed));
-    let next = Record {
-        events,
-        vault: signed(&body["vault"]),
-    };
-    let checked = verify_record(&next, OWNER).map_err(|error| (422, error.to_string()))?;
-    if checked.vault.revision != revision + 1 {
-        return refuse(409, "Invalid vault revision");
-    }
-    store.record = Some(next);
+    store.record = Some(common::write(store.record.as_ref(), OWNER, body)?.record);
     Ok(())
 }
 
@@ -192,7 +132,7 @@ fn upload(store: &mut Store, length: usize, body: &[u8]) -> Result<Value, Refusa
     }
     let (prefix, envelope) = body.split_at(length);
     let statements: Vec<Value> = serde_json::from_slice(prefix).unwrap();
-    let sha256 = hex(envelope);
+    let sha256 = sha256(envelope);
     let mut people = Vec::new();
     for statement in &statements {
         let value = active(store, Kind::NamedInvite, &signed(statement))?;
@@ -352,12 +292,7 @@ async fn service() -> (String, Kept) {
                     Ok(())
                 }
                 .map(|()| {
-                    let record = store.record.as_ref().map_or(Value::Null, |record| {
-                        json!({
-                            "events": record.events.iter().map(signed_json).collect::<Vec<_>>(),
-                            "vault": signed_json(&record.vault),
-                        })
-                    });
+                    let record = store.record.as_ref().map_or(Value::Null, record_json);
                     json!({"account": OWNER, "record": record, "requests": []})
                 }),
                 "/api/named-shares" => {
@@ -400,23 +335,7 @@ async fn service() -> (String, Kept) {
             }
         }
     });
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-        .await
-        .unwrap();
-    let address = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, app).await });
-    (format!("http://{address}"), store)
-}
-
-static COUNTER: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(1);
-
-fn random() -> [u8; 32] {
-    let mut bytes = [0; 32];
-    for (index, byte) in bytes.iter_mut().enumerate() {
-        *byte = (index as u8).wrapping_mul(29) ^ (std::process::id() as u8);
-    }
-    bytes[0] ^= COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    bytes
+    (serve(app).await, store)
 }
 
 /// A person with an account of their own, one device and sharing on, as a
@@ -454,23 +373,16 @@ fn reader(account: &str) -> Reader {
         devices: Vec::new(),
         inbox: Some(inbox.public()),
     };
-    let context = state.context();
-    let wrapped = |to: &str| {
-        wrap(
-            to,
-            &key,
-            &context,
-            &AgreementKey::from_bytes(random()),
-            [2; 12],
-        )
+    let wrapped = |state: &State, to: &str| {
+        state.wrap_key(to, &key, &AgreementKey::from_bytes(random()), [2; 12])
     };
-    state.recovery_wrap = wrapped(&state.recovery).unwrap();
+    state.recovery_wrap = wrapped(&state, &state.recovery).unwrap();
     state.devices.push(slink_protocol::Device {
         id: device_id(&device.public(), &device_box.public()),
         name: "Reader browser".to_owned(),
         sign_key: device.public(),
         box_key: device_box.public(),
-        wrap: wrapped(&device_box.public()).unwrap(),
+        wrap: wrapped(&state, &device_box.public()).unwrap(),
     });
     let events = vec![Signed::sign(Kind::Event, &state.encode(), &recovery.root).unwrap()];
     let state = verify_history(&events, account).unwrap().state;
@@ -967,7 +879,7 @@ async fn a_deleted_share_is_sealed_afresh_when_published_again() {
         .map(|(_, _, body)| {
             let mut values = serde_json::Deserializer::from_slice(body).into_iter::<Value>();
             values.next();
-            hex(&body[values.byte_offset()..])
+            sha256(&body[values.byte_offset()..])
         })
         .collect();
     assert_eq!(hashes.len(), 2);

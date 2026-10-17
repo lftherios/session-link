@@ -1,6 +1,6 @@
 # What makes session.link succeed
 
-2026-09-12, updated 2026-10-09 · product direction from the planning conversation.
+2026-09-12, updated 2026-10-09 and 2026-10-16 · product direction from the planning conversation.
 
 These are product requirements and evaluation criteria, not claims that every
 part is already delivered. Use them with the [product plan](product-plan.md) to
@@ -82,10 +82,12 @@ nothing else. See [identity and encryption](identity-encryption.md) for
 sign-in, recovery, device approval and revocation, and
 [named-recipient sharing](named-recipient-sharing.md) for shares limited to
 verified emails. Still open, as the [product plan](product-plan.md) lists:
-iroh version support, a rehearsed restore of the hosted volume, and an
-independent review of the recovery and device protocol. Revocation and
-deletion cannot erase a copy or a key someone has already received. Direct
-peer-to-peer delivery is a separate design decision.
+an independent review of the recovery and device protocol. The current hosted
+volume is not restored; the [Rust migration](rust-migration.md) chooses the
+blob backend, iroh or immutable files, in P6 and rehearses a restore of the
+new store in P7. Revocation and deletion cannot erase a copy or a key someone
+has already received. Direct peer-to-peer delivery is a separate design
+decision.
 
 Links published by v0.5.0 and earlier (`/r/…`) are unlisted, readable by
 anyone who has the link, and readable by the server. Local captures are

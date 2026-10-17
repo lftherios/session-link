@@ -13,55 +13,28 @@ mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use common::{agent_ids, agents, cell, ids, listed, nowhere, read, rows};
 use rusqlite::Connection;
-use rusqlite::types::Value as Stored;
 use serde_json::Value;
-use slink_import::{Agent, Candidate, Found, Input, Loader, Locations, import, recent};
+use slink_import::{Found, Input, Loader, Locations, import, recent};
 
 const SECOND: i64 = 1_000_000_000;
 
-fn read(file: &Path) -> Value {
-    slink_format::parse(&fs::read_to_string(file).unwrap()).unwrap()
-}
-
 /// A fixture's rows as the Go golden test hands them to the importer.
 fn fixture_input(fixture: &Path) -> Input {
-    let agents = fixture.join("input.agents.json");
+    let recorded = fixture.join("input.agents.json");
     Input {
         session: read(&fixture.join("input.session.json")),
         messages: rows(&read(&fixture.join("input.messages.json"))),
         fallback: "golden".into(),
         blobs: fixture.join("blobs"),
-        agents: if agents.is_file() {
-            fixture_agents(&read(&agents))
+        agents: if recorded.is_file() {
+            agents(&read(&recorded))
         } else {
             Vec::new()
         },
         ..Input::default()
     }
-}
-
-fn rows(list: &Value) -> Vec<Value> {
-    list.as_array().cloned().unwrap_or_default()
-}
-
-/// The sub-agents' sessions a fixture carries: what the loader hands the
-/// importer for each child session.
-fn fixture_agents(recorded: &Value) -> Vec<Agent> {
-    rows(recorded)
-        .iter()
-        .map(|agent| Agent {
-            id: agent["id"].as_str().unwrap_or_default().to_owned(),
-            call: String::new(),
-            name: agent["name"].as_str().unwrap_or_default().to_owned(),
-            input: Input {
-                session: agent["session"].clone(),
-                messages: rows(&agent["messages"]),
-                agents: fixture_agents(&agent["agents"]),
-                ..Input::default()
-            },
-        })
-        .collect()
 }
 
 #[test]
@@ -113,19 +86,6 @@ fn execute(file: &Path, statements: &[&str]) {
     }
 }
 
-/// A fixture's value as SQLite holds it.
-fn stored(value: &Value) -> Stored {
-    match value {
-        Value::Null => Stored::Null,
-        Value::String(text) => Stored::Text(text.clone()),
-        Value::Number(number) => match number.as_i64() {
-            Some(whole) => Stored::Integer(whole),
-            None => Stored::Real(number.as_f64().unwrap()),
-        },
-        other => panic!("a column holds no {other}"),
-    }
-}
-
 /// Writes one row, a column for each of its fields.
 fn insert(db: &Connection, table: &str, row: &Value) {
     let row = row.as_object().unwrap();
@@ -137,7 +97,7 @@ fn insert(db: &Connection, table: &str, row: &Value) {
     );
     db.execute(
         &statement,
-        rusqlite::params_from_iter(row.values().map(stored)),
+        rusqlite::params_from_iter(row.values().map(cell)),
     )
     .unwrap_or_else(|error| panic!("{statement}: {error}"));
 }
@@ -182,32 +142,9 @@ fn session(file: &Path, id: &str) -> Found {
 /// Hermes's database at `file`, and no other harness's store anywhere.
 fn stores(file: &Path) -> Locations {
     Locations {
-        claude: PathBuf::new(),
-        pi: PathBuf::new(),
-        omp: PathBuf::new(),
-        codex: PathBuf::new(),
-        opencode: PathBuf::new(),
         hermes: file.to_owned(),
-        dsh: PathBuf::new(),
+        ..nowhere()
     }
-}
-
-/// The sessions Hermes has for `cwd`, which must all be readable.
-fn listed(file: &Path, cwd: &str, id: &str, limit: usize) -> Vec<Candidate> {
-    let (candidates, problems) = recent(&stores(file), "hermes", Path::new(cwd), id, limit);
-    assert_eq!(problems, Vec::<String>::new());
-    candidates
-}
-
-fn ids(candidates: &[Candidate]) -> Vec<&str> {
-    candidates
-        .iter()
-        .map(|candidate| candidate.id.as_str())
-        .collect()
-}
-
-fn agent_ids(input: &Input) -> Vec<&str> {
-    input.agents.iter().map(|agent| agent.id.as_str()).collect()
 }
 
 fn written(input: &Input) -> String {
@@ -225,7 +162,7 @@ fn a_session_read_from_a_database_reproduces_its_golden() {
         // A database gives a time as a real and a count as an integer,
         // whatever the fixture's JSON spells, and the bytes are the same.
         assert_eq!(written(&loaded), written(&rows), "{id}");
-        assert_eq!(agent_ids(&loaded), agent_ids(&rows), "{id}");
+        assert_eq!(agent_ids(&loaded.agents), agent_ids(&rows.agents), "{id}");
         for (loaded, recorded) in loaded.agents.iter().zip(&rows.agents) {
             assert_eq!(
                 (&loaded.name, &loaded.call),
@@ -252,7 +189,8 @@ fn the_session_of_a_fixture_is_found_in_its_database() {
     };
 
     // For its directory, from inside it, newest first.
-    let all = listed(&file, "/tmp/demo/src", "", 30);
+    let stores = stores(&file);
+    let all = listed(&stores, "hermes", "/tmp/demo/src", "", 30);
     assert_eq!(ids(&all), ["hermes_golden_basic", "before", "long before"]);
     let basic = &all[0];
     assert_eq!(basic.dir, Path::new("/tmp/demo"));
@@ -271,25 +209,28 @@ fn the_session_of_a_fixture_is_found_in_its_database() {
 
     // The limit holds, and an id is matched before it.
     assert_eq!(
-        ids(&listed(&file, "/tmp/demo", "", 1)),
+        ids(&listed(&stores, "hermes", "/tmp/demo", "", 1)),
         ["hermes_golden_basic"]
     );
-    assert_eq!(ids(&listed(&file, "/tmp/demo", "", 2)).len(), 2);
+    assert_eq!(ids(&listed(&stores, "hermes", "/tmp/demo", "", 2)).len(), 2);
     assert_eq!(
-        ids(&listed(&file, "/tmp/demo", "long before", 1)),
+        ids(&listed(&stores, "hermes", "/tmp/demo", "long before", 1)),
         ["long before"]
     );
-    assert!(listed(&file, "/tmp/demo", "no such session", 30).is_empty());
-    assert!(listed(&file, "/tmp/elsewhere", "", 30).is_empty());
+    assert!(listed(&stores, "hermes", "/tmp/demo", "no such session", 30).is_empty());
+    assert!(listed(&stores, "hermes", "/tmp/elsewhere", "", 30).is_empty());
 
     // A delegate's session is in its parent's directory and is not the
     // person's own: only its id reaches it, and its parent brings it along.
     let (parent, delegate) = ("20261008_090000_d1e2f3", "20261008_090003_a7b8c9");
-    let own = listed(&file, "/work/certs", "", 30);
+    let own = listed(&stores, "hermes", "/work/certs", "", 30);
     assert_eq!(ids(&own), [parent]);
-    assert_eq!(ids(&listed(&file, "/work/certs", delegate, 1)), [delegate]);
+    assert_eq!(
+        ids(&listed(&stores, "hermes", "/work/certs", delegate, 1)),
+        [delegate]
+    );
     let loaded = own[0].found.load().unwrap();
-    assert_eq!(agent_ids(&loaded), [delegate]);
+    assert_eq!(agent_ids(&loaded.agents), [delegate]);
     common::check_golden("hermes", &fixture("delegate"), &loaded);
 }
 
@@ -313,11 +254,12 @@ fn a_listed_session_is_the_one_loaded() {
             ('newer', 'Second task', '/work/project', 2), ('elsewhere', 'Other task', '/other', 3)",
         ],
     );
+    let stores = stores(&file);
     assert_eq!(
-        ids(&listed(&file, "/work/project/src", "", 30)),
+        ids(&listed(&stores, "hermes", "/work/project/src", "", 30)),
         ["newer", "older"]
     );
-    let chosen = listed(&file, "/work/project", "older", 1);
+    let chosen = listed(&stores, "hermes", "/work/project", "older", 1);
     assert_eq!(ids(&chosen), ["older"]);
     execute(
         &file,
@@ -405,7 +347,8 @@ fn sessions_are_listed_as_hermes_lists_its_own() {
             ('first', 'assistant', 'Test added.', 104, 1)",
         ],
     );
-    let all = listed(&file, "/work/project/src", "", 30);
+    let stores = stores(&file);
+    let all = listed(&stores, "hermes", "/work/project/src", "", 30);
     assert_eq!(
         ids(&all),
         ["branch", "marked", "trunk", "continued", "first"]
@@ -420,12 +363,12 @@ fn sessions_are_listed_as_hermes_lists_its_own() {
     }
     assert_eq!(all[0].found.recency, 400 * SECOND);
     assert_eq!(
-        ids(&listed(&file, "/work/project", "delegate", 1)),
+        ids(&listed(&stores, "hermes", "/work/project", "delegate", 1)),
         ["delegate"],
         "an explicit id must still reach a sub-agent"
     );
     assert_eq!(
-        ids(&listed(&file, "/work/project", "continued", 1)),
+        ids(&listed(&stores, "hermes", "/work/project", "continued", 1)),
         ["continued"],
         "a continuation must be found in its conversation's directory"
     );
@@ -490,7 +433,7 @@ fn sessions_rank_by_their_last_message() {
             ('long-running', 'user', 'still here', 9), ('quick', 'user', 'done', 6)",
         ],
     );
-    let all = listed(&file, "/work/project", "", 30);
+    let all = listed(&stores(&file), "hermes", "/work/project", "", 30);
     assert_eq!(ids(&all), ["long-running", "quick", "silent"]);
     assert_eq!(all[0].found.recency, 9 * SECOND);
     assert_eq!(all[0].started, Some((1, 0)));
@@ -518,9 +461,9 @@ fn sub_agent_sessions_load_with_their_parent() {
         ],
     );
     let first = session(&file, "main").load().unwrap();
-    assert_eq!(agent_ids(&first), ["delegate"]);
+    assert_eq!(agent_ids(&first.agents), ["delegate"]);
     let running = session(&file, "continued").load().unwrap();
-    assert_eq!(agent_ids(&running), ["live-delegate"]);
+    assert_eq!(agent_ids(&running.agents), ["live-delegate"]);
 }
 
 #[test]

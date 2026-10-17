@@ -19,8 +19,10 @@ chrome. Keep the geometry identical between these two assets.
 `../social-preview.svg` is the 1280 × 640 share card in the same colors: the
 mark and wordmark, the bracketed headline, the install command and the reader
 with the fictional landing session. `../social-preview.png` is exported from it
-with `node scripts/capture-social.mjs`, which needs a Chromium-family browser
-(`BROWSER_BINARY`); edit the SVG, then export. The PNG is for the repository's
+with `node scripts/capture-social.mjs`, which needs a Chromium-family browser:
+Brave or Chrome, or the one `BROWSER_BINARY` names. The committed PNG was
+exported with the Playwright headless shell, which Brave does not match byte
+for byte. Edit the SVG, then export. The PNG is for the repository's
 social preview setting on GitHub, which is uploaded by hand and was not set as
 of 2026-10-08.
 

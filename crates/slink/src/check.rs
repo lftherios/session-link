@@ -1,21 +1,25 @@
 //! `slink-rs build-check` exercises what the build links in (bundled SQLite,
-//! the embedded viewer, the HTTP server and client, TLS, the format crate and
-//! the protocol crate) so that a release binary can be proven on each target.
-//! It is scaffolding for the build spike and goes when real commands reach
-//! the same code.
+//! the embedded viewer, the HTTP server, the client every request to the
+//! service is made with and its TLS, the format crate and the protocol crate)
+//! in the binary that ships. It stays because nothing else runs that binary:
+//! `cargo test` runs a test build, the release profile's LTO and stripped
+//! symbols make another, and ring and x25519-dalek choose their code by
+//! target. rust.yml runs it in the release binary on each of the six
+//! targets' own runners. It needs no home, network or terminal, and it is
+//! not a product command.
 
 use std::error::Error;
-use std::fmt::Write as _;
+use std::time::Duration;
 
 use axum::http::header::CONTENT_TYPE;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use sha2::{Digest, Sha256};
+use slink_local::sha256_hex;
 use slink_protocol::encoding::{decode, decode_exact, encode};
 use slink_protocol::{AgreementKey, Kind, Signed, envelope, unwrap, wrap};
 
 use crate::flags::{Exit, Run};
-use crate::{VERSION, tls, viewer};
+use crate::{VERSION, viewer};
 
 type Checked = Result<String, Box<dyn Error>>;
 
@@ -66,7 +70,7 @@ fn sqlite() -> Checked {
 
 fn embedded() -> Checked {
     for file in viewer::FILES {
-        if hex(&Sha256::digest(file.bytes)) != file.sha256 {
+        if sha256_hex(file.bytes) != file.sha256 {
             return Err(format!("{} does not match the manifest", file.path).into());
         }
     }
@@ -93,7 +97,8 @@ fn http() -> Checked {
         .block_on(round_trip(bundle.bytes))
 }
 
-/// Serves the bundle on loopback and fetches it with the publishing client.
+/// Serves the bundle on loopback and fetches it with the client every
+/// request to the service is made with.
 async fn round_trip(bundle: &'static [u8]) -> Checked {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
     let address = listener.local_addr()?;
@@ -107,8 +112,7 @@ async fn round_trip(bundle: &'static [u8]) -> Checked {
 
     // Building the client builds its TLS configuration, so this also proves
     // that rustls, ring and the platform verifier initialize on this target.
-    tls::install();
-    let client = reqwest::Client::builder().no_proxy().build()?;
+    let client = slink_client::client(Duration::from_secs(30))?;
     let body = client
         .get(format!("http://{address}/viewer.js"))
         .send()
@@ -230,11 +234,4 @@ fn rewrap() -> Result<(), Box<dyn Error>> {
         return Err("a key was wrapped to a point of small order".into());
     }
     Ok(())
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().fold(String::new(), |mut out, byte| {
-        write!(out, "{byte:02x}").expect("writing to a string");
-        out
-    })
 }

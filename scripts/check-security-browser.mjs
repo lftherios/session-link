@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // Real-browser regression check using fictional data and an isolated home.
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, writeFile, readdir, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { launchBrowser, startViewer } from "./browser.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const scratch = await mkdtemp(path.join(tmpdir(), "slink-security-"));
@@ -21,7 +22,7 @@ if (process.platform !== "win32") {
   assert.equal((await stat(runs)).mode & 0o777, 0o700);
   assert.equal((await stat(path.join(runs, file))).mode & 0o777, 0o600);
 }
-let localURL = "", hits = [], cli, browser, socket;
+let localURL = "", hits = [], cli, browser;
 const collector = createServer((req, res) => {
   if (req.url === "/frame") { res.setHeader("content-type", "text/html"); res.end(`<iframe src="${localURL}" width="1250" height="950"></iframe>`); return; }
   if (req.url?.startsWith("/pixel")) hits.push({ url: req.url, headers: req.headers });
@@ -36,15 +37,9 @@ doc.spans[0].output.messages[0].content = [
   { type: "image", url: `${remote}/pixel?fictional=STRUCTURED_MARKER` },
 ];
 const fixture = path.join(scratch, "fixture.json"); await writeFile(fixture, JSON.stringify(doc));
-const waitOutput = (child, stream, pattern) => new Promise((resolve, reject) => {
-  let output = ""; const timer = setTimeout(() => reject(new Error(`Startup timed out: ${output.slice(-500)}`)), 15000);
-  child[stream].on("data", chunk => { output += chunk; const match = output.match(pattern); if (match) { clearTimeout(timer); resolve(match[0]); } });
-  child.once("error", error => { clearTimeout(timer); reject(error); });
-  child.once("exit", code => { clearTimeout(timer); reject(new Error(`Exited ${code}: ${output.slice(-500)}`)); });
-});
 try {
-  cli = spawn(binary, ["view", "--session", fixture, "--no-browser"], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
-  localURL = await waitOutput(cli, "stdout", /http:\/\/127\.0\.0\.1:\d+\/p\/[^\s]+/);
+  cli = await startViewer(["--session", fixture], { home, binary });
+  localURL = cli.url;
   const url = new URL(localURL), base = url.origin, id = url.pathname.split("/").pop();
   const key = new URLSearchParams(url.hash.slice(1)).get("access"); assert.match(key, /^[\w-]{43}$/);
   for (const endpoint of [`/api/document/${id}`, "/api/login/status", "/settings"]) {
@@ -57,33 +52,8 @@ try {
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'none'/);
 
-  browser = spawn(process.env.BROWSER_BINARY ?? "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", ["--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", `--user-data-dir=${path.join(scratch, "browser")}`, "--remote-debugging-port=0", "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
-  const endpoint = await waitOutput(browser, "stderr", /ws:\/\/[^\s]+/);
-  const targets = async () => (await fetch(`http://127.0.0.1:${new URL(endpoint).port}/json/list`)).json();
-  let target;
-  for (let i = 0; i < 100 && !target; i++) { target = (await targets()).find(t => t.type === "page"); if (!target) await new Promise(r => setTimeout(r, 50)); }
-  socket = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
-  let seq = 0; const pending = new Map(), requests = [];
-  socket.onmessage = ({ data }) => {
-    const msg = JSON.parse(data);
-    if (msg.id) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.reject(msg.error) : p.resolve(msg.result); }
-    if (msg.method === "Network.requestWillBeSent") requests.push(msg.params.request);
-  };
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++seq; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })); });
-  const evaluate = async expression => { const result = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true, userGesture: true }); if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails)); return result.result.value; };
-  // A page that is still arriving has no body yet, and the browser drops a
-  // question asked across a navigation. Neither is an answer, so ask again.
-  const waitFor = async expression => {
-    let last;
-    for (let i = 0; i < 100; i++) {
-      try { if (await evaluate(expression)) return; last = undefined; } catch (error) { last = error; }
-      await new Promise(r => setTimeout(r, 50));
-    }
-    const page = await evaluate("document.body?.innerText.slice(0,500)").catch(() => "");
-    throw new Error(`Timed out: ${expression}; ${last ? `last error: ${last.message ?? JSON.stringify(last)}; ` : ""}page: ${page}`);
-  };
-  await send("Page.enable"); await send("Network.enable");
+  browser = await launchBrowser({ profile: path.join(scratch, "browser"), gesture: true });
+  const { send, evaluate, waitFor } = await browser.firstPage(), requests = browser.requests;
   await send("Page.navigate", { url: base + url.pathname });
   await waitFor("document.body.innerText.includes('Open the complete local URL')");
   assert.equal(await evaluate("!!window.__RUN__"), false);
@@ -122,5 +92,5 @@ try {
     if (!request.url.startsWith(base + "/")) assert.equal(request.headers["x-slink-access"], undefined);
   }
   console.log("PASS: private captures, authenticated reads/actions/navigation, reload and copied links, blocked framing, and image privacy");
-} finally { socket?.close(); browser?.kill(); cli?.kill("SIGTERM"); collector.closeAllConnections(); collector.close(); }
+} finally { browser?.close(); cli?.child.kill("SIGTERM"); collector.closeAllConnections(); collector.close(); }
 console.log(`Browser artifacts: ${scratch}`);

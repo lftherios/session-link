@@ -18,7 +18,7 @@ jobs:
       - run: for f in scripts/*.mjs packages/format/*.mjs; do node --check "$f"; done
       - run: npm test
       - run: npm run check:viewer
-      # The Go-migration parity oracle: goldens must match the JS reference.
+      # The generated schema and pattern copies match their sources.
       - run: node scripts/golden.mjs --check
       # The surface the Rust port is held to must match the Go source.
       - run: node scripts/compat-inventory.mjs --check
@@ -34,7 +34,7 @@ jobs:
         with:
           go-version: "1.26"
       - run: npm ci
-      # golden emits the drift-checked artifacts the Go build embeds
+      # The Go build embeds the viewer artifact; golden checks the copies.
       - run: npm run build:viewer && node scripts/golden.mjs --check
       - run: cd go && go vet ./... && go test ./...
       # Build-smoke the npm binary channel (cross-compile all targets; no publish).

@@ -16,7 +16,7 @@ import type { ContentPart, Message, Run, Span } from "@session-link/format";
 import { withAnchor } from "./encryption";
 import { ShareView, shareInfo } from "./ShareView";
 import { SessionView, type LocalViewer, type SessionStats } from "./SessionView";
-import { buildFlow, reasoningUnavailable } from "./session-model";
+import { reasoningUnavailable } from "./session-model";
 import { DocumentText, DOCUMENT_CSS } from "./DocumentText";
 import { SessionImage } from "./SessionImage";
 
@@ -66,10 +66,8 @@ export const RV_CSS = `
 .rv pre{margin:0}
 .rv ::selection{background:var(--rv-selection)}
 .rv .rv-row:hover{background:var(--rv-hover)}
-.rv .rv-flowblock{border-radius:6px;padding:0 8px;margin:0 -8px}
 .rv .rv-message{display:grid;grid-template-columns:88px minmax(0,1fr) auto;gap:12px;align-items:start;padding:12px 0;border-top:1px solid var(--rv-line)}
 .rv .rv-message-actions{display:flex;gap:6px;align-items:center;padding-top:2px}
-.rv .rv-metrics{display:flex;flex-wrap:wrap;gap:16px 24px}
 .rv :where(button,[role=button],[role=treeitem]):focus-visible{outline:2px solid var(--rv-signal);outline-offset:2px;border-radius:4px}
 .rv .rv-cols{display:flex;border:1px solid var(--rv-line);border-radius:10px;background:var(--rv-panel);overflow:hidden}
 .rv .rv-tree{width:340px;flex-shrink:0;border-right:1px solid var(--rv-line);display:flex;flex-direction:column}
@@ -148,7 +146,6 @@ interface RunIndex {
   models: string[];
   tokensIn?: number;
   tokensOut?: number;
-  tokensCached?: number;
   cost?: number;
   durMs?: number;
 }
@@ -227,10 +224,8 @@ function indexRun(run: Run): RunIndex {
   const models: string[] = [];
   let tin = 0;
   let tout = 0;
-  let tcached = 0;
   let cost = 0;
   let sawUsage = false;
-  let sawCached = false;
   let sawCost = false;
   for (const s of run.spans) {
     if (s.type !== "llm_call") continue;
@@ -243,10 +238,6 @@ function indexRun(run: Run): RunIndex {
       sawUsage = true;
       tin += s.usage.input_tokens ?? 0;
       tout += s.usage.output_tokens ?? 0;
-      if (s.usage.cache_read_tokens != null) {
-        sawCached = true;
-        tcached += s.usage.cache_read_tokens;
-      }
       if (s.usage.cost_usd != null) {
         sawCost = true;
         cost += s.usage.cost_usd;
@@ -266,7 +257,6 @@ function indexRun(run: Run): RunIndex {
     models,
     tokensIn: run.metrics?.input_tokens ?? (sawUsage ? tin : undefined),
     tokensOut: run.metrics?.output_tokens ?? (sawUsage ? tout : undefined),
-    tokensCached: sawCached ? tcached : undefined,
     cost: run.metrics?.cost_usd ?? (sawCost ? cost : undefined),
     durMs: run.metrics?.latency_ms ?? (hasTimeline ? t1 - t0 : undefined),
   };
@@ -395,26 +385,6 @@ function Chip({
     >
       {children}
     </span>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ minWidth: 84 }}>
-      <div style={{ fontFamily: T.mono, fontSize: 15 }}>{value}</div>
-      <div
-        style={{
-          fontFamily: T.mono,
-          fontSize: 10,
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-          color: T.faint,
-          marginTop: 2,
-        }}
-      >
-        {label}
-      </div>
-    </div>
   );
 }
 
@@ -573,9 +543,9 @@ const MdText = DocumentText;
 /* ------------------------------------------------------- tool evidence */
 
 // Tool names by call ID, so a result can say which tool produced it.
-const ToolNames = createContext<Map<string, string>>(new Map());
+export const ToolNames = createContext<Map<string, string>>(new Map());
 const toolNameCache = new WeakMap<Run, Map<string, string>>();
-function toolNames(run: Run): Map<string, string> {
+export function toolNames(run: Run): Map<string, string> {
   let names = toolNameCache.get(run);
   if (names) return names;
   names = new Map();
@@ -653,7 +623,7 @@ function ToolResultView({ part, full }: { part: Extract<ContentPart, { type: "to
 
 /* ----------------------------------------------------- message rendering */
 
-function PartView({ part, full = false }: { part: ContentPart; full?: boolean }) {
+export function PartView({ part, full = false }: { part: ContentPart; full?: boolean }) {
   switch (part.type) {
     case "text":
       if (full) return <MdText text={part.text} />;
@@ -780,7 +750,7 @@ const messageText = (msg: Message): string =>
     .map((p) => p.text)
     .join("\n\n");
 
-function MessageView({ msg, onInspect }: { msg: Message; onInspect?: () => void }) {
+function MessageView({ msg }: { msg: Message }) {
   const txt = messageText(msg);
   return (
     <div className="rv-message">
@@ -790,18 +760,9 @@ function MessageView({ msg, onInspect }: { msg: Message; onInspect?: () => void 
           <PartView key={i} part={p} />
         ))}
       </div>
-      {(txt || onInspect) && (
+      {txt && (
         <div className="rv-message-actions">
-          {txt && <CopyButton text={txt} label="copy" />}
-          {onInspect && (
-            <button
-              onClick={onInspect}
-              aria-label="Inspect this turn in the tree"
-              style={{ border: `1px solid ${T.line}`, background: T.panel, borderRadius: 5, padding: "2px 7px", fontFamily: T.mono, fontSize: 10, cursor: "pointer", color: T.faint }}
-            >
-              inspect
-            </button>
-          )}
+          <CopyButton text={txt} label="copy" />
         </div>
       )}
     </div>
@@ -1235,7 +1196,7 @@ function TreeRow({
  * Passing both is meaningful: `run` wins for rendering (no fetch happens),
  * and `src` gives the crash fallback a raw-JSON link worth showing.
  */
-export function RunViewer({ run, src, local, initialView = "exchange" }: { run?: Run; src?: string; local?: LocalViewer; initialView?: "exchange" | "transcript" | "tree" }) {
+export function RunViewer({ run, src, local }: { run?: Run; src?: string; local?: LocalViewer }) {
   const [fetched, setFetched] = useState<Run | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -1267,7 +1228,7 @@ export function RunViewer({ run, src, local, initialView = "exchange" }: { run?:
       <div
         className="rv"
         style={{
-          /* tokens must exist even before LoadedViewer mounts */
+          /* tokens must exist even before the reader mounts */
           fontFamily: T.mono,
           fontSize: 12,
           color: loadError ? T.error : T.faint,
@@ -1300,7 +1261,7 @@ export function RunViewer({ run, src, local, initialView = "exchange" }: { run?:
   return (
     <>
       {/* Tokens + chrome live OUTSIDE the boundary so the crash card is
-          styled even when LoadedViewer is what crashed. */}
+          styled even when the reader is what crashed. */}
       <style>{RV_CSS}</style>
       <Boundary
         fallback={(message) => <ViewerFallback message={message} src={src} />}
@@ -1308,11 +1269,10 @@ export function RunViewer({ run, src, local, initialView = "exchange" }: { run?:
         <ToolNames.Provider value={toolNames(resolved)}>
         {shareInfo(resolved)
           ? <ShareView run={resolved} share={shareInfo(resolved)!} renderText={(text, definitions) => <DocumentText text={text} definitions={definitions} />} />
-          : initialView !== "exchange" ? <LoadedViewer run={resolved} initialMode={initialView} />
           : <SessionView key={viewerKey(resolved)} run={resolved} local={local}
               renderPart={(part, full) => <PartView part={part} full={full} />}
               renderSpan={span => <SpanDetail span={span} />}
-              renderTree={() => <LoadedViewer run={resolved} initialMode="tree" compact />}
+              renderTree={() => <TraceExplorer run={resolved} />}
               stats={sessionStats(resolved)} />}
         </ToolNames.Provider>
       </Boundary>
@@ -1816,137 +1776,31 @@ const errNavBtn: React.CSSProperties = {
   padding: 0,
 };
 
-/* ------------------------------------------------------- transcript flow */
-
-const FLOW_PAGE = 120;
-
-function FlowView({
-  run,
-  idx,
-  onInspect,
-}: {
-  run: Run;
-  idx: RunIndex;
-  onInspect: (spanId: string) => void;
-}) {
-  const blocks = useMemo(() => buildFlow(run), [run, idx]);
-  const [shown, setShown] = useState(FLOW_PAGE);
-
-  if (blocks.length === 0) {
-    return (
-      <div style={{ fontFamily: T.mono, fontSize: 12, color: T.faint, padding: 32, textAlign: "center" }}>
-        nothing conversational to read here — the tree view has the spans
-      </div>
-    );
-  }
-  return (
-    <div style={{ maxWidth: 780, margin: "0 auto", padding: "8px 20px 24px" }}>
-      {blocks.slice(0, shown).map((b) =>
-        b.kind === "boundary" ? (
-          <button
-            key={b.key}
-            onClick={() => onInspect(b.spanId)}
-            aria-label={`Inspect ${b.label} in the tree`}
-            style={{
-              width: "100%",
-              border: "none",
-              background: "none",
-              padding: 0,
-              textAlign: "left",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              margin: "20px 0 4px",
-              cursor: "pointer",
-              fontFamily: T.mono,
-              fontSize: 11,
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              color: HUES.agent,
-            }}
-          >
-            <Bot size={12} /> {b.label}
-            <span style={{ flex: 1, borderTop: `1px solid ${T.line}` }} />
-          </button>
-        ) : (
-          <div
-            key={b.key}
-            className="rv-flowblock"
-          >
-            {b.err && (
-              <div
-                style={{
-                  border: `1px solid ${T.error}`,
-                  background: "var(--rv-errbg)",
-                  color: T.error,
-                  borderRadius: 6,
-                  padding: "8px 12px",
-                  fontFamily: T.mono,
-                  fontSize: 12,
-                  margin: "12px 0 0",
-                }}
-              >
-                {b.err}
-              </div>
-            )}
-            <MessageView msg={b.msg} onInspect={() => onInspect(b.spanId)} />
-          </div>
-        ),
-      )}
-      {blocks.length > shown && (
-        <button
-          onClick={() => setShown((n) => n + FLOW_PAGE)}
-          style={{
-            display: "block",
-            margin: "16px auto 0",
-            border: `1px solid ${T.line}`,
-            background: T.panel,
-            borderRadius: 6,
-            padding: "6px 14px",
-            fontFamily: T.mono,
-            fontSize: 11,
-            cursor: "pointer",
-            color: T.faint,
-          }}
-        >
-          show {Math.min(FLOW_PAGE, blocks.length - shown)} more of {fmtInt(blocks.length - shown)} remaining
-        </button>
-      )}
-    </div>
-  );
-}
-
-/** Where a fresh page should land: the first error if there is one, else
- *  the first substantive turn, else the root — never an empty root panel. */
+/** Where the explorer opens: the first error if there is one, else the
+ *  first substantive turn, else the root — never an empty root panel. */
 const smartDefault = (idx: RunIndex): string | null =>
   idx.errors[0] ?? idx.llmCalls[0] ?? idx.roots[0]?.id ?? null;
 
-function LoadedViewer({ run, initialMode, compact = false }: { run: Run; initialMode?: "transcript" | "tree"; compact?: boolean }) {
+/** The trace explorer, opened from session details: the span tree beside
+ *  the selected span's detail. */
+function TraceExplorer({ run }: { run: Run }) {
   const idx = useMemo(() => indexRun(run), [run]);
   const [sel, setSel] = useState<string | null>(() => smartDefault(idx));
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const [raw, setRaw] = useState(false);
   const [copied, setCopied] = useState(false);
-  /* Transcript is the default for agent sessions — the audience reads
-     first (deep links flip to the tree below, where the span lives). */
-  const [mode, setMode] = useState<"transcript" | "tree">(() =>
-    initialMode ?? (idx.llmCalls.length > 0 && idx.roots[0]?.type === "agent" ? "transcript" : "tree"),
-  );
   const [linked, setLinked] = useState<string | null>(null);
 
-  /* deep link: read #span=<id> on mount, write it on select. TreeColumn's
-     selection effect scrolls it into the window once it renders; the row
-     pulses so the reader sees WHERE the sharer pointed them.
-     useLayoutEffect so the flip to tree happens before paint — a deep-link
-     arrival must not flash a page of transcript first. (SSR renders the
-     deterministic default; the layout effect corrects it pre-paint on the
-     client, so there's no hydration mismatch and no visible flash.) */
+  /* deep link: a #span=<id> the page holds selects that span when the
+     explorer opens. TreeColumn's selection effect scrolls it into the window
+     once it renders; the row pulses so the reader sees WHERE the sharer
+     pointed them. A layout effect, so the default selection never paints
+     first. */
   useLayoutEffect(() => {
     try {
       const m = window.location.hash.match(/span=([\w.-]+)/);
       if (m && idx.byId.has(m[1])) {
         setSel(m[1]);
-        setMode("tree");
         setLinked(m[1]);
         const t = window.setTimeout(() => setLinked(null), 3200);
         return () => window.clearTimeout(t);
@@ -1956,17 +1810,11 @@ function LoadedViewer({ run, initialMode, compact = false }: { run: Run; initial
     }
   }, [idx]);
 
+  // Browsing the explorer never becomes the page's deep link, which would
+  // override the saved reading place on reload.
   const select = (id: string) => {
     setSel(id);
     setCopied(false);
-    // Inside the reader's trace dialog, browsing must not become the page's
-    // deep link, which would override the saved reading place on reload.
-    if (compact) return;
-    try {
-      history.replaceState(null, "", withAnchor(window.location.href, id));
-    } catch {
-      /* ignore in sandboxes */
-    }
   };
 
   const copyLink = () => {
@@ -1986,7 +1834,6 @@ function LoadedViewer({ run, initialMode, compact = false }: { run: Run; initial
   };
 
   const selected = sel ? idx.byId.get(sel) : undefined;
-  const created = new Date(run.created_at);
 
   return (
     <div className="rv" style={{ fontFamily: T.sans, color: T.ink }}>
@@ -1996,160 +1843,7 @@ function LoadedViewer({ run, initialMode, compact = false }: { run: Run; initial
         {selected ? `${spanLabel(selected)} · ${String(selected.type)}` : ""}
       </div>
 
-      <div hidden={compact}>
-      {/* ------------------------------------------------------- header */}
-      <Eyebrow>
-        run · {run.source?.label ?? run.source?.kind ?? "upload"} ·{" "}
-        {created.toISOString().slice(0, 10)}
-        {run.group?.item ? ` · item ${run.group.item}` : ""}
-      </Eyebrow>
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "flex-end",
-          gap: 20,
-          margin: "8px 0 16px",
-        }}
-      >
-        <h1
-          style={{
-            fontFamily: T.serif,
-            fontSize: 28,
-            fontWeight: 500,
-            margin: 0,
-            flex: "1 1 320px",
-            letterSpacing: "-0.01em",
-          }}
-        >
-          {run.name ?? "Untitled session"}
-        </h1>
-        <div className="rv-metrics">
-          {idx.tokensIn != null && (
-            <Metric label="tokens in" value={fmtInt(idx.tokensIn)} />
-          )}
-          {idx.tokensOut != null && (
-            <Metric label="tokens out" value={fmtInt(idx.tokensOut)} />
-          )}
-          {idx.tokensCached != null && idx.tokensCached > 0 && (
-            <Metric label="cached" value={fmtInt(idx.tokensCached)} />
-          )}
-          {idx.cost != null && <Metric label="cost" value={fmtCost(idx.cost)} />}
-          {idx.durMs != null && (
-            <Metric label="duration" value={fmtDur(idx.durMs)} />
-          )}
-        </div>
-      </div>
-
-      {(idx.models.length > 0 ||
-        run.source?.fidelity != null ||
-        (run.tags?.length ?? 0) > 0 ||
-        (run.scores?.length ?? 0) > 0) && (
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 8,
-          alignItems: "center",
-          marginBottom: 16,
-        }}
-      >
-        {run.source?.fidelity != null && (
-          <Chip
-            title={
-              run.source.fidelity === "exact"
-                ? "Recorded on the wire — verbatim requests and responses"
-                : run.source.fidelity === "reconstructed"
-                  ? "Rebuilt from the agent's own transcript — messages and usage, not raw wire bytes"
-                  : `Capture fidelity: ${String(run.source.fidelity)}`
-            }
-          >
-            {run.source.fidelity === "exact"
-              ? "exact capture"
-              : run.source.fidelity === "reconstructed"
-                ? "reconstructed transcript"
-                : String(run.source.fidelity)}
-          </Chip>
-        )}
-        {idx.models.map((m) => (
-          <Chip key={m}>{m}</Chip>
-        ))}
-        {(run.tags ?? []).map((t) => (
-          <span
-            key={t}
-            style={{ fontFamily: T.mono, fontSize: 12, color: T.faint }}
-          >
-            #{t}
-          </span>
-        ))}
-        {(run.scores ?? []).map((s) => (
-          <Chip key={s.name} title={s.comment}>
-            <span style={{ color: T.faint }}>{s.name}</span>
-            <span
-              style={{
-                color:
-                  s.value === true
-                    ? T.signal
-                    : s.value === false
-                      ? T.error
-                      : T.ink,
-                fontWeight: 600,
-              }}
-            >
-              {s.value === true ? "✓" : s.value === false ? "✕" : String(s.value)}
-            </span>
-          </Chip>
-        ))}
-      </div>
-      )}
-
-      {/* ------------------------------------------------- mode toggle */}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-        <div
-          role="group"
-          aria-label="Viewer mode"
-          style={{
-            display: "inline-flex",
-            border: `1px solid ${T.line}`,
-            borderRadius: 6,
-            overflow: "hidden",
-          }}
-        >
-          {(["transcript", "tree"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              aria-pressed={mode === m}
-              style={{
-                border: "none",
-                padding: "4px 12px",
-                fontFamily: T.mono,
-                fontSize: 11,
-                cursor: "pointer",
-                background: mode === m ? T.ink : T.panel,
-                color: mode === m ? T.paper : T.faint,
-              }}
-            >
-              {m}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      </div>
-      {mode === "transcript" ? (
-        <div className="rv-cols" style={{ display: "block" }}>
-          <FlowView
-            run={run}
-            idx={idx}
-            onInspect={(id) => {
-              select(id);
-              setMode("tree");
-            }}
-          />
-        </div>
-      ) : (
-      /* ---------------------------------------------------- two panels */
+      {/* ---------------------------------------------------- two panels */}
       <div className="rv-cols">
         <TreeColumn
           idx={idx}
@@ -2326,7 +2020,6 @@ function LoadedViewer({ run, initialMode, compact = false }: { run: Run; initial
           )}
         </div>
       </div>
-      )}
     </div>
   );
 }

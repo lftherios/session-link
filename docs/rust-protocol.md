@@ -1,14 +1,19 @@
 # Rust protocol crate: verifying and making
 
-2026-10-12, extended 2026-10-13 · Implemented slices of the [Rust migration](rust-migration.md), backlog item 5 and the first part of item 8 · `crates/slink-protocol` opens envelopes and verifies signed statements, device histories and vault records, and makes what a client makes: keys, boxes, wrappers, signatures, device requests, the recovery package and a named share's statements. Go, the viewer and Rust agree on 539 shared cases with 53 recorded differences. Both slices have passed on all six targets and the sweep on Linux in CI; for the making slice, each target's release binary made and opened a wrapper in `build-check`.
+2026-10-12, extended 2026-10-13, updated 2026-10-16 · Implemented slices of the [Rust migration](rust-migration.md)'s P1 and P3 · Go, the viewer and Rust agree on 539 shared cases with 53 recorded differences.
 
 What the Rust side of the protocol is so far, how it is held to the three
-implementations that already exist, and what comparing them found. The first
-slice checked and made nothing. The second, of 2026-10-13, makes everything a
-client makes and adds the one check a sender runs before it releases a
-share's key. What is left is listed at the end. The crate has no caller in
-the product; `slink-rs build-check` links and runs it so that every target
-proves it.
+implementations that already exist, and what comparing them found.
+`crates/slink-protocol` opens envelopes and verifies signed statements, device
+histories and vault records, and makes what a client makes: keys, boxes,
+wrappers, signatures, device requests, the recovery package and a named
+share's statements. The first slice checked and made nothing. The second, of
+2026-10-13, makes everything a client makes and adds the one check a sender
+runs before it releases a share's key. What is left is listed at the end.
+`slink-client` and the CLI call it ([rust-client.md](rust-client.md)). Both
+slices pass on all six targets in CI, where each release binary's
+`build-check` also opens envelopes, judges statements and makes and opens a
+wrapper, and the sweep runs on Linux.
 
 [identity-encryption.md](identity-encryption.md) describes the protocol
 itself. Two of the findings below became rules in it, in every implementation
@@ -52,7 +57,7 @@ What it makes, and the opening that goes with each:
 
 A function that makes something is handed its randomness: a key, a nonce, a
 one-time key. Given the same ones it writes the same bytes, which is how it is
-held to the other implementations. The client will take them from the
+held to the other implementations. `slink-client` takes them from the
 operating system. A clock is handed in the same way: `Request::pending` is
 told the time.
 
@@ -89,7 +94,7 @@ the key the history has now, which a revocation since may have changed.
 | Private keys | Two types that print their public half and clear their bytes when dropped | A key that reaches a log is lost |
 | Device requests | Read by the hosted service's rule | See the ninth finding |
 | Recovery | One function from the key a person typed to the two private keys, checked against the history | Go and the viewer have the steps inside the code that talks to the service. Here a client cannot skip one |
-| Context strings | Inside the crate, behind `State` | A vault sealed for the wrong epoch, or a wrapper for the wrong account, is a mistake a caller can no longer make |
+| Context strings | Inside the crate, behind `State`: the client wraps and opens vault keys only through `wrap_key`, `unwrap_key` and `seal_vault`, and `State::context()` is not public. The free `wrap` and `unwrap` take a context string, for the shared cases and `build-check` | A vault sealed for the wrong epoch, or a wrapper for the wrong account, is a mistake a caller can no longer make |
 
 ## Shared cases
 
@@ -433,19 +438,16 @@ release binary ran `build-check` with its protocol step.
 
 ## Not done
 
+What a vault holds, the next state, reading a record off the wire and pinning
+a root and a head were left to the client, and `slink-client` has them
+([rust-client.md](rust-client.md#layout)).
+
 - The recipient's and the service's side of a named share: reading an
   invitation and a grant, and the rules the service applies to all three
   statements. A sender needs neither. The address a share is for is text
   here; the rule for an email address is the client's.
 - Claims in the sweep. The 42 cases are the only ones Go and Rust have
   judged together, and the viewer could not be a third.
-- What a vault holds: the JSON under the vault key, with its receipts,
-  incoming-share private keys and outbox. Here it is bytes. It belongs with
-  the client, which is also where the next state is put together: this crate
-  writes and signs the state it is given and does not decide what follows.
-- Reading a record off the wire, where the service refuses a signed object
-  with a field besides its payload and signature, and pinning a root and a
-  head, which belong to the client.
 - One function each in Go and the viewer for a recovery key and for a pending
   request, so that their tests call what the product runs. Both are left as
   they are; Go is replaced at P5.

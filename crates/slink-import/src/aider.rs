@@ -23,16 +23,12 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
-use chrono::{DateTime, Datelike, Local, NaiveDate, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
 use serde_json::{Map, Value, json};
 
-use crate::Input;
 use crate::discover::{Candidate, Found, Loader, modified};
-use crate::value::text;
-
-pub(crate) const PORTED: bool = true;
-
-const LABEL: &str = "session-import@0.1.0";
+use crate::value::{iso_millis, text};
+use crate::{Input, LABEL};
 
 /// The name Aider gives a project's chat history.
 const CHAT_NAME: &str = ".aider.chat.history.md";
@@ -198,18 +194,7 @@ fn unset(at: Instant) -> bool {
 
 /// An instant as a document gives it: in UTC, to the millisecond.
 fn iso(at: Instant) -> String {
-    // A year before 1 has its sign ahead of four digits, as Go writes it.
-    let sign = if at.year() < 0 { "-" } else { "" };
-    format!(
-        "{sign}{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
-        at.year().unsigned_abs(),
-        at.month(),
-        at.day(),
-        at.hour(),
-        at.minute(),
-        at.second(),
-        at.timestamp_subsec_millis(),
-    )
+    iso_millis(at.timestamp_millis())
 }
 
 /// An instant in nanoseconds since 1970, wrapping outside the years a 64-bit

@@ -99,15 +99,6 @@ The gate that rejected excerpt documents was removed on 2026-09-12, when the
 hosted service began accepting encrypted shares. The server stores ciphertext
 and cannot tell an excerpt from a whole session.
 
-The record from 2026-09-11, when publishing was still gated: GitHub inspection
-confirmed that `lftherios/session-link` had only `main`, at
-`eb8888da69ce0e68c7617238a63b1fc53353bdea`, matching the checkout's base, and the
-service's source and deployment configuration were not in the checkout. The
-checks listed then as conditions for enabling excerpt publication were
-acceptance and preservation of the extension, exact raw/download bytes, the
-recipient renderer, link fragments, attribution and deletion against the
-service.
-
 ## Verification and limits
 
 The [fictional research fixture](../testdata/share/research/README.md) places an

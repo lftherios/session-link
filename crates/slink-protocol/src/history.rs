@@ -89,7 +89,7 @@ impl State {
     /// What the wrappers and the vault of this state are bound to: the
     /// account, its root key and the epoch. A wrapper made for one epoch
     /// does not open in the next.
-    pub fn context(&self) -> String {
+    pub(crate) fn context(&self) -> String {
         format!("{}/{}/{}", self.account, self.root, self.epoch)
     }
 

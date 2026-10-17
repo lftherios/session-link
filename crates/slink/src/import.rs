@@ -9,8 +9,8 @@ use ring::rand::{SecureRandom, SystemRandom};
 use serde_json::Value;
 use slink_import::{Found, HARNESSES, Input};
 use slink_local::{
-    ago, capture_dir, capture_id, display_path, list_captures, new_capture_path, stamp, unix_now,
-    write_private,
+    ago, ago_unix, capture_dir, capture_id, display_path, list_captures, new_capture_path,
+    unix_now, write_private,
 };
 
 use crate::flags::{Exit, Parsed, Run};
@@ -59,11 +59,6 @@ fn resolve(from: &str, session: &str, arg: &str) -> Result<Resolved, Exit> {
     let target = if arg.is_empty() { session } else { arg };
     let cwd = env::current_dir().unwrap_or_default();
     let dirs = slink_import::project_dirs(&cwd);
-    if !from.is_empty() && !slink_import::ported(from) {
-        return Err(Exit::failure(
-            slink_import::Error::NotPorted(from.to_owned()).to_string(),
-        ));
-    }
     if !target.is_empty() {
         // A harness with a database has no file to name: --session is the id
         // it gave the session.
@@ -181,7 +176,7 @@ pub fn no_session_hint(from: &str, cwd: &Path) -> String {
         let when = if elsewhere.recency > 0 {
             format!(
                 " · {}",
-                ago(&rfc3339(elsewhere.recency / 1_000_000_000), unix_now())
+                ago_unix(elsewhere.recency / 1_000_000_000, unix_now())
             )
         } else {
             String::new()
@@ -223,20 +218,6 @@ pub fn no_session_hint(from: &str, cwd: &Path) -> String {
             known()
         )
     }
-}
-
-/// A time in seconds as RFC 3339, for the one function that words an age.
-pub fn rfc3339(unix: i64) -> String {
-    let stamp = stamp(unix);
-    format!(
-        "{}-{}-{}T{}:{}:{}Z",
-        &stamp[..4],
-        &stamp[4..6],
-        &stamp[6..8],
-        &stamp[9..11],
-        &stamp[11..13],
-        &stamp[13..15]
-    )
 }
 
 /// A path to paste into a shell: with `~` when that is safe, and in double
@@ -301,7 +282,7 @@ pub fn import_to_file(from: &str, session: &str, arg: &str) -> Result<Imported, 
         Some(found) if found.recency > 0 => {
             format!(
                 " · last active {}",
-                ago(&rfc3339(found.recency / 1_000_000_000), now)
+                ago_unix(found.recency / 1_000_000_000, now)
             )
         }
         _ if !created.is_empty() => format!(" · started {}", ago(created, now)),

@@ -27,11 +27,7 @@ use crate::discover::{
 };
 use crate::images::image_part;
 use crate::value::{data_part, field, iso_millis as iso, text};
-use crate::{Agent, Input};
-
-pub(crate) const PORTED: bool = true;
-
-const LABEL: &str = "session-import@0.1.0";
+use crate::{Agent, Input, LABEL};
 
 /// The session format versions read here. v4 is what dsh 0.2 writes. v3, the
 /// format of the 0.1 releases, records a tool result inside a wrapper block

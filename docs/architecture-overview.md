@@ -1,6 +1,6 @@
 # session.link architecture overview
 
-2026-10-11 · current architecture · companion [review](architecture-review.md) and [alternatives](architecture-alternatives.md).
+2026-10-11, updated 2026-10-16 · current architecture · the [Rust migration](rust-migration.md) plans its replacement.
 
 session.link turns agent histories into readable, deliberately published,
 encrypted documents. Its architecture has three parts: a native Go CLI that
@@ -46,8 +46,8 @@ Resend delivers authentication email. Browser cookies and separately revocable
 CLI API keys authorize service access. Encrypted blobs live in iroh-blobs FsStore,
 accessed through a short-lived Rust subprocess; ownership, tombstones, identity
 histories and encrypted vaults live in JSON files. Delivery is HTTPS: there is
-no deployed iroh peer network. Live status on this date showed one Fly machine
-in Amsterdam, one shared CPU, 512 MB RAM and a 1 GB volume, at release 58.
+no deployed iroh peer network. Live status on 2026-10-11 showed one Fly machine
+in Amsterdam, one shared CPU, 512 MB RAM and a 1 GB volume.
 
 **Access and trust.** `/s/<id>#key=…` grants access through possession of the
 complete link; the fragment key stays out of HTTP requests. `/n/<id>` requires
@@ -58,10 +58,25 @@ encrypted vault support device approval, revocation and recovery. Account login
 alone cannot decrypt. The service sees ownership/access metadata, and its
 delivered JavaScript remains trusted with decrypted content and browser keys.
 
+**Where state lives.** Each kind of state, on the device or browser and on the
+hosted service:
+
+| State | Local device or browser | Hosted service |
+| --- | --- | --- |
+| Captures, source history, drafts and previews | Plaintext files protected by local permissions | Absent from the encrypted publishing path |
+| Published document | Plaintext before encryption and after recipient decryption | Ciphertext, hashes, size, owner and timestamps |
+| Bearer share key | Receipt, complete link and optionally the encrypted vault | No plaintext key through the protocol |
+| Named share key | Sender outbox and recipient after unwrapping its grant | Encrypted wrappers and access metadata, including the invited email |
+| Device and recovery material | Private device keys; user-held recovery secret | Public keys, signed history, wrappers and encrypted recovery package |
+| Account authentication | CLI credential or browser session | Account identities, hashed API keys and authentication state |
+
 **Architectural limits.** Process-local locks and rate limits require one
 hosted writer; encrypted documents are downloaded and decrypted whole, capped
 at 25 MiB of plaintext. Deletion hides a share but retains its blob; revocation
 cannot erase received copies. Legacy `/r/` links remain server-readable.
 The strongest foundations are local ownership, immutable exports and the shared
-viewer. The next priorities are rehearsed recovery, transactional metadata,
-storage lifecycle controls and independent review of the identity protocol.
+viewer. The [Rust migration](rust-migration.md) replaces the hosted runtime on
+an empty store, with SQLite metadata and a blob backend chosen in its P6, and
+storage lifecycle controls and a rehearsed restore of that store in P7. The
+current volume is not restored. Independent review of the identity protocol
+remains open.

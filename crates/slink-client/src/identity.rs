@@ -24,7 +24,6 @@ use slink_protocol::encoding::encode;
 use slink_protocol::{
     AgreementKey, Kind, Operation, Record, Recovery, Request, Signed, SigningKey, State, Vault,
     Verified, code_matches, confirmation, misspelt, open_recovery, recovery_token, verify_record,
-    wrap,
 };
 use tokio::sync::{Mutex, MutexGuard};
 
@@ -297,11 +296,11 @@ pub(crate) fn now() -> u64 {
         .map_or(0, |since| since.as_millis() as u64)
 }
 
-/// `key` wrapped to `recipient` for the state `context` names, under a
-/// one-time key made for it.
-fn wrap_to(context: &str, recipient: &str, key: &[u8; 32]) -> Result<String, Error> {
+/// `key`, the vault key of `state`, wrapped to `recipient` under a one-time
+/// key made for it.
+fn wrap_to(state: &State, recipient: &str, key: &[u8; 32]) -> Result<String, Error> {
     let ephemeral = AgreementKey::from_bytes(random()?);
-    Ok(wrap(recipient, key, context, &ephemeral, random()?)?)
+    Ok(state.wrap_key(recipient, key, &ephemeral, random()?)?)
 }
 
 /// The name a person gave, trimmed, at most 80 bytes of whole characters.
@@ -535,11 +534,10 @@ impl Identity {
             devices: Vec::new(),
             inbox: None,
         };
-        let context = state.context();
         let mut first = device.public(&device_name(&input.name));
-        first.wrap = wrap_to(&context, &first.box_key, &key)?;
+        first.wrap = wrap_to(&state, &first.box_key, &key)?;
         state.devices.push(first);
-        state.recovery_wrap = wrap_to(&context, &state.recovery, &key)?;
+        state.recovery_wrap = wrap_to(&state, &state.recovery, &key)?;
         let event = Signed::sign(Kind::Event, &state.encode(), &recovery.root)?;
         let head = event.hash(Kind::Event)?;
         let data = Contents::default().merge(&self.home, server, account, &root)?;
@@ -746,7 +744,7 @@ impl Identity {
                         "device code does not match; check the code on your new device",
                     ));
                 };
-                let wrapper = wrap_to(&next.context(), &request.box_key, &key)?;
+                let wrapper = wrap_to(&next, &request.box_key, &key)?;
                 next.devices.push(slink_protocol::Device {
                     id: request.id(),
                     name: request.name,
@@ -770,12 +768,16 @@ impl Identity {
                     data.rotate_inbox(&mut next, random()?);
                 }
                 key = random()?;
-                let context = next.context();
                 next.devices.retain(|listed| listed.id != input.id);
-                for listed in &mut next.devices {
-                    listed.wrap = wrap_to(&context, &listed.box_key, &key)?;
+                let wrappers = next
+                    .devices
+                    .iter()
+                    .map(|listed| wrap_to(&next, &listed.box_key, &key))
+                    .collect::<Result<Vec<_>, _>>()?;
+                for (listed, wrapper) in next.devices.iter_mut().zip(wrappers) {
+                    listed.wrap = wrapper;
                 }
-                next.recovery_wrap = wrap_to(&context, &next.recovery, &key)?;
+                next.recovery_wrap = wrap_to(&next, &next.recovery, &key)?;
             }
             _ => {}
         }
@@ -829,7 +831,7 @@ impl Identity {
         device::save(file, &device)?;
         let mut next = state.clone();
         let mut added = device.public(&device_name(&input.name));
-        added.wrap = wrap_to(&next.context(), &added.box_key, &key)?;
+        added.wrap = wrap_to(&next, &added.box_key, &key)?;
         next.devices.push(added);
         next.kind = Operation::Recover;
         next.signer = "root".to_owned();

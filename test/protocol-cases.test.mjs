@@ -2,22 +2,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { isDeepStrictEqual } from "node:util";
-import { build } from "esbuild";
+import { importViewer } from "../scripts/viewer-module.mjs";
 
 // The cases every implementation of the protocol is held to
 // (testdata/protocol/README.md), run here against the code the viewer ships:
 // its envelope, its signed statements and its history and vault rules, on
 // Node's Web Crypto. Go reads the same files in go/internal/sealed and
 // go/internal/identity, and Rust in crates/slink-protocol/tests/cases.rs.
-const viewer = new URL("../packages/viewer/", import.meta.url).pathname;
-const bundled = await build({
-  stdin: { contents: 'export * from "./identity-protocol"; export * from "./identity-crypto"; export * from "./encryption"; export * from "./named-sharing";', resolveDir: viewer, loader: "ts" },
-  bundle: true,
-  write: false,
-  format: "esm",
-});
 const { decryptDocument, verify, verifyHistory, verifyRecord, unpack, unwrap, unseal, privateKey, wrap, sign, confirmation, deviceID, keyContext, hash, utf8, unb64, bindingProof, namedContentKey } =
-  await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
+  await importViewer(["identity-protocol", "identity-crypto", "encryption", "named-sharing"]);
 
 const read = (name) => JSON.parse(readFileSync(new URL(`../testdata/protocol/${name}`, import.meta.url), "utf8"));
 // One verdict for every implementation, or one for each.

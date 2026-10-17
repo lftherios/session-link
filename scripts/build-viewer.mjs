@@ -26,7 +26,6 @@ const result = await esbuild.build({
   write: false,
   format: "iife",
   jsx: "automatic",
-  alias: { "@": root },
   define: { "process.env.NODE_ENV": '"production"' },
   logLevel: "warning",
 

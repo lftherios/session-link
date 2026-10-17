@@ -59,7 +59,9 @@ pixels to a CSS pixel. Record it again when that section changes, which
 includes the release shown in its install step. Typing is random in its
 timing, so two recordings differ in their bytes.
 
-`SLINK_BINARY` and `BROWSER_BINARY` override the binary locations.
+`SLINK_BINARY` overrides the binary location. The browser is Brave, else
+Chrome, unless `BROWSER_BINARY` or `CHROME_PATH` names another
+([scripts/browser.mjs](../../scripts/browser.mjs)).
 `SCREENSHOT_DIR` overrides this output folder, so the same captures can be
 written directly to the server repo's `public/product` directory. The script
 uses an isolated local home and fictional captures, checks the source format

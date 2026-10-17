@@ -2,53 +2,26 @@
 // Local integration check. Requires a built slink and a Chromium-family browser.
 // Uses only fictional fixtures, a temporary SLINK_HOME and an isolated profile.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import os from "node:os";
+import { launchBrowser, startViewer } from "./browser.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const home = await mkdtemp(path.join(os.tmpdir(), "slink-arrival-"));
 console.log(`Browser artifacts: ${home}`);
-const cli = spawn(process.env.SLINK_BINARY ?? "/tmp/session-link-slink", ["view", "--session", path.join(root, "testdata/viewer/arrival/session.json"), "--no-browser"], {
-  cwd: root, env: { ...process.env, SLINK_HOME: home, SLINK_SERVER: "http://127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"],
-});
-let browser, socket;
-const waitOutput = (child, stream, pattern) => new Promise((resolve, reject) => {
-  let output = ""; const timer = setTimeout(() => reject(new Error(`Startup timed out: ${output.slice(-500)}`)), 15000);
-  child[stream].on("data", chunk => { output += chunk; const match = output.match(pattern); if (match) { clearTimeout(timer); resolve(match[0]); } });
-  child.once("error", error => { clearTimeout(timer); reject(error); });
-  child.once("exit", code => { clearTimeout(timer); reject(new Error(`Process exited ${code}: ${output.slice(-500)}`)); });
-});
+const cli = await startViewer(["--session", path.join(root, "testdata/viewer/arrival/session.json")], { home });
+let browser;
 try {
-  const url = await waitOutput(cli, "stdout", /http:\/\/127\.0\.0\.1:\d+\/p\/[^\s]+/);
-  const base = new URL(url).origin, source = new URL(url).pathname.split("/").pop();
-  browser = spawn(process.env.BROWSER_BINARY ?? "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", ["--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--remote-debugging-port=0", `--user-data-dir=${path.join(home, "browser")}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
-  const endpoint = await waitOutput(browser, "stderr", /ws:\/\/[^\s]+/);
-  // The first page can appear a moment after the debugging endpoint does.
-  let pageTarget;
-  for (let i = 0; i < 100 && !pageTarget; i++) {
-    pageTarget = (await (await fetch(`http://127.0.0.1:${new URL(endpoint).port}/json/list`)).json()).find(item => item.type === "page");
-    if (!pageTarget) await new Promise(resolve => setTimeout(resolve, 50));
-  }
-  socket = new WebSocket(pageTarget.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
-  let seq = 0; const pending = new Map(), errors = [];
-  socket.onmessage = ({ data }) => {
-    const message = JSON.parse(data);
-    if (message.id) { const call = pending.get(message.id); pending.delete(message.id); message.error ? call.reject(new Error(JSON.stringify(message.error))) : call.resolve(message.result); }
-    if (message.method === "Runtime.exceptionThrown") errors.push(message.params.exceptionDetails.text);
-  };
-  const send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++seq; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })); });
-  const evaluate = async expression => { const result = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }); if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails)); return result.result.value; };
-  const waitFor = async expression => { for (let i = 0; i < 160; i++) { if (await evaluate(`!window.__RELOADING__ && (${expression})`)) return; await new Promise(resolve => setTimeout(resolve, 50)); } throw new Error(`Timed out: ${expression}`); };
-  const clickText = text => evaluate(`Array.from(document.querySelectorAll('button,a,summary')).find(el=>el.textContent===${JSON.stringify(text)}).click()`);
-  const setField = (selector, value) => evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  const { url, origin: base } = cli, source = new URL(url).pathname.split("/").pop();
+  // A page being left is marked, so that no wait is answered by it.
+  browser = await launchBrowser({ profile: path.join(home, "browser"), ready: "!window.__RELOADING__" });
+  const page = await browser.firstPage(), errors = browser.errors;
+  const { send, evaluate, waitFor, click: clickText, fill: setField } = page;
   const reload = async () => { await evaluate("window.__RELOADING__=true"); await send("Page.reload"); };
   const navigate = async target => { await evaluate("window.__RELOADING__=true"); const result = await send("Page.navigate", { url: target }); if (!result.loaderId) await evaluate("window.__RELOADING__=false"); };
-  const screenshot = async name => { const { data } = await send("Page.captureScreenshot", { format: "png" }); await writeFile(path.join(home, `${name}.png`), Buffer.from(data, "base64")); };
-  await send("Runtime.enable"); await send("Page.enable");
+  const screenshot = async name => writeFile(path.join(home, `${name}.png`), await page.screenshot());
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 950, deviceScaleFactor: 1, mobile: false });
   await navigate(url); await waitFor("!!document.querySelector('.sv-response-body table')");
   assert.match(await evaluate("document.querySelector('.sv-position').textContent"), /^8 of 8$/);
@@ -86,10 +59,6 @@ try {
   await screenshot("activity-expanded");
   await evaluate("document.querySelector('.sv-support>summary').click()");
   await waitFor("document.querySelectorAll('.sv-thinking').length===0");
-  await navigate(url + "&message=u8-out-0");
-  await waitFor("!!document.querySelector('.sv-reasoning-unavailable.sv-linked')");
-  assert.equal(await evaluate("document.querySelectorAll('.sv-step .sv-thinking').length"), 5);
-  assert.equal(await evaluate("document.querySelector('.sv-support').textContent.includes('[reasoning]')"), false);
   await navigate(url + "&span=s8"); await waitFor("!document.querySelector('.sv-support').open");
   await evaluate("window.scrollTo(0,0)");
   await setField('[aria-label="Search session content"]', "thinking-evidence-5");
@@ -267,5 +236,5 @@ try {
   assert.equal(original.name, "Onboarding research");
   await fetch(base + "/api/stop", { method: "POST", headers: { "x-slink": "1", "x-slink-access": new URLSearchParams(new URL(url).hash.slice(1)).get("access") } });
 } finally {
-  socket?.close(); browser?.kill("SIGTERM"); cli.kill("SIGTERM");
+  browser?.close(); cli.child.kill("SIGTERM");
 }

@@ -11,14 +11,13 @@ publish.workspace = true
 [dependencies]
 # A pending receipt keeps its envelope as Go's encoding/json writes bytes.
 base64 = "0.22"
-# The client the CLI already builds: rustls with the operating system's trust
-# store, ring as the crypto provider (docs/rust-build.md).
+# rustls with the operating system's trust store, as Go's client used; the
+# crypto provider is ring, installed in src/transport.rs (docs/rust-build.md).
 reqwest = { version = "0.13", default-features = false, features = ["http2", "rustls-no-provider"] }
 # A content key and an envelope's nonce, from the operating system.
 ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = "1"
-sha2 = "0.11"
 slink-format = { path = "../slink-format" }
 slink-local = { path = "../slink-local" }
 slink-protocol = { path = "../slink-protocol" }
@@ -27,6 +26,9 @@ tokio = { version = "1", features = ["sync", "time"] }
 
 [dev-dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+# The stand-in names a ciphertext by its hash without asking the code it
+# checks.
+sha2 = "0.11"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "time"] }
 
 [lints]

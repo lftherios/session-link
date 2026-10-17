@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { build } from "esbuild";
+import { importViewer } from "../scripts/viewer-module.mjs";
 
-// Bundle the browser protocol with its Web Crypto helpers so the exact code the
-// viewer ships runs here against Node's WebCrypto.
-const viewer = new URL("../packages/viewer/", import.meta.url).pathname;
-const bundled = await build({ stdin: { contents: 'export * from "./identity-protocol"; export * from "./identity-crypto";', resolveDir: viewer, loader: "ts" }, bundle: true, write: false, format: "esm" });
-const { verifyHistory, deviceID, sign, pair, random, b64, head } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
+// Bundle the browser identity and protocol with their Web Crypto helpers so the
+// exact code the viewer ships runs here against Node's WebCrypto.
+const { nameFor, verifyHistory, deviceID, sign, pair, random, b64, head } = await importViewer(["browser-identity", "identity-protocol", "identity-crypto"]);
 
 test("browser identity: a retired incoming-share key can never be reinstated", async () => {
   const root = await pair("Ed25519"), first = await pair("Ed25519");
@@ -28,8 +26,6 @@ test("browser identity: a retired incoming-share key can never be reinstated", a
 });
 
 test("browser identity: a device is never named with half of a surrogate pair", async () => {
-  const bundled = await build({ stdin: { contents: 'export { nameFor } from "./browser-identity"; export { verifyHistory, deviceID } from "./identity-protocol"; export * from "./identity-crypto";', resolveDir: viewer, loader: "ts" }, bundle: true, write: false, format: "esm" });
-  const { nameFor, verifyHistory, deviceID, sign, pair, random, b64 } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
   const half = String.fromCharCode(0xd83d), laptop = String.fromCodePoint(0x1f4bb), lost = String.fromCodePoint(0xfffd);
   // A maxlength that cuts an emoji in two, or a paste, leaves the first half behind.
   assert.equal(nameFor(`Mac ${half}`), `Mac ${lost}`);

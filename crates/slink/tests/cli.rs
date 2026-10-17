@@ -10,7 +10,8 @@ const VERSION: &str = match option_env!("SLINK_VERSION") {
 };
 
 /// Runs `slink-rs` with nothing of the caller's environment, then checks that
-/// it left the home it was given empty: no command ported so far may write.
+/// it left the home it was given empty: what is run this way must not write.
+/// A command that writes runs in a [`Home`].
 fn run(test: &str, args: &[&str]) -> Output {
     let home = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(test);
     let _ = fs::remove_dir_all(&home);

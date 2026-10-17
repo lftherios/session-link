@@ -87,6 +87,7 @@ Details: [identity and encryption](docs/identity-encryption.md),
 | Path | Contents |
 | --- | --- |
 | [`go/`](go) | The `slink` CLI and always-on recorder: one native binary. |
+| [`crates/`](crates) | The Rust port of the CLI, `slink-rs`; not the product yet ([plan](docs/rust-migration.md)). |
 | [`packages/format`](packages/format) | `@session-link/format`: the open `session/v0` format, schema and validator. |
 | [`packages/viewer`](packages/viewer) | `@session-link/viewer`: the reader embedded in the CLI and served by session.link. |
 | [`packages/pi-extension`](packages/pi-extension) | `/slink` for pi. |
@@ -100,8 +101,10 @@ a separate repository.
 ## Develop
 
 ```bash
-npm ci && npm run build:viewer     # the Go binary embeds the viewer bundle
+npm ci && npm run build:viewer     # both binaries embed the viewer bundle
 cd go && go test ./... && go build -o slink ./cmd/slink
+cargo test --locked                # the Rust port
+cargo build --release --locked     # writes target/release/slink-rs
 npm test                           # format, viewer and pi extension
 npm run dev:viewer                 # the viewer with fixtures at http://127.0.0.1:4173
 ```

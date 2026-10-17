@@ -2,7 +2,7 @@
 
 Implemented locally on 2026-09-11, following the agreed first-open design;
 updated 2026-10-01 with fixes from a UX review of real sessions, and checked
-against the code on 2026-10-09. No hosted deployment was part of the 2026-09-11
+against the code on 2026-10-09; the old `#message=` links dropped 2026-10-16. No hosted deployment was part of the 2026-09-11
 slice; hosted encrypted excerpt publishing went live on 2026-09-12.
 
 The [viewer content model](viewer-model.md) is the guiding product reference.
@@ -121,9 +121,9 @@ the right, a **Focused** and **Full session** switch, styled like the search
 scopes, sets the reading layout. In the full session, **Raw data** opens the whole session document as JSON, which can be copied.
 The interface shows no noun for the exchange until a better name is chosen. Search and navigation do not change the selected material.
 
-Explicit `#message=<unit-prefix>`, `#exchange=<exchange-id>` and existing
-`#span=<id>` links take precedence over saved reading state. Message/span links
-open the readable exchange and reveal supporting material when needed. A span
+Explicit `#exchange=<exchange-id>` and `#span=<id>` links take precedence over
+saved reading state. Span links open the readable exchange and reveal
+supporting material when needed. A span
 with no conversational representation opens an inspector instead.
 
 Previous/next controls navigate main exchanges; the outline includes subagent
@@ -233,8 +233,8 @@ and an inactive local publishing target. It checks desktop/mobile arrival, expli
 links, saved reading position, scoped search, detail navigation, comments,
 exact passages, right-click and selection-button passage sharing, saved-view
 discovery, and exact recipient content. Set
-`SLINK_BINARY` and `BROWSER_BINARY` to override the default local binary and Brave
-paths. Screenshots are written into its printed temporary artifact directory.
+`SLINK_BINARY` to override the default local binary, and `BROWSER_BINARY` to
+choose the browser that [scripts/browser.mjs](../scripts/browser.mjs) would otherwise find. Screenshots are written into its printed temporary artifact directory.
 
 Remaining product work includes saved diffs, live updates to immutable snapshots,
 native final-response signals where available and real colleague pilots. The

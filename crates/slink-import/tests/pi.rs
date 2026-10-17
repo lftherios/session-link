@@ -4,10 +4,11 @@
 mod common;
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use slink_import::{Candidate, Input, Locations, import, load_file, recent};
+use common::{ids, listed, nowhere, scratch, write};
+use slink_import::{Input, Locations, import, load_file};
 
 const MINUTE: Duration = Duration::from_secs(60);
 const HOUR: Duration = Duration::from_secs(3600);
@@ -30,47 +31,14 @@ fn every_fixture_reproduces_its_golden() {
     }
 }
 
-/// An empty directory of the test's own.
-fn scratch(test: &str) -> PathBuf {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("pi-{test}"));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn write(file: &Path, body: &str, at: SystemTime) {
-    fs::create_dir_all(file.parent().unwrap()).unwrap();
-    fs::write(file, body).unwrap();
-    let written = fs::File::options().write(true).open(file).unwrap();
-    written.set_modified(at).unwrap();
-}
-
-/// Stores under `root` for the harnesses named here, and none for the rest:
-/// discovery reads nothing of the machine the test runs on.
+/// Stores under `root` for the harnesses named here, and none for the rest.
 fn stores(root: &Path) -> Locations {
     Locations {
         claude: root.join("claude"),
         pi: root.join("pi"),
         omp: root.join("omp"),
-        codex: PathBuf::new(),
-        opencode: PathBuf::new(),
-        hermes: PathBuf::new(),
-        dsh: PathBuf::new(),
+        ..nowhere()
     }
-}
-
-fn listed(stores: &Locations, harness: &str, cwd: &str, id: &str, limit: usize) -> Vec<Candidate> {
-    let (candidates, problems) = recent(stores, harness, Path::new(cwd), id, limit);
-    assert_eq!(problems, Vec::<String>::new());
-    candidates
-}
-
-fn ids(candidates: &[Candidate]) -> String {
-    let ids: Vec<&str> = candidates
-        .iter()
-        .map(|candidate| candidate.id.as_str())
-        .collect();
-    ids.join(",")
 }
 
 #[test]
@@ -104,7 +72,7 @@ fn recent_sessions_are_listed_newest_first_and_stay_the_ones_chosen() {
     );
 
     let all = listed(&stores, "", "/work/project/src", "", 30);
-    assert_eq!(all.len(), 3, "{}", ids(&all));
+    assert_eq!(all.len(), 3, "{:?}", ids(&all));
     assert_eq!(all[0].found.harness, "pi");
     assert_eq!(
         all[0].id, "same",
@@ -121,10 +89,13 @@ fn recent_sessions_are_listed_newest_first_and_stay_the_ones_chosen() {
     // An id named outright is matched before the limit.
     assert_eq!(
         ids(&listed(&stores, "pi", "/work/project", "one", 1)),
-        "one"
+        ["one"]
     );
-    assert_eq!(ids(&listed(&stores, "pi", "/work/project", "", 1)), "same");
-    assert_eq!(ids(&listed(&stores, "pi", "/work/project", "other", 1)), "");
+    assert_eq!(
+        ids(&listed(&stores, "pi", "/work/project", "", 1)),
+        ["same"]
+    );
+    assert!(listed(&stores, "pi", "/work/project", "other", 1).is_empty());
 
     // A session written later does not change which one was chosen.
     write(
@@ -150,7 +121,7 @@ fn a_pi_session_is_listed_under_the_name_the_person_gave_it() {
     let project = stores.pi.join("--work-project--");
     write(
         &project.join("named.jsonl"),
-        &[
+        [
             header("named"),
             prompt.to_owned(),
             info("i1", "m1", "First name"),
@@ -162,7 +133,7 @@ fn a_pi_session_is_listed_under_the_name_the_person_gave_it() {
     );
     write(
         &project.join("cleared.jsonl"),
-        &[
+        [
             header("cleared"),
             prompt.to_owned(),
             info("i1", "m1", "Old name"),
@@ -174,7 +145,7 @@ fn a_pi_session_is_listed_under_the_name_the_person_gave_it() {
     );
 
     let listed = listed(&stores, "pi", "/work/project", "", 30);
-    assert_eq!(ids(&listed), "named,cleared");
+    assert_eq!(ids(&listed), ["named", "cleared"]);
     assert_eq!(listed[0].name, "Upload test race");
     assert_eq!(listed[0].title, "Upload test race");
     assert_eq!(listed[0].prompt, "Find the race");
@@ -210,7 +181,7 @@ fn an_omp_session_is_listed_with_its_title_and_its_sub_agents() {
     let now = SystemTime::now();
     write(
         &project.join("a.jsonl"),
-        &transcript("titled", "Upload test race", "Find the race"),
+        transcript("titled", "Upload test race", "Find the race"),
         now,
     );
     // A sub-agent's transcript sits in a directory beside its session's
@@ -218,17 +189,17 @@ fn an_omp_session_is_listed_with_its_title_and_its_sub_agents() {
     let scout = project.join("a").join("Scout.jsonl");
     write(
         &scout,
-        &transcript("sub-agent", "", "Look around"),
+        transcript("sub-agent", "", "Look around"),
         now + MINUTE,
     );
     write(
         &project.join("b.jsonl"),
-        &transcript("untitled", "", "Then fix it"),
+        transcript("untitled", "", "Then fix it"),
         now - HOUR,
     );
 
     let listed = listed(&stores, "omp", "/work/elsewhere/src", "", 30);
-    assert_eq!(ids(&listed), "titled,untitled");
+    assert_eq!(ids(&listed), ["titled", "untitled"]);
     let first = &listed[0];
     assert_eq!(first.found.harness, "omp");
     assert_eq!(
@@ -268,12 +239,8 @@ fn an_omp_transcript_is_told_from_a_pi_one() {
     let title =
         r#"{"type":"title","v":1,"title":"","updatedAt":"2026-10-07T10:00:00.000Z","pad":"  "}"#;
     let now = SystemTime::now();
-    write(
-        &root.join("omp.jsonl"),
-        &format!("{title}\n{header}\n"),
-        now,
-    );
-    write(&root.join("pi.jsonl"), &format!("{header}\n"), now);
+    write(&root.join("omp.jsonl"), format!("{title}\n{header}\n"), now);
+    write(&root.join("pi.jsonl"), format!("{header}\n"), now);
     assert_eq!(load_file(&root.join("omp.jsonl")).unwrap().1, "omp");
     assert_eq!(load_file(&root.join("pi.jsonl")).unwrap().1, "pi");
     fs::remove_dir_all(&root).unwrap();

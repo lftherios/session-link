@@ -13,7 +13,7 @@ type Fact = { label: string; value: string; note?: string; title?: string; wide?
 type Props = { run: Run; local?: LocalViewer; renderPart: (part: ContentPart, full?: boolean) => ReactNode; renderSpan: (span: Span) => ReactNode; renderTree: () => ReactNode; stats: SessionStats };
 const CSS = `
 .sv{color:var(--rv-ink);font-family:system-ui,sans-serif}.sv :where(button,input,textarea,a){font:inherit}.sv *{box-sizing:border-box}
-.sv button,.sv .sv-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--rv-line);background:var(--rv-panel);color:var(--rv-ink);border-radius:7px;padding:8px 12px;font-size:12px;cursor:pointer;text-decoration:none}
+.sv button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--rv-line);background:var(--rv-panel);color:var(--rv-ink);border-radius:7px;padding:8px 12px;font-size:12px;cursor:pointer;text-decoration:none}
 .sv button:disabled{opacity:.4;cursor:default}.sv button.sv-quiet{border-color:transparent;background:transparent;color:var(--rv-faint);padding:6px 8px}.sv button:hover:not(:disabled){background:var(--rv-soft)}
 .sv button.sv-primary{background:var(--rv-signal);color:var(--rv-paper);border-color:var(--rv-signal)}.sv button.sv-primary:hover:not(:disabled){filter:brightness(.93)}
 .sv :where(button,input,textarea,a,summary):focus-visible{outline:2px solid var(--rv-signal);outline-offset:3px}
@@ -181,12 +181,11 @@ export function SessionView({ run, local, renderPart, renderSpan, renderTree, st
 
   useLayoutEffect(() => {
     const arrive = () => {
-      const params = new URLSearchParams(location.hash.slice(1)), message = params.get("message"), span = params.get("span"), exchangeID = params.get("exchange");
-      // Older links can name a message that no longer starts its own exchange.
-      const found = exchanges.find(e => e.id === exchangeID || [...e.prompts, ...e.blocks].some(b => message ? b.key === message : span ? b.spanId === span : b.key === exchangeID));
+      const params = new URLSearchParams(location.hash.slice(1)), span = params.get("span"), exchangeID = params.get("exchange");
+      const found = exchanges.find(e => e.id === exchangeID || (!!span && [...e.prompts, ...e.blocks].some(b => b.spanId === span)));
       if (found) {
         const blocks = [...found.prompts, ...found.blocks];
-        const target = blocks.find(b => b.key === message) ?? blocks.filter(b => b.spanId === span && b.msg.role === "assistant" && messageText(b.msg)).at(-1) ?? blocks.find(b => b.spanId === span);
+        const target = blocks.filter(b => b.spanId === span && b.msg.role === "assistant" && messageText(b.msg)).at(-1) ?? blocks.find(b => b.spanId === span);
         setActive(found.id); setMode("exchange"); setLinked(target?.key ?? null); setSearchTarget(null); return true;
       }
       if (span && run.spans.some(s => s.id === span)) { setInspect(span); setSearchTarget(null); return true; }

@@ -39,9 +39,9 @@ import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync }
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { build } from "esbuild";
+import { importViewer } from "./viewer-module.mjs";
 import { createPublicKey, diffieHellman, hkdfSync } from "node:crypto";
-import { account, b64, digest, envelope, hash, keyPair, limitCases, material, seal, sign, signBytes, summary, unb64, wrap } from "./protocol-cases.mjs";
+import { account, b64, envelope, keyPair, limitCases, material, seal, sign, signBytes, summary, unb64, wrap } from "./protocol-cases.mjs";
 
 const started = Date.now();
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -632,14 +632,7 @@ if (!selected.length) {
   process.exit(2);
 }
 
-const bundled = await build({
-  stdin: { contents: 'export * from "./identity-protocol"; export * from "./identity-crypto"; export * from "./encryption";', resolveDir: path.join(root, "packages/viewer"), loader: "ts" },
-  bundle: true,
-  write: false,
-  format: "esm",
-  logLevel: "silent",
-});
-const viewer = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
+const viewer = await importViewer(["identity-protocol", "identity-crypto", "encryption"], { logLevel: "silent" });
 const refusal = (verdict, error) => ({ verdict, error: String(error?.message ?? error) });
 const read = (state, head, vault) => ({
   head,

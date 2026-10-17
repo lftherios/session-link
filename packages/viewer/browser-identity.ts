@@ -28,16 +28,13 @@ async function recoveryMatches(account:string,device:LocalDevice,state:IdentityS
 // account up first, or the server replaced the upload. The two cannot be told
 // apart, so only an explicit discard-setup moves past it. An identity that
 // does list these keys can only come from the upload, and is always refused.
-async function setupConflict(account:string,device:LocalDevice,state:IdentityState){
- if(device.pendingSetup){if(device.root===state.root)return false}
- // Older clients kept only the recovery token until the first response.
- else if(!device.root&&device.pendingRecovery){if(await recoveryMatches(account,device,state))return false}
- else return false;
+async function setupConflict(device:LocalDevice,state:IdentityState){
+ if(!device.pendingSetup||device.root===state.root)return false;
  const id=await deviceID(device.signPublic,device.boxPublic);return !state.devices.some(v=>v.id===id);
 }
 async function pin(account:string,device:LocalDevice,record:IdentityRecord,state:IdentityState,vault:VaultSnapshot){
- if(await setupConflict(account,device,state))throw Object.assign(new Error("This account already has a recovery identity that this browser did not create."),{code:"setup_conflict"});
- // Older clients retained the recovery token before they pinned a root.
+ if(await setupConflict(device,state))throw Object.assign(new Error("This account already has a recovery identity that this browser did not create."),{code:"setup_conflict"});
+ // A recovery key not yet confirmed must belong to the identity being pinned.
  if(device.pendingRecovery&&!await recoveryMatches(account,device,state))throw new Error("The server's recovery identity does not match your saved recovery key.");
  if(device.root&&device.root!==state.root)throw new Error("The server's recovery identity changed. Refusing to replace your keys.");
  if(device.seq>=record.events.length||device.revision>vault.revision||(device.seq>=0&&device.head&&await head(record.events[device.seq])!==device.head))throw new Error("The server returned an older or conflicting key history.");
@@ -106,7 +103,7 @@ async function identityAction(action:string,input:IdentityInput):Promise<Identit
  const record=remote.record!,{state,vault}=await verifyRecord(record,remote.account);
  // Drop the device keys with the unfinished setup: the server has seen them.
  // This browser then joins like any other new device.
- if(d&&action==="discard-setup"&&await setupConflict(remote.account,d,state)){await removeLocal(remote.account);d=undefined;action="status"}
+ if(d&&action==="discard-setup"&&await setupConflict(d,state)){await removeLocal(remote.account);d=undefined;action="status"}
  if(d)await pin(remote.account,d,record,state,vault);
  if(action==="discard-setup")throw new Error("This browser has no unfinished recovery setup to discard.");
  if(!d&&(action==="request"||action==="recover")){d=await newDevice();await pin(remote.account,d,record,state,vault)}

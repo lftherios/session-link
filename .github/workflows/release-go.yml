@@ -43,8 +43,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
-      # The viewer bundle is embedded via go:embed — build it and let the
-      # golden harness emit it into the module (drift-checked) before build.
+      # The Go build embeds the viewer artifact, which build:viewer writes;
+      # golden checks the generated copies.
       - run: npm ci
       - run: npm run build:viewer && node scripts/golden.mjs --check
       - uses: goreleaser/goreleaser-action@v6

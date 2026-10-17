@@ -1,12 +1,15 @@
 # Rust workspace and build
 
-2026-10-12 · Implemented slice of the [Rust migration](rust-migration.md), backlog item 2 · the workspace, viewer artifact and a build-check binary build, pass their tests and run natively on all six targets in CI.
+2026-10-12, updated 2026-10-16 · Implemented slice of the [Rust migration](rust-migration.md)'s P1 · the workspace and the viewer artifact, built, tested and run natively on all six targets in CI.
 
 How the Rust side of the repository is built, which choices the first build
-fixed, and what it measured. The binary it produces is not the product yet: it
-has `version` and a check of its own build, and exists to prove the toolchain,
+fixed, and what it measured. The binary it produces, `slink-rs`, is not the
+product yet. When this slice was written it had only `version` and
+`build-check`, a check of its own build, and existed to prove the toolchain,
 the native dependencies and the viewer embed on every distribution target
-before the port depends on them.
+before the port depended on them. It now knows every command and runs all
+but the recorder's; [rust-cli.md](rust-cli.md) and
+[rust-client.md](rust-client.md) have what they do.
 
 ## Layout
 
@@ -18,8 +21,9 @@ before the port depends on them.
 | [Cargo.lock](../Cargo.lock) | Committed; every command in CI passes `--locked` |
 | [crates/slink](../crates/slink) | The CLI crate. Its binary is named `slink-rs` until it replaces Go |
 | [crates/slink-format](../crates/slink-format) | Reading, validating and scanning `session/v0`; [rust-format.md](rust-format.md) describes it |
-| [crates/slink-protocol](../crates/slink-protocol) | Opening envelopes and verifying signed statements, device histories and vault records; [rust-protocol.md](rust-protocol.md) describes it |
+| [crates/slink-protocol](../crates/slink-protocol) | Opening and making envelopes, signed statements, keys and wrappers; verifying device histories and vault records. [rust-protocol.md](rust-protocol.md) describes it |
 | [crates/slink-local](../crates/slink-local), [crates/slink-import](../crates/slink-import) | The slink home and saved previews; the importers and session discovery. [rust-cli.md](rust-cli.md) describes both and the commands built on them |
+| [crates/slink-client](../crates/slink-client) | The hosted service as the CLI reaches it: sign-in, publishing, deleting, device keys, the vault and named shares. [rust-client.md](rust-client.md) describes it |
 | [rust.yml](../.github/workflows/rust.yml) | Lint, then build, test and run on six native runners; compare the format validators and the protocol verifiers across languages |
 
 Crates are added when their first code lands, as the plan asks.
@@ -42,9 +46,10 @@ built from differs from that commit.
   Rust change. `SLINK_VIEWER_DIR` points it at another directory. With no
   artifact the build stops and says to run `npm run build:viewer`.
 
-This is most of backlog item 3. Two parts are open: the manifest has no
-protocol versions, because the viewer has no single place that states them,
-and the server's copy of the bundle is still written by `--hosted-output`.
+This is most of P1's viewer-artifact item. Two parts are open: the manifest
+has no protocol versions, because the viewer has no single place that states
+them, and the server's copy of the bundle is still written by
+`--hosted-output`.
 
 ## Choices the build fixed
 
@@ -53,7 +58,7 @@ and the server's copy of the bundle is still written by `--hosted-output`.
 | HTTP server | axum on Tokio, HTTP/1 only, default features off | The plan's default; the loopback server needs nothing more yet |
 | HTTP client | reqwest with rustls | No OpenSSL to find or ship on any target |
 | Trust store | The operating system's, through `rustls-platform-verifier` | What Go's client used; a machine behind an inspecting proxy keeps working |
-| Crypto provider | ring, installed in [tls.rs](../crates/slink/src/tls.rs) | Needs only a C compiler, and clang on Windows ARM64, which the runner has. reqwest's default, aws-lc-rs, was not tried |
+| Crypto provider | ring, installed in [transport.rs](../crates/slink-client/src/transport.rs) | Needs only a C compiler, and clang on Windows ARM64, which the runner has. reqwest's default, aws-lc-rs, was not tried |
 | SQLite | rusqlite with the bundled library, 3.53.2 | Readers behave the same on every machine; costs a C compiler at build time, which pure-Go builds never needed |
 | Local time | chrono, with only its clock | Aider writes local times with no zone and the sessions page groups by local day; finding the system's zone is different work on each platform |
 | Zstandard | ruzstd, a decoder in Rust | DeepSeek Harness compresses its logs. Reading is all that is needed, and the C library would be a second thing to compile on six targets |
@@ -107,20 +112,25 @@ format crate has since added 1.5 to 1.9 MiB to each, and
   version cases.
 - `slink-rs build-check` runs what the binary links: a round trip through the
   bundled SQLite, the embedded files against their manifest digests, the
-  bundle served by axum on loopback and fetched by the publishing client, the
+  bundle served by axum on loopback and fetched by the client every request to
+  the service uses (`slink_client::client`), the
   format crate's schema and credential patterns compiled and applied, and the
-  protocol crate opening two envelopes and judging the shared signed
-  statements. It is scaffolding and goes when real commands reach the same
-  code.
+  protocol crate opening two envelopes, judging the shared signed statements
+  and making and opening a wrapper. The commands now reach the same code, and
+  it stays for CI: the tests run a test build, and `build-check` is the one
+  step in [rust.yml](../.github/workflows/rust.yml) that runs the release
+  binary, with its LTO and stripped symbols, on each target's own runner. It
+  needs no home, network or terminal. It is not a product command, so it is
+  in neither the help nor the inventory.
 - [tests/cli.rs](../crates/slink/tests/cli.rs) runs the built binary with an
   empty environment and a home of its own, and fails if the home is not empty
   afterwards. That is the plan's rule that no Rust executable writes to a real
   home, held as a test from the first command.
-- [tests/tls.rs](../crates/slink/tests/tls.rs) completes a handshake with a
-  certificate the client was told to trust and is refused with one it was not.
-  A third test, ignored by default because it reaches the network, has the
-  system trust store verify `https://session.link/api/health`; CI runs it on
-  every target, and it passed on all six.
+- [tests/tls.rs](../crates/slink/tests/tls.rs) has a reqwest client told to
+  trust a test certificate complete a handshake, and the shipped client refuse
+  that certificate. A third test, ignored by default because it reaches the
+  network, has the shipped client verify `https://session.link/api/health`
+  through the system trust store; CI runs it on every target.
 
 ## First measurements
 
@@ -137,9 +147,11 @@ from 18 to 41 ms and `slink-rs` from 6.5 to 16 ms. Within each run `slink-rs`
 started 2.0 to 2.8 times faster. The baseline's 13.7 ms for Go came from a
 quieter day.
 
-The Rust figures are a floor, not a forecast: the binary holds SQLite, TLS, the
-HTTP client and server, and the viewer, and none of the importers, the
-recorder, the envelope code or the CLI itself.
+The Rust figures were a floor, not a forecast: at that commit the binary held
+SQLite, TLS, the HTTP client and server, and the viewer, and none of the
+importers, the recorder, the envelope code or the CLI itself. With everything
+but the recorder it is 9,033,360 bytes on macOS arm64
+([rust-client.md](rust-client.md#cost)).
 
 ## Not done
 

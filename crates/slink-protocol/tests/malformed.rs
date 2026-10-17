@@ -6,11 +6,14 @@
 //!
 //! The same generator runs on every target the binary is built for.
 
+mod common;
+
 use std::fs;
 use std::path::Path;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use common::Random;
 use ring::digest::{SHA256, digest};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde_json::Value;
@@ -19,26 +22,6 @@ use slink_protocol::{
 };
 
 const ACCOUNT: &str = "usr_fixture";
-
-/// xorshift64: enough to choose where to damage something.
-struct Random(u64);
-
-impl Random {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-
-    fn below(&mut self, limit: usize) -> usize {
-        (self.next() % limit.max(1) as u64) as usize
-    }
-
-    fn bytes(&mut self, length: usize) -> Vec<u8> {
-        (0..length).map(|_| self.next() as u8).collect()
-    }
-}
 
 /// A fixture key: `scripts/protocol-cases.mjs` derives every seed from a
 /// label in the same way.

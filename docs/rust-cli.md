@@ -1,14 +1,15 @@
 # Rust CLI: importers, the local viewer and excerpts
 
-2026-10-12, updated 2026-10-14 · Implemented slices of the [Rust migration](rust-migration.md), backlog items 6 and 7 · `slink-rs` imports all eight harnesses, serves the local viewer with its sessions page, and composes and exports excerpts; 86 of the 104 runner cases agree with Go, and both browser checks pass against it. The tests of both pass on all six targets in CI. Publishing came later and is in [rust-client.md](rust-client.md).
+2026-10-12, updated 2026-10-14 and 2026-10-16 · Implemented slices of the [Rust migration](rust-migration.md)'s P2 · 87 of the 104 runner cases agree with Go.
 
 Everything a person does with a session before publishing it now runs in the
 Rust binary, in a home of its own: a session of any supported agent is found
 and imported, read in a browser from a server on loopback, and cut down to an
-excerpt that leaves out what was not chosen. When this slice was written
-nothing in the binary published; signing in, publishing a link and deleting
-one have since been ported, and [rust-client.md](rust-client.md) describes
-them, with device keys and named shares.
+excerpt that leaves out what was not chosen. The tests pass on all six targets
+in CI, and both browser checks pass against `slink-rs`. When this slice was
+written nothing in the binary published; signing in, publishing a link and
+deleting one have since been ported, and [rust-client.md](rust-client.md)
+describes them, with device keys and named shares.
 
 ## What works
 
@@ -120,7 +121,7 @@ a reading copy without them, as in Go.
 
 | Check | Result |
 | --- | --- |
-| `SLINK_BINARY=go/slink SLINK_CANDIDATE=target/release/slink-rs node scripts/compat.mjs` | 86 of 104: usage 11 of 11, help 37 of 37, flags 2 of 2, completion 4 of 4, import 32 of 32 |
+| `SLINK_BINARY=go/slink SLINK_CANDIDATE=target/release/slink-rs node scripts/compat.mjs` | 87 of 104: usage 11 of 11, help 37 of 37, flags 2 of 2, completion 4 of 4, import 32 of 32, discover 1 of 1. It was 86 when this slice landed; the discovery case's `share` steps agree since publishing was ported on 2026-10-14, as [rust-client.md](rust-client.md#evidence) and the [baseline](compatibility-baseline.md#differential-runner) record |
 | The same with no candidate | 104 of 104, as before |
 | `cargo test` | 211 pass, 114 of them in the importer crate, 23 in the home crate and 13 that run the built binary, one of those on Unix only |
 | [check-viewer-browser.mjs](../scripts/check-viewer-browser.mjs) against `slink-rs` | All 11 groups, composing and exporting a view among them |
@@ -128,9 +129,9 @@ a reading copy without them, as in Go.
 | [tests/cli.rs](../crates/slink/tests/cli.rs) | The journeys in homes of their own: import to page to stop; an excerpt composed, saved, exported and reopened; a background viewer; a browser opener that stays; two Aider runs as two previews; the pi extension's command; a view opened from inside a session. A test that fails stops the viewer it started |
 | [pi-handoff.test.mjs](../test/pi-handoff.test.mjs) with `SLINK_HANDOFF_BINARY` | The real extension's `/slink view` gets its address from the built binary, Rust or Go, and reports a session that is not there |
 
-The 18 cases that differ are the commands not ported: `record`, `on` and
-`off`, and the `prune`, `push` and `share` steps inside two cases whose other
-steps agree.
+The 17 cases that differ are the commands not ported: the 14 of `record`, the
+two of `on` and `off`, and the `prune` step inside the empty-home case, whose
+other steps agree.
 
 One difference is declared in the runner. `slink record -h` writes its help
 to stderr in Go and to stdout here, which the

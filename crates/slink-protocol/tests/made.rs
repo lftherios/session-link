@@ -3,63 +3,14 @@
 //! keys someone chose; these are made from keys chosen at random, the same
 //! ones on every run and on every target the binary is built for.
 
+mod common;
+
+use common::Random;
 use slink_protocol::encoding::{decode, encode};
 use slink_protocol::{
     AgreementKey, Error, Kind, MAX_DEVICE_NAME, Recovery, Request, Signed, SigningKey,
     code_matches, confirmation, envelope, seal, unseal, unwrap, wrap,
 };
-
-/// xorshift64: enough to choose keys nobody will use and where to damage
-/// something.
-struct Random(u64);
-
-impl Random {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-
-    fn below(&mut self, limit: usize) -> usize {
-        (self.next() % limit.max(1) as u64) as usize
-    }
-
-    fn bytes(&mut self, length: usize) -> Vec<u8> {
-        (0..length).map(|_| self.next() as u8).collect()
-    }
-
-    fn array<const N: usize>(&mut self) -> [u8; N] {
-        let mut out = [0; N];
-        out.iter_mut().for_each(|byte| *byte = self.next() as u8);
-        out
-    }
-
-    /// Text of up to `limit` characters, some of them outside ASCII and some
-    /// that JSON escapes.
-    fn text(&mut self, limit: usize) -> String {
-        const SOME: &[char] = &[
-            'a',
-            'Z',
-            '0',
-            '/',
-            ' ',
-            '"',
-            '\\',
-            '<',
-            '&',
-            '\n',
-            '\u{0}',
-            '\u{7f}',
-            '\u{e9}',
-            '\u{2028}',
-            '\u{1f4bb}',
-        ];
-        (0..self.below(limit + 1))
-            .map(|_| SOME[self.below(SOME.len())])
-            .collect()
-    }
-}
 
 /// A copy of `text` with one character changed, removed or added.
 fn damaged(random: &mut Random, text: &str) -> String {

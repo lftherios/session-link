@@ -65,7 +65,7 @@ files among them are gitignored, so build order matters in a fresh checkout:
 | npm binary channel smoke build | `node scripts/build-npm.mjs 0.0.0-ci` |
 | Compatibility inventory matches the Go source | `node scripts/compat-inventory.mjs --check` |
 | Differential runner against a built CLI | `SLINK_BINARY=go/slink node scripts/compat.mjs` |
-| The same, with the Rust binary as the candidate | add `SLINK_CANDIDATE=target/release/slink-rs`; a name filter such as `help/` or `import/` runs the groups it has. `docs/rust-cli.md` has the count that agrees |
+| The same, with the Rust binary as the candidate | add `SLINK_CANDIDATE=target/release/slink-rs`; a name filter such as `help/` or `import/` runs the groups it has. `docs/compatibility-baseline.md` has the count that agrees |
 | JS, Go and Rust validators and scanners agree | `node scripts/format-diff.mjs`; it builds the Go and Rust helpers itself |
 | Protocol case files are what their generator writes | `node scripts/protocol-cases.mjs --check` |
 | The viewer, Go and Rust verifiers agree | `node scripts/protocol-diff.mjs`; add `--server ../session-link-server` to run the hosted verifier too |
@@ -98,8 +98,12 @@ touches before finishing.
   local viewer access, framing restrictions and external-image privacy.
 - `node scripts/check-viewer-browser.mjs` drives the built binary in a headless
   Chromium-family browser. It and the security check read `SLINK_BINARY`
-  (default `/tmp/session-link-slink`) and `BROWSER_BINARY`. Both pass against
-  `slink-rs` as well; give either binary a `HOME` of its own too.
+  (default `/tmp/session-link-slink`). Both pass against `slink-rs` as well;
+  give either binary a `HOME` of its own too.
+- Every browser check and capture finds its browser through
+  `scripts/browser.mjs`: `BROWSER_BINARY`, else `CHROME_PATH`, else the newest
+  Playwright headless shell, then Chrome or Brave. The captures look for Brave
+  and Chrome first, so their images keep the browser they were made with.
 - `SLINK_HANDOFF_BINARY=<a built slink> node --test test/pi-handoff.test.mjs`
   runs the pi extension's `/slink view` against that binary. Without the
   variable that case is skipped and the others use a stand-in.
@@ -109,12 +113,11 @@ touches before finishing.
   browser opens its link, and it deletes the link. Either binary passes.
 - `node scripts/check-protocol-browser.mjs` runs the protocol cases through the
   viewer's code in a browser, whose Web Crypto is not Node's. It needs no
-  binary and no server, and reads `BROWSER_BINARY`.
+  binary and no server.
 - The encrypted, identity and named checks in `scripts/` need the server repo's
   smoke server. Run them from the server checkout with
   `SLINK_BROWSER_SCRIPT=<path to the check> npm run smoke:encrypted`; the smoke
   passes `SLINK_BROWSER_BASE`, `SLINK_BROWSER_LINK` and `SLINK_BROWSER_MAIL`.
-  These three take the browser from `CHROME_PATH`, not `BROWSER_BINARY`.
 - Fixtures under `testdata/` are fictional. Never add a real transcript, and
   keep the leakage markers the fixture READMEs describe intact.
 - The README opens with a recording of the landing page's "How it works"

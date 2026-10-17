@@ -1,6 +1,25 @@
 //! When a document says something happened. A session's times are RFC 3339
 //! text, and this turns one into a moment that can be compared with another.
 
+/// The date of a day counted from 1970-01-01: its year, month and day. Days
+/// are counted in 400-year eras that start on 1 March of year 0, so that a
+/// leap day is the last day of its year.
+pub fn civil_from_days(days: i64) -> (i64, i64, i64) {
+    let days = days + 719_468;
+    let (era, day_of_era) = (days.div_euclid(146_097), days.rem_euclid(146_097));
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_index = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
+    let month = if month_index < 10 {
+        month_index + 3
+    } else {
+        month_index - 9
+    };
+    (era * 400 + year_of_era + i64::from(month <= 2), month, day)
+}
+
 /// The day count of a date, the other way round.
 fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let year = year - i64::from(month <= 2);
@@ -75,6 +94,22 @@ pub fn instant(text: &str) -> Option<(i64, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_day_count_is_its_date_and_back() {
+        for (days, date) in [
+            (0, (1970, 1, 1)),
+            (-1, (1969, 12, 31)),
+            (11_016, (2000, 2, 29)),
+            (11_017, (2000, 3, 1)),
+            (47_541, (2100, 3, 1)),
+            (-719_528, (0, 1, 1)),
+            (-719_529, (-1, 12, 31)),
+        ] {
+            assert_eq!(civil_from_days(days), date, "{days}");
+            assert_eq!(days_from_civil(date.0, date.1, date.2), days, "{date:?}");
+        }
+    }
 
     #[test]
     fn a_time_is_read_with_its_offset() {

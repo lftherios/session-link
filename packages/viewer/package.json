@@ -30,6 +30,7 @@
   "files": [
     "index.ts",
     "RunViewer.tsx",
+    "SessionImage.tsx",
     "ShareView.tsx",
     "ShareComposer.tsx",
     "SessionView.tsx",

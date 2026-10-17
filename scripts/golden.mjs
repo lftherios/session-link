@@ -9,12 +9,6 @@
  *
  *   node scripts/golden.mjs --update   regenerate
  *   node scripts/golden.mjs --check    verify (exit 1 on any drift) — CI runs this
- *
- * History: this began as the JS→Go parity oracle that also GENERATED the
- * testdata fixtures from the (now-removed) JS reference CLI. Those fixtures
- * are frozen and owned by the Go golden tests (the golden_test.go files
- * under go/internal) as a regression contract; only these format-derived
- * embeds are still generated here.
  */
 import { copyFile, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";

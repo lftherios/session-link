@@ -21,10 +21,10 @@ use ring::rand::{SecureRandom, SystemRandom};
 use serde_json::{Map, Value, json};
 use slink_client::identity::Input;
 use slink_client::{Identity, login, resolve_target};
-use slink_local::share::{Catalog, Draft, build_catalog, export};
+use slink_local::share::{Catalog, Draft, EXTENSION, build_catalog, export};
 use slink_local::{
     Drafts, READING_SUFFIX, SaveError, capture_dir, display_path, home, save_preview,
-    session_title_key, unix_now,
+    session_title_key,
 };
 use slink_protocol::misspelt;
 use tokio::sync::{Mutex, Notify};
@@ -40,8 +40,6 @@ const ACCESS_SHELL: &str = include_str!("assets/access-shell.html");
 /// It is the Go CLI's, read from where that keeps it.
 const LOCAL_ACCESS_JS: &str = include_str!("../../../go/internal/open/local-access.js");
 const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'none'";
-/// The name an excerpt carries its selection under.
-const EXCERPT: &str = "session_link.share.v1";
 /// How often a running viewer goes on granting shares for named people.
 const RESUME_EVERY: std::time::Duration = std::time::Duration::from_secs(15);
 
@@ -151,7 +149,7 @@ impl Viewer {
             .as_str()
             .filter(|name| !name.is_empty())
             .unwrap_or(id);
-        let excerpt = !document["extensions"][EXCERPT].is_null();
+        let excerpt = !document["extensions"][EXTENSION].is_null();
         // Escaping `<` keeps a trace's own text inert inside the tag.
         let embedded = text.replace('<', "\\u003c");
         let publish = slink_format::encode(&json!({
@@ -414,12 +412,7 @@ impl Viewer {
                     Err(error) => return fail(StatusCode::INTERNAL_SERVER_ERROR, &error),
                 };
                 // How it was edited stays here, wholly outside the excerpt.
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .ok()
-                    .and_then(|since| i64::try_from(since.as_nanos()).ok())
-                    .unwrap_or_else(|| unix_now() * 1_000_000_000);
-                if let Err(error) = self.drafts.record_view(&exported, id, &draft, now) {
+                if let Err(error) = self.drafts.record_view(&exported, id, &draft, now_ns()) {
                     return fail(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
                 }
                 reply(
@@ -442,14 +435,9 @@ impl Viewer {
             .iter()
             .map(|source| source.row.clone())
             .collect();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()
-            .and_then(|since| i64::try_from(since.as_nanos()).ok())
-            .unwrap_or(0);
         page(
             &format!("{name} · session.link"),
-            &picker::body(&self.project, &rows, &self.warning, &self.drafts, now),
+            &picker::body(&self.project, &rows, &self.warning, &self.drafts, now_ns()),
         )
     }
 }
@@ -512,6 +500,15 @@ fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_millis() as i64)
+}
+
+/// The system clock in nanoseconds since 1970, or 0 when it cannot say.
+fn now_ns() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|since| i64::try_from(since.as_nanos()).ok())
+        .unwrap_or(0)
 }
 
 impl Viewer {

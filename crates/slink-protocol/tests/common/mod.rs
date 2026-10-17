@@ -1,4 +1,7 @@
-//! Reading `testdata/protocol`, for the tests that hold this crate to it.
+//! Reading `testdata/protocol`, for the tests that hold this crate to it,
+//! and the generator the tests that choose their own keys and damage share.
+
+#![allow(dead_code)]
 
 use std::fs;
 use std::path::Path;
@@ -38,4 +41,56 @@ pub fn signed(value: &Value) -> Signed {
 
 pub fn report(failures: Vec<String>) {
     assert!(failures.is_empty(), "\n{}", failures.join("\n"));
+}
+
+/// xorshift64: enough to choose keys nobody will use and where to damage
+/// something, the same on every run.
+pub struct Random(pub u64);
+
+impl Random {
+    pub fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+
+    pub fn below(&mut self, limit: usize) -> usize {
+        (self.next() % limit.max(1) as u64) as usize
+    }
+
+    pub fn bytes(&mut self, length: usize) -> Vec<u8> {
+        (0..length).map(|_| self.next() as u8).collect()
+    }
+
+    pub fn array<const N: usize>(&mut self) -> [u8; N] {
+        let mut out = [0; N];
+        out.iter_mut().for_each(|byte| *byte = self.next() as u8);
+        out
+    }
+
+    /// Text of up to `limit` characters, some of them outside ASCII and some
+    /// that JSON escapes.
+    pub fn text(&mut self, limit: usize) -> String {
+        const SOME: &[char] = &[
+            'a',
+            'Z',
+            '0',
+            '/',
+            ' ',
+            '"',
+            '\\',
+            '<',
+            '&',
+            '\n',
+            '\u{0}',
+            '\u{7f}',
+            '\u{e9}',
+            '\u{2028}',
+            '\u{1f4bb}',
+        ];
+        (0..self.below(limit + 1))
+            .map(|_| SOME[self.below(SOME.len())])
+            .collect()
+    }
 }

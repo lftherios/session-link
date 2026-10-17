@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+use crate::hex;
 use crate::home::{create_private_dir, write_private};
 use crate::share::Draft;
 
@@ -51,8 +52,7 @@ pub fn session_title_key(harness: &str, id: &str) -> String {
         return String::new();
     }
     let sum = Sha256::digest(format!("{harness}\n{id}").as_bytes());
-    let hex: String = sum[..16].iter().map(|byte| format!("{byte:02x}")).collect();
-    format!("session-{hex}")
+    format!("session-{}", hex(&sum[..16]))
 }
 
 /// A name that is one path component and nothing else.

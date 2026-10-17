@@ -39,7 +39,7 @@ export async function decryptDocument(data: Uint8Array<ArrayBuffer>, encodedKey:
 // Navigation can change the selected passage without dropping its content key.
 export function withAnchor(href: string, span: string): string {
   const url = new URL(href), params = new URLSearchParams(url.hash.slice(1));
-  for (const name of ["span", "message", "exchange"]) params.delete(name);
+  for (const name of ["span", "exchange"]) params.delete(name);
   if (span) params.set("span", span);
   url.hash = params.toString();
   return url.href;

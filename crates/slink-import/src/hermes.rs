@@ -23,11 +23,7 @@ use crate::db;
 use crate::discover::{Candidate, Elsewhere, Found, Loader, user_home};
 use crate::images::image_url_part;
 use crate::value::{data_part, field, iso_millis, js_string, or_null, put, text, truthy};
-use crate::{Agent, Input};
-
-const LABEL: &str = "session-import@0.1.0";
-
-pub(crate) const PORTED: bool = true;
+use crate::{Agent, Input, LABEL};
 
 pub(crate) fn import(input: &Input) -> Result<Option<Value>, String> {
     let mut run = to_run(&input.session, &input.messages);

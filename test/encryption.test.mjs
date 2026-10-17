@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile } from "node:fs/promises";
-import { build } from "esbuild";
 import validate from "../packages/viewer/validate-session.js";
+import { importViewer } from "../scripts/viewer-module.mjs";
 
-const bundled = await build({ entryPoints: [new URL("../packages/viewer/encryption.ts", import.meta.url).pathname], bundle: true, write: false, format: "esm" });
-const { encryptDocument, decryptDocument, decodeKey, withAnchor } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
+const { encryptDocument, decryptDocument, decodeKey, withAnchor } = await importViewer(["encryption"]);
 
 test("browser encryption: fixture interoperability, fresh keys, tamper and wrong-key rejection", async () => {
   const fixture = JSON.parse(await readFile(new URL("../testdata/encryption/webcrypto.json", import.meta.url)));
@@ -35,7 +34,7 @@ test("passage navigation and copied links retain the encryption key", () => {
 
 
 test("local passage navigation retains its viewer access key", () => {
-  const link = "http://127.0.0.1:4400/p/saved#access=local-key&message=old";
+  const link = "http://127.0.0.1:4400/p/saved#access=local-key&span=old";
   assert.equal(withAnchor(link, "step.1"), "http://127.0.0.1:4400/p/saved#access=local-key&span=step.1");
   assert.equal(withAnchor(link, ""), "http://127.0.0.1:4400/p/saved#access=local-key");
 });

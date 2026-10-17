@@ -12,18 +12,19 @@
  * own, and scripts/gif.mjs only turns them into a GIF.
  *
  *   LANDING_DIR      the server checkout's public/ (default ../session-link-server/public)
- *   BROWSER_BINARY   a Chromium-family browser (default: Brave on macOS)
+ *   BROWSER_BINARY   a Chromium-family browser, or CHROME_PATH; without either,
+ *                    scripts/browser.mjs finds one
  *   SCREENSHOT_DIR   where the GIF goes (default assets/product)
  *   SCALE            device pixels per CSS pixel (default 1.5, sharp at the
  *                    README's width on a high-density screen)
  */
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { readFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { launchBrowser } from "./browser.mjs";
 import { decodePNG, encodeGIF, paletteBuilder } from "./gif.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -55,52 +56,17 @@ const server = http.createServer(async (req, res) => {
 });
 
 const workspace = await mkdtemp(path.join(os.tmpdir(), "slink-how-it-works-"));
-let browser, socket;
+let browser;
 try {
   await readFile(path.join(landing, "landing.html")).catch(() => { throw new Error(`no landing.html in ${landing}; set LANDING_DIR to the server checkout's public directory`); });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
 
-  browser = spawn(process.env.BROWSER_BINARY ?? "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", [
-    "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
-    "--disable-background-networking", "--disable-component-update", "--disable-sync",
-    "--remote-debugging-port=0", `--user-data-dir=${path.join(workspace, "browser")}`, "about:blank",
-  ], { stdio: ["ignore", "ignore", "pipe"] });
-  const endpoint = await new Promise((resolve, reject) => {
-    let text = "";
-    const timer = setTimeout(() => reject(new Error(`the browser did not start: ${text.slice(-400)}`)), 20000);
-    browser.stderr.on("data", chunk => { text += chunk; const found = text.match(/ws:\/\/[^\s]+/); if (found) { clearTimeout(timer); resolve(found[0]); } });
-    browser.on("error", reject);
-  });
-  // The first page can appear a moment after the debugging endpoint does.
-  let pageTarget;
-  for (let i = 0; i < 100 && !pageTarget; i++) {
-    pageTarget = (await (await fetch(`http://127.0.0.1:${new URL(endpoint).port}/json/list`)).json()).find(item => item.type === "page");
-    if (!pageTarget) await new Promise(resolve => setTimeout(resolve, 50));
-  }
-  socket = new WebSocket(pageTarget.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
-  let sequence = 0;
-  const pending = new Map();
-  socket.onmessage = ({ data }) => {
-    const message = JSON.parse(data);
-    if (!message.id) return;
-    const call = pending.get(message.id); pending.delete(message.id);
-    message.error ? call.reject(new Error(JSON.stringify(message.error))) : call.resolve(message.result);
-  };
-  const send = (method, params = {}) => new Promise((resolve, reject) => {
-    const id = ++sequence; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params }));
-  });
-  const evaluate = async expression => {
-    const result = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
-    if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
-    return result.result.value;
-  };
-
-  await send("Page.enable");
+  browser = await launchBrowser({ profile: path.join(workspace, "browser"), installed: true });
+  const { send, evaluate, waitFor, screenshot } = await browser.firstPage();
   await send("Emulation.setDeviceMetricsOverride", { ...VIEW, deviceScaleFactor: SCALE, mobile: false });
   await send("Page.navigate", { url: `${base}/` });
-  for (let i = 0; i < 200 && !(await evaluate("document.readyState === 'complete' && !!document.getElementById('steps')")); i++) await new Promise(resolve => setTimeout(resolve, 50));
+  await waitFor("document.readyState === 'complete' && !!document.getElementById('steps')");
   await evaluate("document.fonts.ready.then(() => true)");
   assert.equal(await evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"), false, "the browser asks for reduced motion, so the steps would not play");
 
@@ -126,9 +92,9 @@ try {
   const started = performance.now();
   let doneAt = 0;
   while (true) {
-    const { data } = await send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true, clip: { ...clip, scale: 1 } });
+    const png = await screenshot({ format: "png", optimizeForSpeed: true, clip: { ...clip, scale: 1 } });
     const now = performance.now();
-    shots.push({ png: Buffer.from(data, "base64"), at: now });
+    shots.push({ png, at: now });
     const { active, done } = JSON.parse(await evaluate(state));
     if (order.at(-1) !== active) order.push(active);
     if (done && !doneAt) doneAt = now;
@@ -160,8 +126,7 @@ try {
   const seconds = frames.reduce((total, frame) => total + frame.delay, 0) / 1000;
   console.log(`Recorded ${path.relative(root, output)}: ${size.width} × ${size.height}, ${gif.frames} frames from ${shots.length} photographs, ${seconds.toFixed(1)} s, ${(gif.bytes.length / 1024).toFixed(0)} KB`);
 } finally {
-  socket?.close();
-  browser?.kill();
+  browser?.close();
   server.close();
   await rm(workspace, { recursive: true, force: true });
 }

@@ -23,9 +23,7 @@ use crate::discover::{
 };
 use crate::normalize::{anthropic_content, anthropic_usage};
 use crate::value::{field, or_null, put, text, truthy};
-use crate::{Agent, Input};
-
-const LABEL: &str = "session-import@0.1.0";
+use crate::{Agent, Input, LABEL};
 
 pub(crate) fn import(input: &Input) -> Option<Value> {
     let (mut run, calls) = to_run(&input.lines, &input.fallback, input.sub_agent)?;

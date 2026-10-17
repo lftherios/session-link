@@ -1,6 +1,6 @@
 # session.link product plan
 
-Working draft · updated 2026-10-12 · based on the planning conversation.
+Working draft · updated 2026-10-12 and 2026-10-16 · based on the planning conversation.
 
 The [success criteria](success-criteria.md) record the nine agreed requirements:
 easy installation anywhere, a tiny and efficient daemon, current and dependable
@@ -15,7 +15,7 @@ Use these criteria to prioritize the work below.
 
 The [viewer content model](viewer-model.md) is the agreed reference for session
 metadata, human input, agent responses, agent activity, context and exchanges.
-It also records the agreed view concept, action vocabulary and viewer priorities.
+It also records the agreed view concept and action vocabulary.
 
 Execution update: CLI-to-web handoff and local excerpt composition are
 implemented in this checkout. See [handoff design and verification](handoff-design.md)
@@ -40,32 +40,12 @@ releases.
 
 Integration TODO:
 
-- [x] Build the first encrypted-link prototype using iroh-blobs FsStore, durable
-  hosted retention and HTTPS browser delivery, with email/GitHub authentication.
-- [x] Resume the prepared excerpt through viewer sign-in; add encrypted key backup,
-  recovery-secret enrollment, device approval and revocation with vault rotation.
-- [x] Verify the Docker/Fly deployment: v29 (encrypted sharing) on 2026-09-12 and
-  v30 (named sharing, email sign-in) on 2026-10-01.
-- [ ] Resolve iroh version support, rehearse volume backup restoration, and
-  independently review the recovery/device protocol; use the
+- [ ] Independently review the recovery/device protocol; use the
   [verification notes](identity-encryption.md#verification-and-deployment).
-- [x] Cut the first client release after v0.5.0 so released binaries gain encrypted
-  and named sharing: v0.6.0 (2026-10-01).
-- [x] Design named-recipient sharing separately from account and device recovery.
-- [x] Build the [DeepSeek Harness (`dsh`)](https://github.com/deepseek-ai/deepseek-harness)
-  integration: built 2026-10-08 against dsh 0.2.0-rc.2, session format v4. Its
-  session storage and the identity of the active session were checked with real
-  sessions, run headless in an isolated home against a mock provider. Those
-  sessions were taken from discovery through import, local viewing and
-  whole-session publishing to a local build of the service, and the excerpt
-  exporter runs over the fixtures made from them. Supported versions and limits
-  are in the [harness matrix](handoff-design.md#harness-contract-and-current-verification).
-  Not checked: its Web UI, a real DeepSeek model, and an excerpt composed in the
-  browser from a dsh session.
-- [x] Build the [Aider](https://github.com/Aider-AI/aider) integration: built
-  2026-10-08 against Aider 0.86.2, from real runs against a mock provider, with
-  the same checks. Aider's history is Markdown without tool calls or times, and
-  the harness matrix says what that leaves out.
+  The current volume is not restored
+  ([Starting fresh](rust-migration.md#starting-fresh)); the Rust migration
+  chooses the blob backend, iroh or immutable files, in P6 and rehearses a
+  restore of the new store in P7.
 
 **Product promise:** Move work from any CLI agent harness into a polished,
 shareable web experience, with the prompt, context, and evidence a colleague
@@ -187,79 +167,22 @@ published documents, and an extensible format. The gaps identified on
 | Saved code changes | Tool arguments may contain patches, but there is no standard changeset representation; the opencode importer skips structural patch events. | A trustworthy final diff needs an explicit source and baseline. |
 | Evidence of usefulness | We have not yet reviewed actual recipient feedback or recurring usage. | Progress should be evaluated through real handoffs as well as implementation checks. |
 
-Proposed milestones, in dependency order:
+Proposed milestones, in dependency order. The first four are delivered:
 
-**1. Design the complete CLI-to-web journey with the three use cases.**
+**1. Design the complete CLI-to-web journey with the three use cases.** Done:
+the three annotated journeys and the harness matrix are in
+[handoff-design.md](handoff-design.md).
 
-Choose one debugging example, one code review, and one competitor-research
-excerpt. For each, record the sender's question, the primary material,
-required context, excluded content, and what the recipient needs to answer.
-Sketch invocation inside the harness, session resolution, local browser
-arrival, preparation, publishing, and the recipient page. Exercise at least
-two harnesses with different integration capabilities. Check the hosted
-service contract and the local-versus-remote browser path during this
-design, before committing to a transport or export format.
+**2. Establish a dependable common handoff from the CLI to the browser.** Done:
+[handoff-design.md](handoff-design.md) has the handoff, its tests and the SSH
+path.
 
-Deliverable: three annotated examples, a harness capability matrix, and one
-common interaction design. The matrix records invocation support, explicit
-session identity, capture fidelity, available content and diff data, and
-local/remote limitations for each integration.
-Exit condition: each journey has an identifiable source session, a useful
-web arrival, and a finite package of evidence for the recipient.
+**3. Build selection, author context, and an exact export preview.** Done:
+[share-excerpt-v1.md](share-excerpt-v1.md) has the export and its omission
+checks.
 
-**2. Establish a dependable common handoff from the CLI to the browser.**
-
-Define the integration contract: source harness, explicit session identity
-when available, project/repository context, capture capability, and optional
-selected-turn or artifact references. Use the common CLI to resolve and
-prepare the draft, with thin harness-specific entry points where supported.
-The same interaction may use different invocation syntax across harnesses.
-
-Prefer the current session when identified by the integration. Support
-resumed sessions and historical imports; show a recognizable choice when
-identity is uncertain. Preserve a stable draft snapshot if the agent keeps
-working. Avoid making always-on recording a prerequisite for sharing.
-
-Deliverable: a reliable local web arrival through two representative
-integrations, plus the common CLI fallback. Existing explicit publishing
-commands retain their documented meaning; distinguish entering a draft
-from publishing it.
-Exit condition: one invocation after setup opens the correct session for
-local use. Tests cover simultaneous sessions, resumed work, a live session,
-and browser-launch failure. The remote/headless path has explicit tested
-instructions or is clearly identified as unsupported for that release.
-
-**3. Build selection, author context, and an exact export preview.**
-
-Allow the sender to select a response, passage, or tool result and include
-its prompt plus additional context. Support non-adjacent selections so a
-research finding can travel with an earlier constraint. Add the author note
-and preview the exported document using the recipient's viewer.
-
-Create a separate share document and leave the local source intact. Mark
-excerpts, omissions, and explicit redactions. Suggested supporting material
-must be visible to the sender. Retain relevant citation targets when a
-selection would otherwise leave a dangling reference.
-
-Deliverable: local creation and preview of a research share and a debugging
-share using existing captured data.
-Exit condition: excluded content is absent from the exported document,
-raw data, metadata, attachments, and downloadable payloads. An omitted
-prompt or tool result is described as unavailable instead of invented.
-
-**4. Make the included evidence readable and inspectable on the web.**
-
-Complete tool-call/result rendering, provide full search over the included
-material, preserve position during inspection, and support links to
-specific excerpts. Add Markdown headings, lists, tables, and usable source
-links. Make the same examples readable on narrow screens and with keyboard
-navigation. Label recorded test output distinctly from an assistant's claim
-that tests passed.
-
-Deliverable: complete research and debugging reading experiences.
-Exit condition: a recipient unfamiliar with the original session can
-identify the task, understand the selected outcome or failure, and find the
-supporting evidence without the sender walking them through the interface.
+**4. Make the included evidence readable and inspectable on the web.** Done:
+[viewer-arrival.md](viewer-arrival.md) has the reader.
 
 **5. Add dependable code-review artifacts.**
 

@@ -1,9 +1,6 @@
 import type { ContentPart, Message, Run, Span } from "@session-link/format";
 
-export type FlowBlock =
-  | { key: string; kind: "boundary"; spanId: string; scope: string; label: string }
-  | { key: string; kind: "msg"; spanId: string; scope: string; msg: Message; err?: string; unitPrefix: string; partIndices?: number[]; unitPrefixes?: string[]; at?: string };
-export type MessageBlock = Extract<FlowBlock, { kind: "msg" }>;
+export type MessageBlock = { key: string; spanId: string; scope: string; msg: Message; err?: string; unitPrefix: string; partIndices?: number[]; unitPrefixes?: string[]; at?: string };
 export type Exchange = { id: string; scope: string; child: boolean; agent?: string; prompts: MessageBlock[]; blocks: MessageBlock[] };
 
 const canonical = (v: unknown): string => JSON.stringify(v, (_, value) => value && typeof value === "object" && !Array.isArray(value)
@@ -17,7 +14,7 @@ export const reasoningUnavailable = (part: ContentPart, run?: Run) => part.type 
 // The source indices also address selectable units in the Go excerpt catalog.
 // Keep complete-history deduplication scoped to the nearest agent; imports
 // and pi SDK captures contain deltas, including intentional repeated prompts.
-export function buildFlow(run: Run): FlowBlock[] {
+export function buildFlow(run: Run): MessageBlock[] {
   const byId = new Map(run.spans.map(s => [s.id, s]));
   const scopeOf = (s: Span): string => {
     let p = s.parent_id; const seen = new Set<string>();
@@ -28,7 +25,7 @@ export function buildFlow(run: Run): FlowBlock[] {
     }
     return "";
   };
-  const blocks: FlowBlock[] = [], histories = new Map<string, Message[]>(), tools = new Set<string>();
+  const blocks: MessageBlock[] = [], histories = new Map<string, Message[]>(), tools = new Set<string>();
   const delta = run.source?.kind === "import" || (run.source?.kind === "sdk" && run.source.label?.startsWith("pi-extension@"));
   // Results the model received, by agent scope and call ID. When a tool span
   // also stores its own copy, often a structured record such as Claude Code's
@@ -44,10 +41,8 @@ export function buildFlow(run: Run): FlowBlock[] {
       }
   run.spans.forEach((s, si) => {
     const scope = scopeOf(s);
-    if (s.type === "agent" && s.parent_id && byId.has(s.parent_id)) {
-      blocks.push({ key: `b:${s.id}`, kind: "boundary", spanId: s.id, scope: s.id, label: s.name ?? s.id });
-      return;
-    }
+    // A sub-agent is read from the spans beneath it, not from its own span.
+    if (s.type === "agent" && s.parent_id && byId.has(s.parent_id)) return;
     const input = data(s, "input"), output = data(s, "output");
     const ins = (input.messages ?? []) as Message[], outs = (output.messages ?? []) as Message[];
     const error = s.status === "error" ? String(s.error?.message ?? "Recorded error") : undefined;
@@ -68,7 +63,7 @@ export function buildFlow(run: Run): FlowBlock[] {
         }
         partIndices.push(index); return true;
       });
-      if (content.length) blocks.push({ key: prefix, kind: "msg", spanId: s.id, scope, msg: { ...msg, content }, unitPrefix: prefix, partIndices, at });
+      if (content.length) blocks.push({ key: prefix, spanId: s.id, scope, msg: { ...msg, content }, unitPrefix: prefix, partIndices, at });
     };
     const previous = histories.get(scope) ?? [];
     const replay = !delta && previous.length > 0 && ins.length >= previous.length && previous.every((m, i) => canonical(m) === canonical(ins[i]));
@@ -89,7 +84,7 @@ export function buildFlow(run: Run): FlowBlock[] {
       // A failed result already says so; a bare error status adds nothing.
       reported = s.status === "error" && !s.error?.message && (shown || failed.has(key));
     }
-    if (error && !reported) blocks.push({ key: `u${si}-error`, kind: "msg", spanId: s.id, scope, msg: { role: "system", content: [] }, err: error, unitPrefix: `u${si}-error`, at: s.ended_at ?? s.started_at });
+    if (error && !reported) blocks.push({ key: `u${si}-error`, spanId: s.id, scope, msg: { role: "system", content: [] }, err: error, unitPrefix: `u${si}-error`, at: s.ended_at ?? s.started_at });
   });
   return blocks;
 }
@@ -97,9 +92,9 @@ export function buildFlow(run: Run): FlowBlock[] {
 // Some harnesses put reasoning, tools and answer text in the same message.
 // Separate their reader presentations while retaining original part addresses
 // for selection, search and exports. The captured message stays untouched.
-export function readerFlow(flow: FlowBlock[]): FlowBlock[] {
+export function readerFlow(flow: MessageBlock[]): MessageBlock[] {
   return flow.flatMap(block => {
-    if (block.kind !== "msg" || block.msg.role !== "assistant" || !messageText(block.msg).trim()) return [block];
+    if (block.msg.role !== "assistant" || !messageText(block.msg).trim()) return [block];
     const activity = (type: string) => type === "thinking" || type === "tool_call" || type === "tool_result";
     if (!block.msg.content.some(part => activity(part.type))) return [block];
     const slice = (isActivity: boolean): MessageBlock => {
@@ -191,7 +186,6 @@ export function exchangesFor(run: Run, flow = buildFlow(run)): Exchange[] {
   };
   const isContext = (block: MessageBlock) => !block.err && readingRole(block.msg) === "context";
   for (const block of flow) {
-    if (block.kind !== "msg") continue;
     // Provided context waits for what follows it, so it reads with the human
     // input it accompanied instead of trailing the previous answer.
     if (isContext(block)) { held.set(block.scope, [...(held.get(block.scope) ?? []), block]); continue; }

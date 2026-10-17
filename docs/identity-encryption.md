@@ -1,11 +1,12 @@
 # Identity and encrypted sharing
 
-2026-09-12, updated 2026-10-16 · deployed: encrypted sharing live since 2026-09-12
-(v29), named sharing and email sign-in since 2026-10-01 (v30). Independent
-protocol review and a volume restore rehearsal remain open.
+2026-09-12, updated 2026-10-16 · deployed: encrypted sharing since 2026-09-12 (v29), named sharing and email sign-in since 2026-10-01 (v30) · independent protocol review open.
 
-The initial-setup identity pinning fix described below is in the client source;
-it is not part of the deployment status above.
+The initial-setup identity pinning described below shipped in v0.9.1 and in the
+hosted viewer. The browser's pins on its own writes have been deployed since
+2026-10-16. The Rust client, `slink-rs`, is in source only and in no release.
+The current hosted volume is not restored; the
+[Rust migration](rust-migration.md) rehearses a restore of the new store in P7.
 
 The Go client scans and encrypts the prepared export locally. The hosted
 `session-link-server` stores ciphertext in iroh-blobs FsStore and serves it over
@@ -75,8 +76,7 @@ An interrupted setup retains the exact signed, encrypted request alongside the
 pending recovery token: retry resends it if the server did not store it, or
 verifies the stored identity if only the acknowledgment was lost. Successful
 verification removes the pending request; acknowledging the recovery key removes
-the token. Pending recovery tokens from older clients are also checked against
-the returned identity before acceptance.
+the token.
 
 A setup upload that never reached the server can lose to another device that
 sets the account up first. The first device then holds a setup the server never
@@ -266,7 +266,10 @@ share through email account creation, cancel/retry, preserved excerpts, explicit
 publication, and approval/recovery across three native device profiles.
 
 See `docs/encrypted-sharing.md` in the server repository for the ciphertext
-envelope, iroh version decision, Fly configuration, smoke commands and the
-outstanding volume restore check. The single-machine Fly design runs in
-production unchanged (as of v30, 2026-10-01) with Resend email sign-in
-configured. These local checks perform no deployment or real email delivery.
+envelope, iroh version decision, Fly configuration and smoke commands. Its
+volume restore check is out of the plan: the Rust service starts on an empty
+store, chooses its blob backend in P6 and rehearses a restore of that store in
+P7 ([Starting fresh](rust-migration.md#starting-fresh)). The single-machine
+Fly design runs in production unchanged (as of v30, 2026-10-01) with Resend
+email sign-in configured. These local checks perform no deployment or real
+email delivery.

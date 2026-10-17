@@ -7,21 +7,12 @@
 mod common;
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, UNIX_EPOCH};
+use std::path::Path;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use common::{ids, listed, nowhere, scratch, write};
 use serde_json::Value;
-use slink_import::{
-    Candidate, Input, Locations, aider_in_utc, aider_run, import, latest, load_file, recent,
-};
-
-/// A directory of its own for one test, empty.
-fn scratch(test: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("aider-{test}"));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
+use slink_import::{Candidate, Input, aider_in_utc, aider_run, import, latest, load_file};
 
 /// A time as the nanoseconds since 1970 a session's recency is counted in.
 fn nanos(time: &str) -> i64 {
@@ -29,16 +20,9 @@ fn nanos(time: &str) -> i64 {
     seconds * 1_000_000_000 + i64::from(nanos)
 }
 
-/// Writes a file as if it was last written at `at`.
-fn write_at(file: &Path, body: &str, at: &str) {
-    fs::write(file, body).unwrap();
-    let written = UNIX_EPOCH + Duration::from_nanos(nanos(at).try_into().unwrap());
-    fs::File::options()
-        .write(true)
-        .open(file)
-        .unwrap()
-        .set_modified(written)
-        .unwrap();
+/// A time as a file's modification time.
+fn at(time: &str) -> SystemTime {
+    UNIX_EPOCH + Duration::from_nanos(nanos(time).try_into().unwrap())
 }
 
 /// The Aider runs recorded for `cwd`, in a project the test made. The walk
@@ -46,19 +30,7 @@ fn write_at(file: &Path, body: &str, at: &str) {
 /// happens to be up there is left out.
 fn runs(cwd: &Path, id: &str, project: &Path) -> Vec<Candidate> {
     // No store is named: Aider's history is a file in the project.
-    let none = PathBuf::new;
-    let nowhere = Locations {
-        claude: none(),
-        pi: none(),
-        omp: none(),
-        codex: none(),
-        opencode: none(),
-        hermes: none(),
-        dsh: none(),
-    };
-    let (found, problems) = recent(&nowhere, "aider", cwd, id, 30);
-    assert_eq!(problems, Vec::<String>::new());
-    found
+    listed(&nowhere(), "aider", cwd, id, 30)
         .into_iter()
         .filter(|candidate| candidate.dir == project)
         .collect()
@@ -120,20 +92,23 @@ fn the_runs_of_one_file_are_its_sessions() {
     aider_in_utc(|| {
         let project = scratch("runs");
         let written = "2026-10-06T10:45:00Z";
-        write_at(&project.join(".aider.chat.history.md"), TWO_RUNS, written);
-        write_at(
+        write(
+            &project.join(".aider.chat.history.md"),
+            TWO_RUNS,
+            at(written),
+        );
+        write(
             &project.join(".aider.input.history"),
             "\n# 2026-10-06 09:00:07.250000\n+Find the race in the upload test\n\n# 2026-10-06 10:30:02.000000\n+/add notes.md\n\n# 2026-10-06 10:31:05.500000\n+Write the fix up\n+in two lines\n",
-            written,
+            at(written),
         );
         let deeper = project.join("src").join("upload");
         fs::create_dir_all(&deeper).unwrap();
 
         // Aider keeps the file at the project root; work goes on inside it.
         let found = runs(&deeper, "", &project);
-        let ids: Vec<&str> = found.iter().map(|run| run.id.as_str()).collect();
         assert_eq!(
-            ids,
+            ids(&found),
             ["2026-10-06T10:30:00", "2026-10-06T09:00:00"],
             "the runs of the file, newest first"
         );

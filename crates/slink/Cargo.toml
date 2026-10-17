@@ -18,22 +18,18 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 base64 = "0.22"
 # Local days and clock times on the sessions page.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-# rustls with the operating system's trust store, as Go's client used; the
-# crypto provider is ring, installed in src/tls.rs.
 regex = "1"
-reqwest = { version = "0.13", default-features = false, features = ["http2", "rustls-no-provider"] }
 # Operating-system randomness, from the provider TLS already links.
 ring = "0.17"
+# The build check's own database, in the SQLite slink-import bundles.
 rusqlite = { version = "0.40", features = ["bundled"] }
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = "1"
-sha2 = "0.11"
 slink-client = { path = "../slink-client" }
 slink-format = { path = "../slink-format" }
 slink-import = { path = "../slink-import" }
 slink-local = { path = "../slink-local" }
 slink-protocol = { path = "../slink-protocol" }
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
 # One call, so that a background viewer on Windows is not handed the streams
 # of the command that started it (src/view.rs).
@@ -46,6 +42,11 @@ sha2 = "0.11"
 
 [dev-dependencies]
 rcgen = "0.14"
+# tests/tls.rs: a client and a server of the reqwest and rustls slink-client
+# builds its client from, with the same features.
+reqwest = { version = "0.13", default-features = false, features = ["http2", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+sha2 = "0.11"
 tokio = { version = "1", features = ["io-util"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 

@@ -1,6 +1,19 @@
 # Rust client: signing in, publishing, deleting, device keys and named shares
 
-2026-10-14, extended twice the same day, reviewed 2026-10-15 · Implemented slices of the [Rust migration](rust-migration.md), the first four items of P3 (backlog item 8) · `slink-rs` signs in, publishes a session as an encrypted link from the terminal and from the local viewer, sends a lost upload again as the same ciphertext, and takes a link offline. It sets up recovery, asks for approval and gives it, recovers with the recovery key, revokes a device, and backs each new link up to the account's vault. From the local viewer it shares an excerpt with named people and grants each their key once they accept. Against the hosted service's smoke server it signs in by email approval, a browser opens what it published, three machines share one account through the settings page, and a browser recipient accepts a named share and reads it. The tests of all three slices pass on all six targets in CI. A [review by four agents](#the-review-of-2026-10-15) found nothing that blocks a release; what it did find is fixed or recorded.
+2026-10-14, extended twice the same day, reviewed 2026-10-15 · Implemented slices of the [Rust migration](rust-migration.md), the first four items of P3 · sign-in, encrypted links, device keys and named shares in `slink-rs`.
+
+`slink-rs` signs in, publishes a session as an encrypted link from the
+terminal and from the local viewer, sends a lost upload again as the same
+ciphertext, and takes a link offline. It sets up recovery, asks for approval
+and gives it, recovers with the recovery key, revokes a device, and backs each
+new link up to the account's vault. From the local viewer it shares an excerpt
+with named people and grants each their key once they accept. Against the
+hosted service's smoke server it signs in by email approval, a browser opens
+what it published, three machines share one account through the settings
+page, and a browser recipient accepts a named share and reads it. The tests of
+all three slices pass on all six targets in CI. A
+[review by four agents](#the-review-of-2026-10-15) found nothing that blocks a
+release; what it did find is fixed or recorded.
 
 `crates/slink-client` is the hosted service as the CLI reaches it. It
 composes the [protocol crate](rust-protocol.md), which seals the document and

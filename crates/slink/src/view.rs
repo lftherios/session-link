@@ -403,7 +403,9 @@ pub fn launch(url: &str) -> std::io::Result<()> {
     command.spawn().map(drop)
 }
 
-fn modified(file: &Path) -> i64 {
+/// When a file was last written, in nanoseconds since 1970; 0 when that
+/// cannot be read.
+pub fn modified(file: &Path) -> i64 {
     fs::metadata(file)
         .and_then(|found| found.modified())
         .ok()

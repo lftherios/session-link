@@ -40,7 +40,7 @@ export function PublishPanel({ endpoint, title, ready = false, onPublished, loca
    if (audience === "named" && !selected.length) throw new Error("Enter at least one recipient email address.");
    const data = await localRequest<{ url: string; backup?: string; recipients?: NamedRecipient[]; warning?: string }>(endpoint, "POST", audience === "named" ? {recipients: selected} : undefined);
    const shared = new URL(data.url), fragment = new URLSearchParams(shared.hash.slice(1));
-   new URLSearchParams(location.hash.slice(1)).forEach((value, name) => { if (["span", "message", "exchange"].includes(name)) fragment.set(name, value); });
+   new URLSearchParams(location.hash.slice(1)).forEach((value, name) => { if (["span", "exchange"].includes(name)) fragment.set(name, value); });
    shared.hash = fragment.toString(); setURL(shared.href); setBackup(data.backup ?? ""); setRecipients(data.recipients ?? []);
    onPublished?.({ url: shared.href, recipients: data.recipients?.length });
    if (data.warning) setError(data.warning);

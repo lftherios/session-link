@@ -7,53 +7,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use common::{ids, listed, nowhere, scratch, write};
 use serde_json::{Value, json};
-use slink_import::{Candidate, Input, Locations, import, load_file, read_lines, recent};
+use slink_import::{Input, Locations, import, load_file, read_lines};
 
 const CWD: &str = "/work/project";
 
-/// An empty directory of this test's own.
-fn scratch(test: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(test);
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-/// Writes a rollout as if it was last written at `at`.
-fn write(file: &Path, body: &str, at: SystemTime) {
-    fs::create_dir_all(file.parent().unwrap()).unwrap();
-    fs::write(file, body).unwrap();
-    let written = fs::File::options().write(true).open(file).unwrap();
-    written.set_modified(at).unwrap();
-}
-
-/// Codex's store and no other harness's, so nothing is read from the stores
-/// of the machine the tests run on.
+/// Codex's store and no other harness's.
 fn only_codex(store: &Path) -> Locations {
     Locations {
-        claude: PathBuf::new(),
-        pi: PathBuf::new(),
-        omp: PathBuf::new(),
         codex: store.to_owned(),
-        opencode: PathBuf::new(),
-        hermes: PathBuf::new(),
-        dsh: PathBuf::new(),
+        ..nowhere()
     }
-}
-
-fn listed(store: &Path, cwd: &Path, id: &str, limit: usize) -> Vec<Candidate> {
-    let (candidates, problems) = recent(&only_codex(store), "codex", cwd, id, limit);
-    assert_eq!(problems, Vec::<String>::new());
-    candidates
-}
-
-fn ids(candidates: &[Candidate]) -> String {
-    let ids: Vec<&str> = candidates
-        .iter()
-        .map(|candidate| candidate.id.as_str())
-        .collect();
-    ids.join(",")
 }
 
 /// One line of a rollout.
@@ -167,12 +132,12 @@ fn an_unavailable_reasoning_event_is_kept_without_an_answer() {
 fn a_rollout_is_recognized_from_response_items_alone() {
     // A rollout whose header came late or was stripped still opens with
     // response items, and those are Codex's.
-    let file = scratch("codex-recognized").join("rollout.jsonl");
+    let file = scratch("recognized").join("rollout.jsonl");
     let lines = [
         r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[]}}"#,
         r#"{"type":"turn_context","payload":{"model":"gpt-5"}}"#,
     ];
-    write(&file, &lines.join("\n"), SystemTime::now());
+    write(&file, lines.join("\n"), SystemTime::now());
     let (input, detected) = load_file(&file).unwrap();
     assert_eq!(detected, "codex");
     assert_eq!(input.lines, lines);
@@ -181,7 +146,7 @@ fn a_rollout_is_recognized_from_response_items_alone() {
 
 #[test]
 fn the_sessions_of_a_project_are_listed_and_an_id_reaches_an_older_one() {
-    let store = scratch("codex-recent");
+    let store = scratch("recent");
     let now = SystemTime::now();
     let hour = Duration::from_secs(3600);
     // A header names its session by `id`, and an older one by `session_id`.
@@ -193,7 +158,7 @@ fn the_sessions_of_a_project_are_listed_and_an_id_reaches_an_older_one() {
         ];
         write(
             &store.join(format!("{key}.jsonl")),
-            &format!("{}\n", body.join("\n")),
+            format!("{}\n", body.join("\n")),
             now - 2 * hour,
         );
     }
@@ -204,8 +169,9 @@ fn the_sessions_of_a_project_are_listed_and_an_id_reaches_an_older_one() {
     );
 
     // From a subdirectory, the project's sessions and no other project's.
-    let all = listed(&store, &Path::new(CWD).join("src"), "", 30);
-    assert_eq!(ids(&all), "id,session_id");
+    let stores = only_codex(&store);
+    let all = listed(&stores, "codex", Path::new(CWD).join("src"), "", 30);
+    assert_eq!(ids(&all), ["id", "session_id"]);
     for candidate in &all {
         assert_eq!(candidate.found.harness, "codex");
         assert_eq!(candidate.title, "Review the health endpoint");
@@ -217,15 +183,15 @@ fn the_sessions_of_a_project_are_listed_and_an_id_reaches_an_older_one() {
         assert_eq!(candidate.file.as_deref(), Some(file.as_path()));
     }
     // An id is matched before the limit a picker shows.
-    let old = listed(&store, Path::new(CWD), "session_id", 1);
-    assert_eq!(ids(&old), "session_id");
-    assert_eq!(ids(&listed(&store, Path::new(CWD), "", 1)), "id");
-    assert_eq!(ids(&listed(&store, Path::new(CWD), "no-such-id", 30)), "");
+    let old = listed(&stores, "codex", CWD, "session_id", 1);
+    assert_eq!(ids(&old), ["session_id"]);
+    assert_eq!(ids(&listed(&stores, "codex", CWD, "", 1)), ["id"]);
+    assert!(listed(&stores, "codex", CWD, "no-such-id", 30).is_empty());
 }
 
 #[test]
 fn a_session_with_no_prompt_is_listed_by_its_id() {
-    let store = scratch("codex-untitled");
+    let store = scratch("untitled");
     let header = format!(
         r#"{{"timestamp":"2026-10-03T14:00:00.250Z","type":"session_meta","payload":{{"id":"quiet","cwd":"{CWD}"}}}}"#
     );
@@ -241,8 +207,8 @@ fn a_session_with_no_prompt_is_listed_by_its_id() {
         &unnamed,
         SystemTime::now() - Duration::from_secs(60),
     );
-    let all = listed(&store, Path::new(CWD), "", 30);
-    assert_eq!(ids(&all), "quiet,rollout-unnamed");
+    let all = listed(&only_codex(&store), "codex", CWD, "", 30);
+    assert_eq!(ids(&all), ["quiet", "rollout-unnamed"]);
     assert_eq!(all[0].title, "quiet");
     assert_eq!(
         all[0].started,
@@ -257,7 +223,7 @@ fn a_session_with_no_prompt_is_listed_by_its_id() {
 // what the person means by their session, so only an explicit id reaches it.
 #[test]
 fn a_sub_agents_rollout_is_not_offered_as_the_persons_session() {
-    let store = scratch("codex-auxiliary").join("sessions");
+    let store = scratch("auxiliary").join("sessions");
     let now = SystemTime::now();
     let rollout = |id: &str, source: &str, prompt: &str, at: SystemTime| {
         let body = [
@@ -270,7 +236,7 @@ fn a_sub_agents_rollout_is_not_offered_as_the_persons_session() {
         ];
         write(
             &store.join("2026/10/03").join(format!("rollout-{id}.jsonl")),
-            &format!("{}\n", body.join("\n")),
+            format!("{}\n", body.join("\n")),
             at,
         );
     };
@@ -299,8 +265,9 @@ fn a_sub_agents_rollout_is_not_offered_as_the_persons_session() {
         now,
     );
 
-    let own = listed(&store, Path::new(CWD), "", 30);
-    assert_eq!(ids(&own), "main");
+    let stores = only_codex(&store);
+    let own = listed(&stores, "codex", CWD, "", 30);
+    assert_eq!(ids(&own), ["main"]);
     assert_eq!(own[0].title, "Rename the handler");
     let input = own[0].found.load().unwrap();
     assert!(
@@ -309,15 +276,15 @@ fn a_sub_agents_rollout_is_not_offered_as_the_persons_session() {
         input.lines
     );
     // An explicit id must still reach a sub-agent.
-    assert_eq!(ids(&listed(&store, Path::new(CWD), "scout", 1)), "scout");
-    assert_eq!(ids(&listed(&store, Path::new(CWD), "memory", 1)), "memory");
+    assert_eq!(ids(&listed(&stores, "codex", CWD, "scout", 1)), ["scout"]);
+    assert_eq!(ids(&listed(&stores, "codex", CWD, "memory", 1)), ["memory"]);
 }
 
 // Codex keeps a sub-agent's rollout apart from its parent's. Loading the
 // parent brings its sub-agents along, and only the ones that are its own.
 #[test]
 fn a_sessions_sub_agents_load_with_it() {
-    let root = scratch("codex-agents").join("sessions");
+    let root = scratch("agents").join("sessions");
     let rollout = |day: &str, id: &str, header: &str| {
         let file = root
             .join("2026/10")
@@ -329,7 +296,7 @@ fn a_sessions_sub_agents_load_with_it() {
                 r#"{{"type":"response_item","payload":{{"type":"message","role":"assistant","content":[{{"type":"output_text","text":"{id} at work"}}]}}}}"#
             ),
         ];
-        write(&file, &format!("{}\n", body.join("\n")), SystemTime::now());
+        write(&file, format!("{}\n", body.join("\n")), SystemTime::now());
         file
     };
     let spawned = |parent: &str, path: &str| {
@@ -375,8 +342,8 @@ fn a_sessions_sub_agents_load_with_it() {
     assert_eq!(names, ["rollout-main", "checker", "prober"]);
     assert!(!slink_format::encode(&run).contains("unrelated at work"));
 
-    let found = listed(&root, Path::new(CWD), "main", 1);
-    assert_eq!(ids(&found), "main");
+    let found = listed(&only_codex(&root), "codex", CWD, "main", 1);
+    assert_eq!(ids(&found), ["main"]);
     assert_eq!(found[0].related, [child, grandchild]);
 }
 
@@ -423,13 +390,14 @@ fn a_session_started_at_home_belongs_to_home_only() {
         return;
     };
     let home = PathBuf::from(home);
-    let store = scratch("codex-home");
+    let store = scratch("home");
     let header = json!({"type": "session_meta", "payload": {"id": "codex", "cwd": home}});
     write(
         &store.join("rollout-codex.jsonl"),
-        &format!("{header}\n"),
+        format!("{header}\n"),
         SystemTime::now(),
     );
-    assert_eq!(ids(&listed(&store, &home, "", 30)), "codex");
-    assert_eq!(ids(&listed(&store, &home.join("code/proj"), "", 30)), "");
+    let stores = only_codex(&store);
+    assert_eq!(ids(&listed(&stores, "codex", &home, "", 30)), ["codex"]);
+    assert!(listed(&stores, "codex", home.join("code/proj"), "", 30).is_empty());
 }

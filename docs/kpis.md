@@ -1,6 +1,6 @@
 # Product KPI scorecard
 
-2026-09-12, updated 2026-10-09 · translates the nine agreed
+2026-09-12, updated 2026-10-09 and 2026-10-16 · translates the nine agreed
 [success criteria](success-criteria.md) into measurable outcomes.
 
 These are **proposed initial targets**, not measured results or published
@@ -83,8 +83,10 @@ opened alone does not establish a useful handoff.
   withdrawing access and physical erasure separately; current tombstoning
   must not be reported as a purge. Encrypted sharing is
   [deployed](identity-encryption.md), with recovery and device approval. An
-  independent protocol review and a rehearsed volume restore remain;
-  deployment alone does not satisfy the production KPI.
+  independent protocol review remains, and a rehearsed restore waits for the
+  new store of the [Rust migration](rust-migration.md)'s P7; the current
+  volume is not restored. Deployment alone does not satisfy the production
+  KPI.
 - **Sharing:** measure signed-in, standard-size whole-session publishing from
   final confirmation until the returned URL successfully serves the intended
   document. Keep first-share sign-in time, larger files, and excerpt
